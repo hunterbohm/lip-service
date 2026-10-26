@@ -1,6 +1,6 @@
 # Lip Service
 
-Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about a quarter of a second later. Speech becomes text on your Mac, so your voice never leaves it.
+Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about 0.16 s later. Speech becomes text on your Mac, so your voice never leaves it.
 
 ## Requirements
 
@@ -57,11 +57,13 @@ The test clips are 15 chat messages, emails, notes, and prompts for AI agents, r
 
 | | Word error rate | Names spelled right | Text after you let go, median |
 | --- | --- | --- | --- |
-| Lip Service 1.0.0 | 0.8% | 20 of 20 | 0.17 s |
+| Lip Service 1.0.0 | 0.8% | 20 of 20 | 0.16 s |
+| Apple DictationTranscriber, with the names as a word list | 2.7% | 19 of 20 | 0.10 s |
+| Apple SpeechTranscriber, with the names as a word list | 5.6% | 11 of 20 | 0.21 s |
 | Parakeet with no name boosting | 4.3% | 12 of 20 | 0.16 s |
-| Whisper | 3.2% | 13 of 20 | 1.24 s |
+| Whisper large-v3-turbo, through whisper.cpp | 3.2% | 13 of 20 | 1.24 s |
 
-The first row comes from `ROUNDS=3 scripts/e2e.sh`, which runs the built app on each clip 3 times. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt). Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
+Every row is 5 rounds of the 15 clips. The Lip Service row comes from `scripts/e2e.sh`, which runs the built app on each clip. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
 
 ## Build from source
 
