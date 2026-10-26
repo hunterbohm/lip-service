@@ -534,9 +534,8 @@ private final class FakePasteboard: Pasteboard {
         #expect(issues.map(\.line) == [2, 3, 4, 5, 6])
     }
 
-    @Test func bundledDefaultParsesCleanWithTheBakeoffTermsAndAliases() {
-        let (vocabulary, issues) = Vocabulary.parse(Vocabulary.bundledDefault)
-        #expect(issues.isEmpty)
+    @Test func theSelfTestAndBenchUseTheBakeoffTermsAndAliases() {
+        let vocabulary = Vocabulary.bakeoff
         #expect(vocabulary.minSimilarity == 0.7)
         #expect(vocabulary.terms.map(\.text) == Array(cleanupFixtureProperNouns.prefix(13)))
         #expect(vocabulary.terms.first { $0.text == "Beehiiv" }?.aliases == ["behive", "beehive", "bee hive"])

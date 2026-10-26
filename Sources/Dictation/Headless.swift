@@ -121,7 +121,7 @@ enum Headless {
         var warm = true
         /// Previews while the simulated key is held, as the app runs them.
         var preview = true
-        /// The bundled default unless given.
+        /// The bakeoff's unless given.
         var vocabulary: URL?
     }
 
@@ -143,7 +143,7 @@ enum Headless {
         }
 
         let loadStarted = Instant.now
-        let engine = SpeechEngine(vocabulary: Vocabulary.parse(Vocabulary.bundledDefault).vocabulary)
+        let engine = SpeechEngine(vocabulary: .bakeoff)
         guard let boosting = await waitUntilReady(engine, printProgress: true) else { return 1 }
         print(String(format: "model: ready in %.1f s, boosting %@", Instant.now - loadStarted, describe(boosting)))
 
@@ -176,7 +176,7 @@ enum Headless {
     static func bench(_ options: BenchOptions) async -> Int32 {
         setvbuf(stdout, nil, _IOLBF, 0)
         guard modelsAreCached() else { return 1 }
-        var vocabulary = Vocabulary.parse(Vocabulary.bundledDefault).vocabulary
+        var vocabulary = Vocabulary.bakeoff
         if let file = options.vocabulary {
             guard let text = try? String(contentsOf: file, encoding: .utf8) else {
                 log("cannot read \(file.path)")

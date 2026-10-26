@@ -64,7 +64,16 @@ public struct Vocabulary: Equatable, Sendable {
         return (vocabulary, issues)
     }
 
-    /// Seeds the user's file on first launch. Self-test and bench use it as-is, so user edits cannot move them.
+    /// The terms the engine bakeoff measured, with the misheard spellings it found. The self-test and the bench use
+    /// them, so a user's vocabulary cannot move their results.
+    public static let bakeoff = Vocabulary(terms: [
+        Term(text: "Hermes"), Term(text: "ProfitPilot"), Term(text: "Nective"), Term(text: "HubSpot"),
+        Term(text: "Beehiiv", aliases: ["behive", "beehive", "bee hive"]), Term(text: "Obsidian"), Term(text: "TaskNotes"),
+        Term(text: "Tailscale"), Term(text: "Claude"), Term(text: "Codex"), Term(text: "Granola"),
+        Term(text: "Infisical", aliases: ["in physical", "infisical"]), Term(text: "Executor"),
+    ])
+
+    /// Seeds the user's file on first launch.
     public static let bundledDefault = """
         # One term per line, spelled the way it should appear.
         # After a colon, misheard spellings to replace with the term, separated by commas.
