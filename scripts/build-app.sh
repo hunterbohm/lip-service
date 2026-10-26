@@ -8,7 +8,7 @@ umask 077
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bundle="Lip Service.app"
 app="$root/dist/$bundle"
-version="$(git -C "$root" describe --always --dirty)"
+commit="$(git -C "$root" describe --always --dirty)"
 build_number="$(git -C "$root" rev-list --count HEAD)"
 
 swift build --package-path "$root" -c release
@@ -21,7 +21,6 @@ contents="$staging/$bundle/Contents"
 mkdir -p "$contents/MacOS" "$contents/Resources"
 cp "$binary_dir/Dictation" "$contents/MacOS/Dictation"
 cp "$root/Info.plist" "$contents/Info.plist"
-plutil -replace CFBundleShortVersionString -string "$version" "$contents/Info.plist"
 plutil -replace CFBundleVersion -string "$build_number" "$contents/Info.plist"
 for resource in selftest.wav start.wav stop.wav cancel.wav AppIcon.icns; do
     cp "$root/Resources/$resource" "$contents/Resources/$resource"
@@ -30,4 +29,4 @@ done
 codesign --verify --strict --verbose=2 "$staging/$bundle"
 if [[ -e "$app" ]]; then mv "$app" "$staging/old.app"; fi
 mv "$staging/$bundle" "$app"
-printf '%s (%s)\n' "${app#"$root/"}" "$version"
+printf '%s (build %s, %s)\n' "${app#"$root/"}" "$build_number" "$commit"
