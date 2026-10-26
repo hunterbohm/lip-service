@@ -27,7 +27,7 @@ struct HomePage: View {
                 }
                 .padding(.bottom, 4)
                 if entries.isEmpty {
-                    Empty(message: "Hold \(HotkeyChoice.phrase(services.preferences.current.settings.hotkeys)) and start talking.")
+                    Empty(message: "Hold \(Shortcut.phrase(services.preferences.current.settings.hotkeys)) and start talking.")
                 } else if shown.isEmpty {
                     Empty(message: "No dictations match \u{201C}\(query)\u{201D}.")
                 } else {

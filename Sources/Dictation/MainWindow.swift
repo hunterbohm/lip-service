@@ -13,7 +13,16 @@ import SwiftUI
     let loginItem: LoginItem
     let inputs: Inputs
     let level: InputLevel
+    let shortcuts: ShortcutRecording
     let copy: (String) -> Void
+}
+
+/// Lets the window borrow the keyboard to record a shortcut.
+@MainActor struct ShortcutRecording {
+    let start: (@escaping (ShortcutRecorder.Outcome) -> Void) -> Void
+    let stop: () -> Void
+
+    static let unavailable = ShortcutRecording(start: { _ in }, stop: {})
 }
 
 enum Page: String, CaseIterable, Identifiable {
@@ -51,6 +60,8 @@ enum Page: String, CaseIterable, Identifiable {
                                   setup: SetupStatus { SetupChecks.read(preferences) },
                                   willow: WillowImporter(history: coordinator.history, preferences: preferences),
                                   loginItem: LoginItem(), inputs: Inputs(), level: InputLevel(),
+                                  shortcuts: ShortcutRecording(start: { [weak coordinator] in coordinator?.recordShortcut($0) },
+                                                               stop: { [weak coordinator] in coordinator?.stopRecordingShortcut() }),
                                   copy: { [inserter = coordinator.inserter] in inserter.copy($0) })
         openOnLaunch = preferences.isFirstLaunch
     }
@@ -95,6 +106,7 @@ enum Page: String, CaseIterable, Identifiable {
     /// The level meter stops here too, so a closed window never keeps the microphone open.
     func windowWillClose(_ notification: Notification) {
         services.level.stop()
+        services.shortcuts.stop()
         window = nil
         NSApp.setActivationPolicy(.accessory)
     }
@@ -160,7 +172,7 @@ struct SetupChecks: Equatable {
     @MainActor static func read(_ preferences: Preferences) -> SetupChecks {
         SetupChecks(microphone: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
                     accessibility: AXIsProcessTrusted(),
-                    fnKey: !preferences.current.settings.hotkeys.contains(.fn) ? .notAHotkey
+                    fnKey: !preferences.current.settings.hotkeys.contains(where: { $0.key == Shortcut.fn.key }) ? .notAHotkey
                         : preferences.fnKeyNeedsSetting ? .needsSetting : .ready)
     }
 }

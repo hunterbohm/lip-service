@@ -31,7 +31,7 @@ import os
 
     init() {
         inserter = Inserter(preferences: preferences)
-        keyTap = KeyTap(hotkeys: preferences.current.settings.hotkeys)
+        keyTap = KeyTap(hotkeys: preferences.current.settings.hotkeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(level: { [microphone] in microphone.level })
         menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter)
@@ -76,8 +76,14 @@ import os
             microphone.cancel()
             keyTap.hotkeys = new.settings.hotkeys
         }
+        keyTap.pasteLast = new.settings.pasteLast
         render()
     }
+
+    /// The window's shortcut recorder borrows the keyboard from dictation until it has a result.
+    func recordShortcut(_ done: @escaping (ShortcutRecorder.Outcome) -> Void) { keyTap.record(done) }
+
+    func stopRecordingShortcut() { keyTap.stopRecording() }
 
     /// Release path, first half, on the main turn after the tap callback. It takes the samples already
     /// converted, notes the focus, and hands off. Nothing here waits on the model or the audio engine.

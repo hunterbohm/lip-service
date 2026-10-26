@@ -59,7 +59,7 @@ public enum Willow {
     }
 
     public struct ImportedSettings: Equatable, Sendable {
-        public var hotkeys: [HotkeyChoice]?
+        public var hotkeys: [Shortcut]?
         public var sounds: Bool?
         public var hideBarWhenIdle: Bool?
         public var smartSpacing: Bool?
@@ -68,11 +68,11 @@ public enum Willow {
         public var showMenuBarIcon: Bool?
         public var skippedHotkeys: [String] = []
 
-        private static let hotkeyNames: [String: HotkeyChoice] = [
+        private static let hotkeyNames: [String: Shortcut] = [
             "fn": .fn, "globe": .fn,
             "rightcontrol": .rightControl, "rightctrl": .rightControl,
-            "rightoption": .rightOption, "rightalt": .rightOption,
-            "rightcommand": .rightCommand, "rightcmd": .rightCommand,
+            "rightoption": Shortcut(key: 61), "rightalt": Shortcut(key: 61),
+            "rightcommand": Shortcut(key: 54), "rightcmd": Shortcut(key: 54),
         ]
 
         public init(preferences: Data?, barEdgePosition: String?, showMenuBarIcon: Bool?) {
@@ -86,17 +86,16 @@ public enum Willow {
             smartSpacing = object["smartTextInsertion"] as? Bool
 
             if let list = object["hotkeyDataArray"] as? [Any] {
-                var chosen: [HotkeyChoice] = []
+                var chosen: [Shortcut] = []
                 for element in list {
                     let names = Self.keyNames(in: element)
-                    if names.count == 1, let choice = Self.hotkeyNames[Self.normalized(names[0])] {
-                        chosen.append(choice)
+                    if names.count == 1, let shortcut = Self.hotkeyNames[Self.normalized(names[0])] {
+                        if !chosen.contains(shortcut) { chosen.append(shortcut) }
                     } else {
                         skippedHotkeys.append(names.isEmpty ? "an entry with no key name" : names.joined(separator: "+"))
                     }
                 }
-                let ordered = HotkeyChoice.allCases.filter(chosen.contains)
-                hotkeys = ordered.isEmpty ? nil : ordered
+                hotkeys = chosen.isEmpty ? nil : chosen
             }
 
             if object.keys.contains("selectedMicrophoneUID") {

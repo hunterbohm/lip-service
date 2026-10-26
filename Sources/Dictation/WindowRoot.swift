@@ -115,9 +115,9 @@ private struct Dock: View {
                 }
                 .buttonStyle(DarkButtonStyle())
                 .disabled(last == nil)
-                .help("Copies your last dictation. ⌃⌘V pastes it anywhere.")
+                .help(settings.pasteLast.map { "Copies your last dictation. \($0.title) pastes it anywhere." } ?? "Copies your last dictation.")
             }
-            Text("Hold \(Text(HotkeyChoice.phrase(settings.hotkeys)).foregroundStyle(.white).fontWeight(.medium)) to talk")
+            Text("Hold \(Text(Shortcut.phrase(settings.hotkeys)).foregroundStyle(.white).fontWeight(.medium)) to talk")
                 .foregroundStyle(Theme.secondary)
         }
         .font(.system(size: 13.5))

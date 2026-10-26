@@ -111,26 +111,80 @@ private func press(_ inputs: [KeyInput], timing: HotkeyTiming = HotkeyTiming()) 
         #expect(press([.hotkeyDown(t(0)), .hotkeyDown(t(30)), .hotkeyUp(t(31))]).commands == [.start, .cancel, .start, .finish])
     }
 
+    func classify(_ kind: KeyInput.EventKind, _ keyCode: Int, _ flags: UInt64, _ shortcuts: [Shortcut], repeat isRepeat: Bool = false,
+                  at time: Instant = t(1)) -> KeyInput? {
+        KeyInput.classify(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat, shortcuts: shortcuts, at: time)
+    }
+
     @Test func classifyReadsFnOnlyFromItsOwnFlagsChanged() {
         let fnBit: UInt64 = 0x80_0000
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 63, flags: fnBit, hotkeys: [.fn], at: t(1)) == .hotkeyDown(t(1)))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 63, flags: 0, hotkeys: [.fn], at: t(2)) == .hotkeyUp(t(2)))
-        let arrow = KeyInput.classify(kind: .keyDown, keyCode: 123, flags: fnBit, hotkeys: [.fn], at: t(3))
-        #expect(arrow == .otherKey(t(3), isEscape: false))
-        #expect(KeyInput.classify(kind: .keyDown, keyCode: 53, flags: 0, hotkeys: [.fn], at: t(4)) == .otherKey(t(4), isEscape: true))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 56, flags: fnBit, hotkeys: [.fn], at: t(5)) == .otherKey(t(5), isEscape: false))
+        #expect(classify(.flagsChanged, 63, fnBit, [.fn]) == .hotkeyDown(t(1)))
+        #expect(classify(.flagsChanged, 63, 0, [.fn]) == .hotkeyUp(t(1)))
+        #expect(classify(.keyDown, 123, fnBit, [.fn]) == .otherKey(t(1), isEscape: false))
+        #expect(classify(.keyDown, 53, 0, [.fn]) == .otherKey(t(1), isEscape: true))
+    }
+
+    @Test func anotherModifierPressedIsAChordButOneLetGoIsNothing() {
+        let leftShift: UInt64 = 0x2_0002
+        #expect(classify(.flagsChanged, 56, leftShift, [.fn]) == .otherKey(t(1), isEscape: false))
+        #expect(classify(.flagsChanged, 56, 0, [.fn]) == nil)
+        #expect(classify(.keyUp, 0, 0, [.fn]) == nil)
     }
 
     @Test func classifyUsesTheRightSideBitForRightOptionAndCommand() {
-        let leftOption: UInt64 = 0x8_0020, rightOption: UInt64 = 0x8_0040
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 61, flags: rightOption, hotkeys: [.rightOption], at: t(0)) == .hotkeyDown(t(0)))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 61, flags: leftOption, hotkeys: [.rightOption], at: t(1)) == .hotkeyUp(t(1)))
-        let leftCommand: UInt64 = 0x10_0008, rightCommand: UInt64 = 0x10_0010
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 54, flags: rightCommand, hotkeys: [.rightCommand], at: t(0)) == .hotkeyDown(t(0)))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 54, flags: leftCommand, hotkeys: [.rightCommand], at: t(1)) == .hotkeyUp(t(1)))
-        let leftControl: UInt64 = 0x4_0001, rightControl: UInt64 = 0x4_2000
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 62, flags: rightControl, hotkeys: [.rightControl], at: t(0)) == .hotkeyDown(t(0)))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 62, flags: leftControl, hotkeys: [.rightControl], at: t(1)) == .hotkeyUp(t(1)))
+        let rightOption = Shortcut(key: 61), rightCommand = Shortcut(key: 54)
+        #expect(classify(.flagsChanged, 61, 0x8_0040, [rightOption]) == .hotkeyDown(t(1)))
+        #expect(classify(.flagsChanged, 61, 0x8_0020, [rightOption]) == .hotkeyUp(t(1)))
+        #expect(classify(.flagsChanged, 54, 0x10_0010, [rightCommand]) == .hotkeyDown(t(1)))
+        #expect(classify(.flagsChanged, 54, 0x10_0008, [rightCommand]) == .hotkeyUp(t(1)))
+        #expect(classify(.flagsChanged, 62, 0x4_2000, [.rightControl]) == .hotkeyDown(t(1)))
+        #expect(classify(.flagsChanged, 62, 0x4_0001, [.rightControl]) == .hotkeyUp(t(1)))
+    }
+
+    @Test func aKeyWithModifiersGoesDownOnlyWithExactlyThoseAndUpOnItsOwnRelease() {
+        let optionSpace = Shortcut(key: 49, modifiers: [.option])
+        let option: UInt64 = 0x8_0020, shift: UInt64 = 0x2_0002
+        #expect(classify(.keyDown, 49, option, [optionSpace]) == .hotkeyDown(t(1)))
+        #expect(classify(.keyDown, 49, option, [optionSpace], repeat: true) == nil)
+        #expect(classify(.keyDown, 49, option | shift, [optionSpace]) == .otherKey(t(1), isEscape: false))
+        #expect(classify(.keyDown, 49, 0, [optionSpace]) == .otherKey(t(1), isEscape: false))
+        #expect(classify(.keyUp, 49, 0, [optionSpace]) == .hotkeyUp(t(1)))
+        #expect(classify(.flagsChanged, 58, 0, [optionSpace]) == nil, "letting go of Option first keeps the hold")
+    }
+
+    @Test func aFunctionKeyIgnoresTheFnFlagLaptopsAdd() {
+        let f5 = Shortcut(key: 96)
+        #expect(classify(.keyDown, 96, 0x80_0000, [f5]) == .hotkeyDown(t(1)))
+        #expect(classify(.keyUp, 96, 0x80_0000, [f5]) == .hotkeyUp(t(1)))
+    }
+
+    @Test func aModifierKeyWithModifiersNeedsThemHeldWhenItGoesDown() {
+        let commandRightOption = Shortcut(key: 61, modifiers: [.command])
+        let command: UInt64 = 0x10_0008, rightOption: UInt64 = 0x8_0040
+        #expect(classify(.flagsChanged, 61, command | rightOption, [commandRightOption]) == .hotkeyDown(t(1)))
+        #expect(classify(.flagsChanged, 61, rightOption, [commandRightOption]) == .otherKey(t(1), isEscape: false))
+        #expect(classify(.flagsChanged, 61, command, [commandRightOption]) == .hotkeyUp(t(1)))
+    }
+
+    @Test func shortcutsReadAsTheirKeys() {
+        #expect(Shortcut.fn.title == "fn")
+        #expect(Shortcut.rightControl.title == "Right Control")
+        #expect(Shortcut.pasteLast.title == "⌃⌘V")
+        #expect(Shortcut(key: 49, modifiers: [.option]).title == "⌥Space")
+        #expect(Shortcut(key: 61, modifiers: [.command]).title == "⌘ Right Option")
+        #expect(Shortcut(key: 96).title == "F5")
+        #expect(Shortcut(key: 2, modifiers: [.shift, .control, .option, .command]).title == "⌃⌥⇧⌘D")
+        #expect(Shortcut.phrase([.fn, Shortcut(key: 49, modifiers: [.option])]) == "fn or ⌥Space")
+    }
+
+    @Test func aShortcutThatWouldStopTypingIsRefused() {
+        #expect(Shortcut(key: 0).problem == "Add Control, Option or Command, so A still types.")
+        #expect(Shortcut(key: 0, modifiers: [.shift]).problem != nil)
+        #expect(Shortcut(key: 49, modifiers: [.option]).problem == nil)
+        #expect(Shortcut(key: 96).problem == nil, "a function key needs no modifier")
+        #expect(Shortcut(key: 61).problem == nil, "a modifier key alone is fine")
+        #expect(Shortcut(key: 57).problem == "Caps Lock can't be a shortcut.")
+        #expect(Shortcut(key: 53).problem != nil)
     }
 
     @Test func handsFreeStopButtonFinishesAndCancelButtonCancels() {
@@ -145,22 +199,47 @@ private func press(_ inputs: [KeyInput], timing: HotkeyTiming = HotkeyTiming()) 
         #expect(press([.stopClicked(t(0)), .cancelClicked(t(1))]) == (.idle, []))
     }
 
-    @Test func pasteLastTranscriptIsControlCommandVAndNothingElse() {
-        let control: UInt64 = 0x4_0000, command: UInt64 = 0x10_0000, shift: UInt64 = 0x2_0000, option: UInt64 = 0x8_0000
-        let rightControlDevice: UInt64 = 0x2000, capsLock: UInt64 = 0x1_0000
-        #expect(KeyInput.isPasteLastTranscript(keyCode: 9, flags: control | command))
-        #expect(KeyInput.isPasteLastTranscript(keyCode: 9, flags: control | command | rightControlDevice | capsLock))
-        #expect(!KeyInput.isPasteLastTranscript(keyCode: 9, flags: command))
-        #expect(!KeyInput.isPasteLastTranscript(keyCode: 9, flags: control | command | shift))
-        #expect(!KeyInput.isPasteLastTranscript(keyCode: 9, flags: control | command | option))
-        #expect(!KeyInput.isPasteLastTranscript(keyCode: 8, flags: control | command))
+    @Test func classifyAnswersToEveryChosenHotkeyAndNoOther() {
+        let both: [Shortcut] = [.fn, .rightControl]
+        #expect(classify(.flagsChanged, 63, 0x80_0000, both, at: t(0)) == .hotkeyDown(t(0)))
+        #expect(classify(.flagsChanged, 62, 0x4_2000, both, at: t(1)) == .hotkeyDown(t(1)))
+        #expect(classify(.flagsChanged, 62, 0x4_2000, [.fn], at: t(2)) == .otherKey(t(2), isEscape: false))
+    }
+}
+
+@Suite("Shortcut recorder") struct ShortcutRecorderTests {
+    func record(_ events: [(KeyInput.EventKind, Int, UInt64)]) -> ShortcutRecorder.Outcome? {
+        var recorder = ShortcutRecorder()
+        for (kind, key, flags) in events {
+            if let outcome = recorder.handle(kind: kind, keyCode: key, flags: flags) { return outcome }
+        }
+        return nil
     }
 
-    @Test func classifyAnswersToEveryChosenHotkeyAndNoOther() {
-        let both: [HotkeyChoice] = [.fn, .rightControl]
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 63, flags: 0x80_0000, hotkeys: both, at: t(0)) == .hotkeyDown(t(0)))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 62, flags: 0x4_2000, hotkeys: both, at: t(1)) == .hotkeyDown(t(1)))
-        #expect(KeyInput.classify(kind: .flagsChanged, keyCode: 62, flags: 0x4_2000, hotkeys: [.fn], at: t(2)) == .otherKey(t(2), isEscape: false))
+    @Test func aKeyPressedWithModifiersRecordsTheCombination() {
+        let control: UInt64 = 0x4_0001, command: UInt64 = 0x10_0008
+        #expect(record([(.flagsChanged, 59, control), (.flagsChanged, 55, control | command), (.keyDown, 9, control | command)])
+            == .recorded(.pasteLast))
+    }
+
+    @Test func aModifierLetGoOnItsOwnRecordsThatKey() {
+        #expect(record([(.flagsChanged, 63, 0x80_0000), (.flagsChanged, 63, 0)]) == .recorded(.fn))
+        #expect(record([(.flagsChanged, 61, 0x8_0040), (.flagsChanged, 61, 0)]) == .recorded(Shortcut(key: 61)))
+    }
+
+    @Test func aModifierLetGoWithAnotherStillHeldKeepsTheOther() {
+        let command: UInt64 = 0x10_0008, rightOption: UInt64 = 0x8_0040
+        let events: [(KeyInput.EventKind, Int, UInt64)] = [
+            (.flagsChanged, 55, command), (.flagsChanged, 61, command | rightOption), (.flagsChanged, 61, command),
+        ]
+        #expect(record(events) == .recorded(Shortcut(key: 61, modifiers: [.command])))
+    }
+
+    @Test func escapeCancelsAndATypingKeyAloneIsRejected() {
+        #expect(record([(.keyDown, 53, 0)]) == .cancelled)
+        #expect(record([(.keyDown, 0, 0)]) == .rejected("Add Control, Option or Command, so A still types."))
+        #expect(record([(.flagsChanged, 57, 0x1_0000)]) == .rejected("Caps Lock can't be a shortcut."))
+        #expect(record([(.keyDown, 96, 0x80_0000)]) == .recorded(Shortcut(key: 96)))
     }
 }
 
@@ -176,25 +255,52 @@ private func press(_ inputs: [KeyInput], timing: HotkeyTiming = HotkeyTiming()) 
     @Test func settingsRoundTripThroughJSON() throws {
         var settings = Settings()
         settings.microphone = .device(uid: "AppleUSBAudioEngine:Shure Inc:Shure MV7+", name: "Shure MV7+")
-        settings.hotkeys = [.rightOption]
+        settings.hotkeys = [Shortcut(key: 61), Shortcut(key: 49, modifiers: [.option])]
+        settings.pasteLast = nil
+        settings.vocabularyEnabled = false
+        settings.sounds = false
+        settings.barEdge = .left
+        settings.hideBarWhenIdle = false
+        settings.keepHistory = false
+        settings.showMenuBarIcon = false
+        settings.smartSpacing = false
         #expect(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings)) == settings)
     }
 
-    @Test func storedHotkeysAreOrderedAndNeverEmpty() throws {
-        let reordered = try JSONDecoder().decode(Settings.self, from: Data(#"{"hotkeys": ["rightControl", "fn"]}"#.utf8))
-        #expect(reordered.hotkeys == [.fn, .rightControl])
+    @Test func hotkeysStoredByTheFirstVersionsStillLoad() throws {
+        let stored = try JSONDecoder().decode(Settings.self, from: Data(#"{"hotkeys": ["rightControl", "fn"]}"#.utf8))
+        #expect(stored.hotkeys == [.rightControl, .fn])
+        #expect(stored.pasteLast == .pasteLast, "a value saved before the setting existed gets the default")
         let empty = try JSONDecoder().decode(Settings.self, from: Data(#"{"hotkeys": []}"#.utf8))
         #expect(empty.hotkeys == Settings().hotkeys)
+        let twice = try JSONDecoder().decode(Settings.self, from: Data(#"{"hotkeys": ["fn", {"key": 63, "modifiers": 0}]}"#.utf8))
+        #expect(twice.hotkeys == [.fn])
     }
 
-    @Test func theLastHotkeyCannotBeTurnedOff() {
+    @Test func dictationKeysCanBeAddedReplacedAndRemovedButNotAll() {
         var settings = Settings()
-        settings.setHotkey(.fn, on: false)
-        #expect(settings.hotkeys == [.rightControl])
-        settings.setHotkey(.rightControl, on: false)
-        #expect(settings.hotkeys == [.rightControl])
-        settings.setHotkey(.fn, on: true)
-        #expect(settings.hotkeys == [.fn, .rightControl])
+        let optionSpace = Shortcut(key: 49, modifiers: [.option])
+        #expect(settings.setHotkey(optionSpace) == nil)
+        #expect(settings.hotkeys == [.fn, .rightControl, optionSpace])
+        #expect(settings.setHotkey(Shortcut(key: 96), replacing: .rightControl) == nil)
+        #expect(settings.hotkeys == [.fn, Shortcut(key: 96), optionSpace])
+        #expect(settings.setHotkey(.fn) == "fn is already a dictation key.")
+        #expect(settings.setHotkey(.pasteLast) == "⌃⌘V already pastes your last dictation.")
+        #expect(settings.setHotkey(Shortcut(key: 0)) != nil)
+        settings.removeHotkey(.fn)
+        settings.removeHotkey(Shortcut(key: 96))
+        settings.removeHotkey(optionSpace)
+        #expect(settings.hotkeys == [optionSpace])
+    }
+
+    @Test func thePasteShortcutNeedsAKeyAndCanBeTurnedOff() {
+        var settings = Settings()
+        #expect(settings.setPasteLast(Shortcut(key: 61)) != nil)
+        #expect(settings.setPasteLast(.fn) != nil)
+        #expect(settings.setPasteLast(Shortcut(key: 9, modifiers: [.option, .command])) == nil)
+        #expect(settings.pasteLast?.title == "⌥⌘V")
+        #expect(settings.setPasteLast(nil) == nil)
+        #expect(settings.pasteLast == nil)
     }
 }
 

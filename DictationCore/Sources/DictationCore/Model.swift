@@ -153,8 +153,10 @@ public struct MissingMicrophone: Sendable {
 /// Every switch the user sets, stored in UserDefaults as one JSON value. Keys missing from the stored value take
 /// the defaults below, so a setting added later needs no migration. The defaults match Hunter's Willow setup.
 public struct Settings: Equatable, Codable, Sendable {
-    /// Never empty. Kept in `HotkeyChoice.allCases` order.
-    public var hotkeys: [HotkeyChoice] = [.fn, .rightControl]
+    /// The keys held to dictate. Never empty, and no two alike.
+    public var hotkeys: [Shortcut] = [.fn, .rightControl]
+    /// Pastes the last dictation again. Nil turns it off.
+    public var pasteLast: Shortcut? = .pasteLast
     public var vocabularyEnabled = true
     public var microphone = MicrophoneChoice.systemDefault
     public var sounds = true
@@ -173,8 +175,10 @@ public struct Settings: Equatable, Codable, Sendable {
         func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
             (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
         }
-        let hotkeys = value(.hotkeys, defaults.hotkeys)
-        self.hotkeys = hotkeys.isEmpty ? defaults.hotkeys : HotkeyChoice.allCases.filter(hotkeys.contains)
+        let hotkeys = value(.hotkeys, defaults.hotkeys).reduce(into: [Shortcut]()) { if !$0.contains($1) { $0.append($1) } }
+        self.hotkeys = hotkeys.isEmpty ? defaults.hotkeys : hotkeys
+        // Present and null means the user turned it off. Absent means a value stored before the setting existed.
+        pasteLast = container.contains(.pasteLast) ? value(.pasteLast, Shortcut?.none) : defaults.pasteLast
         vocabularyEnabled = value(.vocabularyEnabled, defaults.vocabularyEnabled)
         microphone = value(.microphone, defaults.microphone)
         sounds = value(.sounds, defaults.sounds)
@@ -185,11 +189,51 @@ public struct Settings: Equatable, Codable, Sendable {
         smartSpacing = value(.smartSpacing, defaults.smartSpacing)
     }
 
-    /// Turning off the last hotkey is refused, so the app can always be reached by voice.
-    public mutating func setHotkey(_ choice: HotkeyChoice, on: Bool) {
-        let next = on ? hotkeys + [choice] : hotkeys.filter { $0 != choice }
-        guard !next.isEmpty else { return }
-        hotkeys = HotkeyChoice.allCases.filter(next.contains)
+    private enum CodingKeys: String, CodingKey {
+        case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
+        case smartSpacing
+    }
+
+    /// Written out by hand so a paste shortcut turned off is stored as null. The synthesized encoder leaves a nil out,
+    /// and the default would come back.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(hotkeys, forKey: .hotkeys)
+        try container.encode(pasteLast, forKey: .pasteLast)
+        try container.encode(vocabularyEnabled, forKey: .vocabularyEnabled)
+        try container.encode(microphone, forKey: .microphone)
+        try container.encode(sounds, forKey: .sounds)
+        try container.encode(barEdge, forKey: .barEdge)
+        try container.encode(hideBarWhenIdle, forKey: .hideBarWhenIdle)
+        try container.encode(keepHistory, forKey: .keepHistory)
+        try container.encode(showMenuBarIcon, forKey: .showMenuBarIcon)
+        try container.encode(smartSpacing, forKey: .smartSpacing)
+    }
+
+    /// Adds a dictation key, or puts it in place of `replacing`. Why it can't, or nil when it did.
+    public mutating func setHotkey(_ shortcut: Shortcut, replacing old: Shortcut? = nil) -> String? {
+        if let problem = shortcut.problem { return problem }
+        if shortcut == pasteLast { return "\(shortcut.title) already pastes your last dictation." }
+        if shortcut != old, hotkeys.contains(shortcut) { return "\(shortcut.title) is already a dictation key." }
+        if let old, let index = hotkeys.firstIndex(of: old) { hotkeys[index] = shortcut } else { hotkeys.append(shortcut) }
+        return nil
+    }
+
+    /// Removing the last dictation key is refused, so the app can always be reached by voice.
+    public mutating func removeHotkey(_ shortcut: Shortcut) {
+        guard hotkeys.count > 1 else { return }
+        hotkeys.removeAll { $0 == shortcut }
+    }
+
+    /// Why the paste shortcut can't be this, or nil when it is set. Nil turns it off.
+    public mutating func setPasteLast(_ shortcut: Shortcut?) -> String? {
+        if let shortcut {
+            if let problem = shortcut.problem { return problem }
+            if shortcut.isModifierKey { return "Pasting needs a key with modifiers, such as ⌃⌘V." }
+            if hotkeys.contains(shortcut) { return "\(shortcut.title) is already a dictation key." }
+        }
+        pasteLast = shortcut
+        return nil
     }
 }
 

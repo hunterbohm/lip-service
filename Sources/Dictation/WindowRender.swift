@@ -46,7 +46,8 @@ private final class RenderWindow: NSWindow {
         let phone = AudioDevices.Input(uid: "C63FE4BD-iPhone", name: "iPhone Microphone", deviceID: 92)
         let inputs = Inputs { ([builtIn, phone], builtIn) }
         let services = WindowServices(preferences: preferences, history: history, setup: setup, willow: willow,
-                                      loginItem: LoginItem(), inputs: inputs, level: InputLevel(fixed: 0.42), copy: { _ in })
+                                      loginItem: LoginItem(), inputs: inputs, level: InputLevel(fixed: 0.42),
+                                      shortcuts: .unavailable, copy: { _ in })
         let window = RenderWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
         MainWindow.configure(window, services: services, state: state)
         window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))

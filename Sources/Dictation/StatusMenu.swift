@@ -69,13 +69,10 @@ import DictationCore
         menu.addItem(submenu("Recent Dictations", recentMenu))
 
         let hotkeyMenu = NSMenu()
-        for choice in HotkeyChoice.allCases {
-            let on = configuration.settings.hotkeys.contains(choice)
-            hotkeyMenu.addItem(ActionItem(choice.title, checked: on) { [preferences] in
-                preferences.change { $0.setHotkey(choice, on: !on) }
-            })
-        }
-        menu.addItem(submenu("Hotkey", hotkeyMenu))
+        for shortcut in configuration.settings.hotkeys { hotkeyMenu.addItem(disabled(shortcut.title)) }
+        hotkeyMenu.addItem(.separator())
+        hotkeyMenu.addItem(NSMenuItem(title: "Change Keys…", action: #selector(MainWindow.openWindow(_:)), keyEquivalent: ""))
+        menu.addItem(submenu("Dictation Keys", hotkeyMenu))
         menu.addItem(submenu("Microphone", microphoneMenu(chosen: configuration.settings.microphone)))
         menu.addItem(ActionItem("Vocabulary Boosting", checked: configuration.settings.vocabularyEnabled) { [preferences] in
             preferences.change { $0.vocabularyEnabled.toggle() }

@@ -54,7 +54,7 @@ import Testing
                                                showMenuBarIcon: false)
         var settings = Settings()
         settings.hideBarWhenIdle = false
-        settings.hotkeys = [.rightOption]
+        settings.hotkeys = [Shortcut(key: 61)]
         settings.smartSpacing = true
         settings.sounds = false
         imported.apply(to: &settings)
@@ -78,7 +78,7 @@ import Testing
             "hotkeyDataArray": [rightOption.base64EncodedString(), pasteLast] as [Any],
         ])
         let imported = Willow.ImportedSettings(preferences: preferences, barEdgePosition: nil, showMenuBarIcon: nil)
-        #expect(imported.hotkeys == [.rightOption])
+        #expect(imported.hotkeys == [Shortcut(key: 61)])
         #expect(imported.skippedHotkeys == ["Control+Command+V"])
     }
 

@@ -114,10 +114,10 @@ private func entry(daysAgo: Int, hour: Int = 10, words: Int, seconds: Double? = 
     }
 
     @Test func dictationKeysReadAsASpokenList() {
-        #expect(HotkeyChoice.phrase([.fn]) == "fn")
-        #expect(HotkeyChoice.phrase([.fn, .rightControl]) == "fn or Right Control")
-        #expect(HotkeyChoice.phrase([.fn, .rightControl, .rightOption]) == "fn, Right Control or Right Option")
-        #expect(HotkeyChoice.phrase([]) == "")
+        #expect(Shortcut.phrase([.fn]) == "fn")
+        #expect(Shortcut.phrase([.fn, .rightControl]) == "fn or Right Control")
+        #expect(Shortcut.phrase([.fn, .rightControl, Shortcut(key: 61)]) == "fn, Right Control or Right Option")
+        #expect(Shortcut.phrase([]) == "")
     }
 
     @Test func loudnessRunsFromSilenceToFullAndClamps() {

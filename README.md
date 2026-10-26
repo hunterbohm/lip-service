@@ -6,10 +6,10 @@ Everything runs on the Mac. Parakeet TDT v2, through [FluidAudio](https://github
 
 ## Dictate
 
-- To dictate, hold the hotkey, speak, and release it. The text is pasted at the cursor. The hotkey is fn unless you choose another in the menu.
-- To dictate without holding the key, tap the hotkey twice. Press it once more to stop and insert the text. Press Escape to stop without inserting.
-- A tap shorter than 0.3 s does nothing. A shortcut such as fn+Delete is not a dictation.
-- To paste your last dictation again, press Control+Command+V in any app. Before your first dictation the bar says so.
+- To dictate, hold a dictation key, speak, and release it. The text is pasted at the cursor. The dictation keys are fn and Right Control until you change them on the Dictation page.
+- To dictate without holding the key, tap it twice. Press it once more to stop and insert the text. Press Escape to stop without inserting.
+- A tap shorter than 0.3 s does nothing. A shortcut such as fn+Delete is not a dictation: another key pressed while you hold a dictation key cancels it.
+- To paste your last dictation again, press Control+Command+V, or the shortcut you set, in any app. Before your first dictation the bar says so.
 
 ## The bar
 
@@ -23,7 +23,7 @@ Short messages appear just above the bar, or below it when the bar is at the top
 
 - **Copied. Press ⌘V to paste.** Lip Service could not paste, so the text is on the clipboard. The second line says why: Accessibility access is off, a password field has secure input on, focus moved to another app or field before the text was ready, or the text waited more than 10 s for the model.
 - **Shure MV7+ isn't connected.** The microphone you chose is unplugged, so dictations use the system default until it is back, and the second line names it. It shows on the first dictation without it, and again only if it comes back and goes missing later.
-- **Nothing to paste yet** appears for Control+Command+V before your first dictation.
+- **Nothing to paste yet** appears for the paste shortcut before your first dictation.
 - A failure, such as a model that could not load. A dictation waiting on a failed model shows **The speech model didn't load** with the reason and a **Retry** button.
 
 Every dictation also goes into **Recent Dictations** in the menu, and clicking one copies it again. The list holds the last 20 dictations and lives in memory only, so it empties when the app quits. The history on the Home page keeps every dictation across launches.
@@ -85,7 +85,7 @@ The first release build of FluidAudio takes several minutes. Later builds take s
 
 ## Test
 
-- `scripts/test.sh` runs the DictationCore unit tests with swift-testing. It covers the hotkey state machine, the cleanup rules, aliases, punctuation repair after boosting, the clipboard restore, the paste-or-copy decision, the vocabulary parser and writer, the bar state and its messages, the history numbers and captions, smart spacing, and reading Willow's transcripts and settings from small sample files. It fails first if `DictationCore/Sources` imports AppKit, AVFoundation, CoreGraphics, or FluidAudio, so the tests never build FluidAudio.
+- `scripts/test.sh` runs the DictationCore unit tests with swift-testing. It covers the hotkey state machine, shortcuts and their recording, the cleanup rules, aliases, punctuation repair after boosting, the clipboard restore, the paste-or-copy decision, the vocabulary parser and writer, the bar state and its messages, the history numbers and captions, smart spacing, and reading Willow's transcripts and settings from small sample files. It fails first if `DictationCore/Sources` imports AppKit, AVFoundation, CoreGraphics, or FluidAudio, so the tests never build FluidAudio.
 - `scripts/e2e.sh` tests the built app binary. It runs `--self-test`, then `--bench` over `bench/clips/*.wav`, and scores the results against the bakeoff that chose the engine. It fails if a dictation errors, if vocabulary hits fall below 18 of 20, or if the word error rate on the synthetic clips rises above 3.2%. The bench runs live previews while the simulated key is held, as the app does. The environment variables `ROUNDS`, `HOLD_CAP`, `GAP`, `WARM`, and `PREVIEW` change the bench settings.
 
 The app binary has six headless modes. Both scripts use the first two:
@@ -130,22 +130,23 @@ When the Dictionary page saves, it rewrites the file: the comment lines at the t
 
 The Dictation page of the window holds most settings, and the Microphone and History pages the rest:
 
-- **Dictation keys**: fn, Right Control, Right Option, and Right Command, each a tile that is blue while on. At least one stays on. ⌃⌘V pastes your last dictation again.
+- **Dictation keys**: up to four, each a blue tile. A dictation key can be any key with modifiers, such as ⌥Space or ⌃⌘D; a function key, such as F5; or a modifier key on its own, such as fn, Right Option, or Left Control, held with other modifiers or not. Click a tile, then press the keys: a key with its modifiers records at once, and a modifier key records when you let go of it. Escape cancels, and so does clicking the tile again. **Add Key** adds one, and the × on a tile removes it. At least one stays. A letter, digit, Space, Return, Tab, or Delete needs Control, Option, or Command with it, so it still types, and Caps Lock can't be used. The keys of a shortcut that is not a modifier key on its own never reach the app you are typing in.
+- **Paste last dictation**: the shortcut that pastes your last dictation again, ⌃⌘V at first. Record it the same way. It needs a key with modifiers or a function key, not a modifier key on its own. The × turns it off.
 - **Bar position**: the edge of the screen the bar sits on. Dragging the bar also sets it.
 - **Sounds** plays a sound when dictation starts, ends, and is cancelled. **Smart spacing** is described in the Dictate section. **Vocabulary boost** is described in the Vocabulary file section. **Hide bar when idle** shows the bar only while you talk.
 - **Launch at login** adds Lip Service to the system's login items. If macOS asks for approval, the setting says so. **Show menu bar icon** shows or hides the menu bar icon.
 - **Microphone**, on its own page, described in the window section.
 - **Keep history**, **Delete All History**, and **Import from Willow**, on the History page.
 
-The menu keeps the most used ones: **Hotkey**, **Microphone**, **Vocabulary Boosting**, and **Open Vocabulary File**. Vocabulary boosting off also turns off misheard spellings and the capitals for your terms, but weekday and month names keep their capitals.
+The menu keeps the most used ones: **Dictation Keys**, which lists them and opens the window to change them, **Microphone**, **Vocabulary Boosting**, and **Open Vocabulary File**. Vocabulary boosting off also turns off misheard spellings and the capitals for your terms, but weekday and month names keep their capitals.
 
 In the menu, **Microphone** picks the input to dictate with: **System Default**, which follows the Mac's sound settings, or a device. A chosen device that is unplugged stays checked in the menu, marked not connected, and dictations use the system default until it is back. The bar says so once, not on every dictation.
 
 The app stores every setting as one JSON value under `settings` in the `com.hunterbohm.dictation` defaults domain.
 
-Lip Service needs two permissions. **Microphone** is requested at first launch. **Accessibility** lets the app see the hotkey and paste. Until it is granted, the app asks for it at each launch and the menu links to the setting.
+Lip Service needs two permissions. **Microphone** is requested at first launch. **Accessibility** lets the app see the dictation keys and paste. Until it is granted, the app asks for it at each launch and the menu links to the setting.
 
-For fn to work as the hotkey, set System Settings > Keyboard > **Press fn key to** to **Do Nothing**. The menu shows a reminder while that setting has any other value.
+For fn to work as a dictation key, set System Settings > Keyboard > **Press fn key to** to **Do Nothing**. The menu shows a reminder while that setting has any other value.
 
 ## Signing
 

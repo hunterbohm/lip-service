@@ -71,7 +71,7 @@ import Observation
     /// fn works as a hotkey only when Keyboard > "Press fn key to" is Do Nothing (0). Unset means a default
     /// that acts on fn.
     var fnKeyNeedsSetting: Bool {
-        guard current.settings.hotkeys.contains(.fn) else { return false }
+        guard current.settings.hotkeys.contains(where: { $0.key == Shortcut.fn.key }) else { return false }
         let domain = "com.apple.HIToolbox" as CFString
         CFPreferencesAppSynchronize(domain)
         return CFPreferencesCopyAppValue("AppleFnUsageType" as CFString, domain) as? Int != 0
