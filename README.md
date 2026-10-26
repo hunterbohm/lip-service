@@ -1,180 +1,88 @@
 # Lip Service
 
-Lip Service is a menu bar app for Hunter's MacBook that types what you say into whatever text field has focus, in any app. Hold fn, talk, and let go. Your words show in a bar while you speak, and the text appears at the cursor about a quarter of a second after you let go, or about half a second after a dictation of a minute or more. It replaces Willow Voice.
+Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about a quarter of a second later. Speech becomes text on your Mac, so your voice never leaves it.
 
-Everything runs on the Mac. Parakeet TDT v2, through [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.7, turns the audio into text. A second, smaller model boosts the names in your vocabulary file, so "Profit Pilot" comes out as ProfitPilot. A fixed set of rules removes filler words and fixes capitals and punctuation. Audio stays in memory and is never written to disk or sent anywhere.
+## Requirements
 
-## Dictate
+- A Mac with Apple silicon. The app is built for arm64 only, so it does not run on Intel Macs.
+- macOS 26 or later.
+- About 460 MB of disk space for the speech model, and about 100 MB more once you add a word to the dictionary.
 
-- To dictate, hold a dictation key, speak, and release it. The text is pasted at the cursor. The dictation keys are fn and Right Control until you change them on the Dictation page.
-- To dictate without holding the key, tap it twice. Press it once more to stop and insert the text. Press Escape to stop without inserting.
-- A tap shorter than 0.3 s does nothing. A shortcut such as fn+Delete is not a dictation: another key pressed while you hold a dictation key cancels it.
-- To paste your last dictation again, press Control+Command+V, or the shortcut you set, in any app. Before your first dictation the bar says so.
+## Download
 
-## The bar
+Download `Lip-Service-1.0.0.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
-While you speak, a dark bar at the edge of the screen shows a small waveform that follows your voice and the words heard so far. The words update about three times a second, and the bar grows with them. A long dictation shows its newest words, with the start fading out. The text that gets inserted is transcribed again from the whole recording when you let go, with your vocabulary, so it can differ slightly from the words in the bar.
+## Install
 
-In hands-free mode the bar also has a stop button, which inserts the text, and a cancel button, which throws the recording away. Clicking them does not take focus from the app you are typing in.
+1. Open the zip. Drag **Lip Service** into your **Applications** folder.
+2. Open Lip Service. macOS blocks it, because the app is signed with its author's own certificate and is not notarized by Apple. Close the message, and don't move the app to the Trash.
+3. Open System Settings > **Privacy & Security**. Scroll down to **Security**, click **Open Anyway** next to the message about Lip Service, and confirm when macOS asks.
 
-When you let go, the last words stay in the bar, dimmed, until the text is inserted. The bar also shows the model's progress while it downloads or prepares. The bar never takes focus.
+	To do steps 2 and 3 in Terminal instead, run this command, then open the app:
 
-Short messages appear just above the bar, or below it when the bar is at the top of the screen. Each has a title, a second line that says why, and an icon that is green for information, amber for a problem Lip Service works around, and red for a failure:
+		xattr -dr com.apple.quarantine "/Applications/Lip Service.app"
 
-- **Copied. Press ⌘V to paste.** Lip Service could not paste, so the text is on the clipboard. The second line says why: Accessibility access is off, a password field has secure input on, focus moved to another app or field before the text was ready, or the text waited more than 10 s for the model.
-- **Shure MV7+ isn't connected.** The microphone you chose is unplugged, so dictations use the system default until it is back, and the second line names it. It shows on the first dictation without it, and again only if it comes back and goes missing later.
-- **Nothing to paste yet** appears for the paste shortcut before your first dictation.
-- A failure, such as a model that could not load. A dictation waiting on a failed model shows **The speech model didn't load** with the reason and a **Retry** button.
+4. When Lip Service asks for the microphone, click **Allow**.
+5. When it asks for Accessibility, open System Settings > **Privacy & Security** > **Accessibility** and turn on Lip Service. The app needs Accessibility to see the dictation key and to paste. It notices the change within 2 s, so you don't need to reopen it.
+6. Open System Settings > **Keyboard** and set **Press fn key to** to **Do Nothing**. On a keyboard with a globe key, the setting is called **Press 🌐 key to**. If you skip this, macOS also acts on fn.
+7. Wait while the bar at the bottom of the screen downloads the speech model, about 460 MB, and prepares it for your Mac. Preparing takes about a minute. Later launches load the model in about a second.
 
-Every dictation also goes into **Recent Dictations** in the menu, and clicking one copies it again. The list holds the last 20 dictations and lives in memory only, so it empties when the app quits. The history on the Home page keeps every dictation across launches.
+The Lip Service window opens on the first launch. Its Home page shows each of steps 4 to 6 that still needs doing, with a button that opens the right System Settings pane.
 
-The bar sits at the bottom center of the screen that has the mouse. To move it, drag it while you dictate, or drag the small idle bar. Dashed outlines mark the four places it can go: bottom center, top center, left middle, and right middle. Let go near one and the bar snaps there and stays there. On the left or right edge the bar is centered vertically and grows away from that edge.
+To update, quit Lip Service and replace the app in **Applications** with the new one. macOS blocks the new copy once, so allow it again as in step 3. The Microphone and Accessibility permissions stay, because every release is signed with the same certificate.
 
-When **Hide bar when idle** is off, a small dark pill stays at the bar's place between dictations. It is on by default, so the bar shows only while you dictate.
+## Use it
 
-A short sound plays when the bar appears, another when the text is on its way, and a third when you cancel. A shortcut such as fn+Delete ends before the bar appears, so it makes no sound. **Interaction sounds** in Settings turns them off.
+- Hold fn or Right Control, speak, and let go. The text is pasted at the cursor.
+- To dictate without holding the key, tap it twice. Press it once more to insert the text, or press Escape to throw it away.
+- To paste your last dictation again, press Control+Command+V.
+- While you speak, a bar at the bottom of the screen shows the words heard so far. Drag it to the top or to either side of the screen.
+- Lip Service removes filler words such as "um" and fixes capitals and punctuation.
+- To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.
+- To open the Lip Service window, open the app again from Spotlight or the Finder, or choose **Open Lip Service…** from its menu bar icon. The window has your dictation history and the settings for the keys, the microphone, and the bar.
+- If you used Willow Voice, click **Import from Willow** on the Home page to bring over its history and settings.
 
-With **Smart spacing** on, the pasted text fits the text before the cursor:
+The [reference](docs/reference.md) describes every feature and setting.
 
-- After a word, a digit, or punctuation, it starts with a space. After a space, a line break, an opening bracket, or an opening quote, it does not.
-- After a letter, a digit, or a comma, the sentence continues, so the first word is lowercased. "I", words such as "I'm", all-capital words such as "OK", words with a capital inside such as "ProfitPilot", vocabulary terms, and weekday and month names keep their capitals.
-- When the app does not expose the text before the cursor, as in Ghostty and other terminals, the text is pasted unchanged.
+## Privacy
 
-To read that text in Electron and Chromium apps such as T3 Code, Lip Service asks each app to turn on its accessibility tree when the app comes to the front. Other apps ignore the request.
+- Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
+- Lip Service goes online only to download its models from Hugging Face. It has no account and no analytics.
+- Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file.
+- To paste, Lip Service puts the text on the clipboard and presses Command+V for you. Then it puts back what the clipboard held before.
 
-The first launch downloads about 550 MB of models and prepares them for the chip. Preparing takes about a minute. Later launches load the model in about a second. A dictation made while the model loads waits and is inserted when the model is ready.
+## How well it works
 
-## The Lip Service window
+The test clips are 15 chat messages, emails, notes, and prompts for AI agents, read aloud by the macOS voice Samantha. They hold 20 uses of 13 names that speech models often get wrong, such as Beehiiv, Tailscale, and ProfitPilot. All timing ran on a Mac mini with an M4 chip.
 
-The window opens on first launch. To open it later, open the app again from Spotlight, Raycast, or the Finder, or choose **Open Lip Service…** in the menu. While the window is open, the app has a Dock icon and menus. When you close the window, the app goes back to the menu bar only. If **Show menu bar icon** is off, a launch other than at login also opens the window, so the app never starts invisibly.
+| | Word error rate | Names spelled right | Text after you let go, median |
+| --- | --- | --- | --- |
+| Lip Service 1.0.0 | 0.8% | 20 of 20 | 0.17 s |
+| Parakeet with no name boosting | 4.3% | 12 of 20 | 0.16 s |
+| Whisper | 3.2% | 13 of 20 | 1.24 s |
 
-The window is always dark and follows the Tesla center screen: one dark canvas, flat tiles, blue for a setting that is on, a gray fill for the chosen one of several, and messages in rounded bars with a colored icon. A list of pages runs down the left. A black strip along the bottom shows the microphone dictation would use now, with a green dot, or an amber dot when the chosen one is unplugged; the keys to hold; and **Copy last**, which copies your last dictation.
+The first row comes from `ROUNDS=3 scripts/e2e.sh`, which runs the built app on each clip 3 times. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt). Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
 
-- **Home** starts with a message for anything setup still needs: microphone access, Accessibility access, and, when fn is a dictation key, Keyboard > **Press fn key to** set to **Do Nothing**. Each has a button to the right System Settings pane, and they update every 2 s. Below them are four numbers: words in the last 7 days, large, then total words, average words per minute (words over the audio minutes of the dictations whose audio length is known), and the streak of days with a dictation, which counts today or, until today has one, yesterday. Then come your dictations, newest first. Each shows the text, the app, and when, such as "Today at 4:12 PM". Click one to see all of its text. Hover over it to copy or delete it. The search field filters them by text and app.
-- **Dictation** sets the dictation keys, the bar position, **Sounds**, **Smart spacing**, **Vocabulary boost**, **Hide bar when idle**, **Launch at login**, and **Show menu bar icon**, described in the Settings section below.
-- **Microphone** lists System Default and every input. Click one to dictate with it. A chosen microphone that is unplugged stays in the list, marked not connected, under a message naming the one used instead. The input level below moves while you speak. It records only while this page is open, so the menu bar's microphone indicator shows then.
-- **Dictionary** shows your vocabulary terms as tiles with their misheard spellings. **Add Word**, and the pencil and trash that appear when you hover over a tile, change the vocabulary file described below. Double-click a tile to edit it.
-- **History** has **Keep history**, **Delete All History**, and, when Willow's folder exists, **Import from Willow**.
+## Build from source
 
-The history lives in `~/Library/Application Support/Dictation/history.jsonl`, one JSON line per dictation, oldest first. Each line holds the date, the text, the audio length, the word count, and the app. Audio is never written. **Keep history** off stops adding new dictations and keeps the old ones. **Delete All History** removes the file after you confirm.
+You need a Mac with Apple silicon, macOS 26, and the Command Line Tools with Swift 6.2 or later. Xcode is not needed.
 
-## Import from Willow
+	git clone https://github.com/hunterbohm/lip-service.git
+	cd lip-service
+	scripts/fetch-deps.sh
+	scripts/test.sh
+	scripts/build-app.sh
 
-If Willow Voice's folder exists, Home offers **Import from Willow** once, and the History page offers it every time. The import reads two things from `~/Library/Application Support/com.seewillow.WillowMac`:
+`fetch-deps.sh` downloads FluidAudio v0.17.7 into `Vendor/FluidAudio` and patches it. `build-app.sh` builds `dist/Lip Service.app` and signs it with a self-signed certificate. It makes the certificate on the first run and keeps it in `~/.config/dictation/signing`. The [reference](docs/reference.md) covers the end-to-end test, the headless test modes, and signing.
 
-- Every transcript in `Transcripts/*.json` that was not cancelled and has text. Each one keeps Willow's date, audio length, and app. Importing again adds nothing twice, because each entry keeps Willow's id.
-- Willow's settings: the dictation hotkeys, interaction sounds, hide bar when idle, smart text insertion, the chosen microphone, the bar position, and the menu bar icon. A setting that Willow's files do not mention stays as it is.
+## Credits
 
-The import never reads `Preferences/cached_account_session.json`, which holds Willow's account tokens, and never copies audio.
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.7, by FluidInference, runs the speech models. It is licensed under Apache 2.0. `scripts/fetch-deps.sh` applies two patches to it. One removes the NemoTextProcessing binary target, which the app does not use. The other makes vocabulary rescoring faster without changing its output.
+- [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2), by NVIDIA, turns speech into text. Lip Service uses FluidInference's [Core ML conversion](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml). Both are licensed under CC BY 4.0.
+- [parakeet-ctc-110m](https://huggingface.co/FluidInference/parakeet-ctc-110m-coreml), FluidInference's Core ML conversion of NVIDIA's [Parakeet TDT-CTC 110M](https://huggingface.co/nvidia/parakeet-tdt_ctc-110m), boosts the words in your dictionary. Both are licensed under CC BY 4.0.
 
-To see what an import would do without changing anything, run the app binary with the Willow folder:
+The app downloads the models from Hugging Face on first use and does not include them. The license texts for the code compiled into the app are in `Lip Service.app/Contents/Resources/Licenses`.
 
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --import-willow-dry-run ~/Library/Application\ Support/com.seewillow.WillowMac
+## License
 
-It prints the number of dictations and words it would add, the skipped transcripts, the top apps, and the settings it would apply.
-
-## Build the app
-
-Build on the Mac mini. An SSH session works, and the Command Line Tools are enough. Xcode is not needed.
-
-1. Vendor FluidAudio with `scripts/fetch-deps.sh`. The script clones the pinned v0.17.7 commit into `Vendor/FluidAudio` and applies two patches. The first removes its `NemoTextProcessing` binary target, which the app never uses. SwiftPM would download that target with URLSession, and URLSession crashes in an SSH session. The second makes FluidAudio's vocabulary rescoring build a character set once instead of once per word, which cut rescoring a 75 s dictation from 0.15 s to 0.01 s without changing its output. A vendored copy without the second patch is re-vendored on the next run.
-2. If you will run the self-test, the bench, or `scripts/e2e.sh` over SSH, cache the models with `scripts/fetch-models.sh`, which downloads them with curl. The installed app downloads the same models itself on first launch, so the MacBook does not need this step.
-3. Build and sign the app with `scripts/build-app.sh`. The script runs a release build, assembles `dist/Lip Service.app` beside the previous bundle, signs it, checks the signature with `codesign --verify --strict`, and renames it into place.
-
-The first release build of FluidAudio takes several minutes. Later builds take seconds.
-
-## Test
-
-- `scripts/test.sh` runs the DictationCore unit tests with swift-testing. It covers the hotkey state machine, shortcuts and their recording, the cleanup rules, aliases, punctuation repair after boosting, the clipboard restore, the paste-or-copy decision, the vocabulary parser and writer, the bar state and its messages, the history numbers and captions, smart spacing, and reading Willow's transcripts and settings from small sample files. It fails first if `DictationCore/Sources` imports AppKit, AVFoundation, CoreGraphics, or FluidAudio, so the tests never build FluidAudio.
-- `scripts/e2e.sh` tests the built app binary. It runs `--self-test`, then `--bench` over `bench/clips/*.wav`, and scores the results against the bakeoff that chose the engine. It fails if a dictation errors, if vocabulary hits fall below 18 of 20, or if the word error rate on the synthetic clips rises above 3.2%. The bench runs live previews while the simulated key is held, as the app does. The environment variables `ROUNDS`, `HOLD_CAP`, `GAP`, `WARM`, and `PREVIEW` change the bench settings.
-
-The app binary has six headless modes. Both scripts use the first two:
-
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --self-test
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --bench --rounds 3 --hold-cap 15 bench/clips/*.wav
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --list-inputs
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --render-bar /tmp/bar
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --render-window /tmp/window
-	"dist/Lip Service.app/Contents/MacOS/Dictation" --import-willow-dry-run FOLDER
-
-`--render-window` draws every page of the window with sample history, settings, vocabulary, and microphones, to PNG files in the folder. It works over SSH and leaves your settings, history, and vocabulary file alone. `--import-willow-dry-run` is described in the Import from Willow section.
-
-`--self-test` loads the models the way the app does and transcribes `selftest.wav` from the bundle. The clip says "Profit Pilot" and "Bee hive" the way the engine mishears them, so the test exits 1 unless ProfitPilot, Beehiiv, and Friday reach the final text. `--bench` simulates a key press, plays the clip in real time to the live previews, releases after the clip's length or `--hold-cap` seconds, whichever is shorter, and prints one JSON line per clip and round. With a hold cap shorter than the clip, the part before it counts as already captured at the press. `--preview off` skips the previews. Both modes stop with `models missing: run scripts/fetch-models.sh` when the models are not cached. `--self-test --allow-download` downloads them instead. Use it only in a GUI session.
-
-`--list-inputs` prints each audio input's name and UID, then the system default. `--render-bar DIR` draws every state of the bar, in every position, with the app's own views on a stand-in screen, and writes a PNG of each and a close-up into DIR. It needs a logged-in GUI session, which an SSH session to the mini has.
-
-Two scripts regenerate test inputs. `scripts/make-cleanup-fixtures.sh` runs `bench/cleanup-inputs.txt` through `bench/cleanup.py`, the Python cleanup that the bakeoff measured, and writes the expected outputs as a Swift test fixture. `scripts/make-selftest-clip.sh` rebuilds `Resources/selftest.wav` with `say`.
-
-Two more regenerate the app's resources. `scripts/make-icon.sh` builds `Resources/AppIcon.icns` from `Resources/AppIcon-1024.png` with `sips` and `iconutil`. `scripts/make-sounds.py Resources` writes the three cues, `start.wav`, `stop.wav`, and `cancel.wav`.
-
-## Vocabulary file
-
-The vocabulary lives in `~/Library/Application Support/Dictation/vocabulary.txt`. The app creates it on first launch from the defaults in `Vocabulary.bundledDefault`. The Dictionary page edits it, and **Open Vocabulary File** in the menu or on the Dictionary page opens it in your editor, recreating it if it was deleted. A change saved in an editor applies at the next key press, menu open, or return to the window. A change made on the Dictionary page applies at once.
-
-	# One term per line, spelled the way it should appear.
-	@min-similarity 0.7
-	ProfitPilot
-	Beehiiv: behive, beehive, bee hive
-	Infisical: in physical, infisical
-
-- Each term is one line, spelled the way the text should show it. Terms go to the boosting model, and the cleanup rules also fix their capitals.
-- Misheard spellings follow the term after a colon, separated by commas. After boosting, each one is replaced with the term as a whole word, ignoring case. Add one when a name still comes out wrong with boosting on.
-- `@min-similarity` sets how close a heard word must sound to a term before boosting swaps the term in. The range is 0.5 to 1.0, and the default is 0.7. Lower values replace more words, including words that only sound a little alike.
-- Lines that start with `#` are comments. Blank lines are ignored.
-
-A line that cannot be read, such as a term listed twice, a missing term before a colon, an empty misheard spelling, or an unknown `@` setting, is skipped, and the rest of the file still applies. The menu and the Dictionary page show the first problem with its line number.
-
-When the Dictionary page saves, it rewrites the file: the comment lines at the top first, then `@min-similarity`, then one line per term. Lines that cannot be read are kept at the end, so you can still fix them by hand. Comments further down the file are not kept.
-
-## Settings
-
-The Dictation page of the window holds most settings, and the Microphone and History pages the rest:
-
-- **Dictation keys**: up to four, each a blue tile. A dictation key can be any key with modifiers, such as ⌥Space or ⌃⌘D; a function key, such as F5; or a modifier key on its own, such as fn, Right Option, or Left Control, held with other modifiers or not. Click a tile, then press the keys: a key with its modifiers records at once, and a modifier key records when you let go of it. Escape cancels, and so does clicking the tile again. **Add Key** adds one, and the × on a tile removes it. At least one stays. A letter, digit, Space, Return, Tab, or Delete needs Control, Option, or Command with it, so it still types, and Caps Lock can't be used. The keys of a shortcut that is not a modifier key on its own never reach the app you are typing in.
-- **Paste last dictation**: the shortcut that pastes your last dictation again, ⌃⌘V at first. Record it the same way. It needs a key with modifiers or a function key, not a modifier key on its own. The × turns it off.
-- **Bar position**: the edge of the screen the bar sits on. Dragging the bar also sets it.
-- **Sounds** plays a sound when dictation starts, ends, and is cancelled. **Smart spacing** is described in the Dictate section. **Vocabulary boost** is described in the Vocabulary file section. **Hide bar when idle** shows the bar only while you talk.
-- **Launch at login** adds Lip Service to the system's login items. If macOS asks for approval, the setting says so. **Show menu bar icon** shows or hides the menu bar icon.
-- **Microphone**, on its own page, described in the window section.
-- **Keep history**, **Delete All History**, and **Import from Willow**, on the History page.
-
-The menu keeps the most used ones: **Dictation Keys**, which lists them and opens the window to change them, **Microphone**, **Vocabulary Boosting**, and **Open Vocabulary File**. Vocabulary boosting off also turns off misheard spellings and the capitals for your terms, but weekday and month names keep their capitals.
-
-In the menu, **Microphone** picks the input to dictate with: **System Default**, which follows the Mac's sound settings, or a device. A chosen device that is unplugged stays checked in the menu, marked not connected, and dictations use the system default until it is back. The bar says so once, not on every dictation.
-
-The app stores every setting as one JSON value under `settings` in the `com.hunterbohm.dictation` defaults domain.
-
-Lip Service needs two permissions. **Microphone** is requested at first launch. **Accessibility** lets the app see the dictation keys and paste. Until it is granted, the app asks for it at each launch and the menu links to the setting.
-
-For fn to work as a dictation key, set System Settings > Keyboard > **Press fn key to** to **Do Nothing**. The menu shows a reminder while that setting has any other value.
-
-## Signing
-
-The app is signed with a self-signed code-signing certificate. `scripts/sign.sh` generates it once and keeps it on the Mac mini in `~/.config/dictation/signing` as `identity.p12` and `identity.pass`, both mode 600. Every build is made on the mini and copied to the MacBook.
-
-macOS ties the Microphone and Accessibility permissions to the app's designated requirement, which is the bundle identifier plus that certificate. Every rebuild signed with the same certificate keeps the permissions. An ad hoc signature would lose them on every build, because its requirement is a hash of the binary.
-
-If the signing folder is lost, the next build generates a new certificate, and Hunter grants Microphone and Accessibility again, once.
-
-To see the requirement of a build:
-
-	codesign -dr - "dist/Lip Service.app"
-
-## Install on the MacBook
-
-Build on the mini, then copy the bundle over SSH. A copy made with `rsync` carries no quarantine flag, so Gatekeeper does not block the self-signed app.
-
-	rsync -a --delete "dist/Lip Service.app" mbp:Applications/
-
-On the MacBook:
-
-1. Quit Willow from its menu bar icon, so fn is not answered by two apps. Turn off its login item while you try Lip Service.
-2. In System Settings > Keyboard, set **Press fn key to** to **Do Nothing**.
-3. Open `~/Applications/Lip Service.app`. Allow the Microphone when asked.
-4. When asked for Accessibility, open System Settings > Privacy & Security > Accessibility and turn on Lip Service. The app notices within 2 s; there is no need to reopen it.
-5. Wait for the bar to finish the first model download and preparation, about 550 MB and a minute.
-6. Click into any text field, hold fn, speak, and let go.
-7. To bring over your Willow history and settings, click **Import from Willow** on Home.
-8. To start Lip Service at login, turn on **Launch at login** in Settings.
-
-To update, rebuild on the mini and run the same `rsync`. The certificate is unchanged, so the permissions stay. The app was called Dictation, then Free Willow. If `~/Applications/Dictation.app` or `~/Applications/Free Willow.app` is still there, quit it and delete it, so the two do not answer the hotkey together. Lip Service keeps its settings and permissions, because the bundle identifier is the same.
+Lip Service is released under the [MIT license](LICENSE).
