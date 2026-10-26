@@ -1,0 +1,12 @@
+.build/
+.cache/
+.config/
+.security/
+.tmp/
+Vendor/
+dist/
+bench/clips/
+bench/results/
+/*.log
+__pycache__/
+bench/real.json

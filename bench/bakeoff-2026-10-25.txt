@@ -1,0 +1,119 @@
+Note: before the repo went public, the client name in clip u08 and the vocabulary was replaced with HubSpot.
+The numbers below are from the original run.
+
+# dictation engine prototype, mini (M4, macOS 26.6.2), Sat Oct 24 23:19:20 CDT 2026
+## main run: 5 rounds x 20 clips x 7 engines, batch engines idle for the clip length before release
+rows=707 non-json stdout lines=1
+engine        n err  p50 s  p95 s  max s | syn p50 real p50 | WER syn   WER range |   vocab | vs Tella
+------------------------------------------------------------------------------------------------------
+sa          100   0  0.252  0.661  1.813 |   0.230    0.378 |    5.6%  5.6- 5.6% | 11.0/20 |     1.4%
+sa-vocab    100   0  0.208  0.462  0.869 |   0.206    0.296 |    5.6%  5.6- 5.6% | 11.0/20 |     1.4%
+dt          100   0  0.153  0.759  1.648 |   0.100    0.307 |    7.4%  7.4- 7.4% |  7.0/20 |     9.7%
+dt-vocab    100   0  0.116  0.446  1.144 |   0.101    0.184 |    2.7%  2.7- 2.7% | 19.0/20 |     9.7%
+pk          100   0  0.160  0.293  0.721 |   0.155    0.165 |    4.3%  4.3- 4.3% | 12.0/20 |     3.5%
+pk-vocab    100   0  0.288  0.499  0.998 |   0.280    0.298 |    3.2%  3.2- 3.2% | 18.0/20 |     3.5%
+wh          100   0  1.246  1.442  1.716 |   1.243    1.275 |    3.2%  3.2- 3.2% | 13.0/20 |     1.4%
+
+release-to-final p50 by clip length, and spread of per-round p50s
+engine        <6s  6-10s   >10s  u12 18s | round p50 range | press-to-ready p50
+sa          0.198  0.260  0.309    0.294 |  0.233- 0.256  |              0.135
+sa-vocab    0.158  0.223  0.265    0.265 |  0.197- 0.227  |              0.060
+dt          0.086  0.155  0.349    0.255 |  0.134- 0.183  |              0.126
+dt-vocab    0.072  0.130  0.253    0.253 |  0.096- 0.135  |              0.230
+pk          0.130  0.162  0.208    0.198 |  0.149- 0.173  |                nan
+pk-vocab    0.226  0.293  0.320    0.475 |  0.267- 0.306  |                nan
+wh          1.176  1.258  1.341    1.460 |  1.237- 1.266  |                nan
+
+vocabulary terms missed (round 1)
+sa         Tailscale(u02), ProfitPilot(u04), TaskNotes(u05), Nective(u06), Beehiiv(u08), Infisical(u09), Beehiiv(u11), ProfitPilot(u12), TaskNotes(u13)
+sa-vocab   Tailscale(u02), ProfitPilot(u04), TaskNotes(u05), Nective(u06), Beehiiv(u08), Infisical(u09), Beehiiv(u11), ProfitPilot(u12), TaskNotes(u13)
+dt         Hermes(u02), Tailscale(u02), ProfitPilot(u04), TaskNotes(u05), Nective(u06), Codex(u07), HubSpot(u08), Beehiiv(u08), Infisical(u09), Executor(u10), Beehiiv(u11), ProfitPilot(u12), TaskNotes(u13)
+dt-vocab   Codex(u07)
+pk         Tailscale(u02), ProfitPilot(u04), TaskNotes(u05), Beehiiv(u08), Infisical(u09), Beehiiv(u11), ProfitPilot(u12), TaskNotes(u13)
+pk-vocab   Codex(u07), Beehiiv(u08)
+wh         ProfitPilot(u04), TaskNotes(u05), Nective(u06), Beehiiv(u08), Infisical(u09), Beehiiv(u11), TaskNotes(u13)
+
+## side run: FluidAudio conservative rescorer settings (no acoustic rescue, short-term taper), 3 rounds
+rows=122 non-json stdout lines=1
+engine        n err  p50 s  p95 s  max s | syn p50 real p50 | WER syn   WER range |   vocab | vs Tella
+------------------------------------------------------------------------------------------------------
+pk           60   0  0.156  0.426  1.178 |   0.157    0.144 |    4.3%  4.3- 4.3% | 12.0/20 |     3.5%
+pk-vocab-strict   60   0  0.287  0.651  1.086 |   0.287    0.294 |    3.2%  3.2- 3.2% | 18.0/20 |     3.5%
+
+release-to-final p50 by clip length, and spread of per-round p50s
+engine        <6s  6-10s   >10s  u12 18s | round p50 range | press-to-ready p50
+pk          0.114  0.157  0.193    0.218 |  0.130- 0.157  |                nan
+pk-vocab-strict  0.241  0.284  0.480    0.651 |  0.272- 0.334  |                nan
+
+vocabulary terms missed (round 1)
+pk         Tailscale(u02), ProfitPilot(u04), TaskNotes(u05), Beehiiv(u08), Infisical(u09), Beehiiv(u11), ProfitPilot(u12), TaskNotes(u13)
+pk-vocab-strict Codex(u07), Beehiiv(u08)
+
+## side run: Parakeet CTC boosting with vocabulary min similarity 0.7 and 0.85, 1 round, no idle hold
+rows=21 non-json stdout lines=0
+engine        n err  p50 s  p95 s  max s | syn p50 real p50 | WER syn   WER range |   vocab | vs Tella
+------------------------------------------------------------------------------------------------------
+pk-vocab-sim   20   0  0.232  0.420  1.222 |   0.226    0.295 |    1.3%  1.3- 1.3% | 18.0/20 |     3.5%
+pk-vocab-sim   20   0  0.323  0.952  0.986 |   0.323    0.388 |    1.6%  1.6- 1.6% | 17.0/20 |     3.5%
+
+## side run: whisper-server -ac 1000 (20 s audio context), 2 rounds
+rows=41 non-json stdout lines=0
+engine        n err  p50 s  p95 s  max s | syn p50 real p50 | WER syn   WER range |   vocab | vs Tella
+------------------------------------------------------------------------------------------------------
+wh           40   0  0.842  1.002  1.154 |   0.836    0.858 |    3.7%  3.7- 3.7% | 12.0/20 |     1.4%
+
+## cleanup on Parakeet v2 raw text
+### results/cleanup-dt-vocab-claude-haiku-4-5-20251001.jsonl
+rows=20 errors=0 model=claude-haiku-4-5-20251001 engine=dt-vocab
+deterministic added latency: p50 69 us, p95 135 us
+llm added latency: p50 0.74 s, p95 1.18 s, max 1.50 s (n=20)
+option         WER words written-form err  vocab  changed words vs raw
+raw                 3.2%            12.1%  19/20                  0.0%
+det                 3.2%            10.0%  19/20                  0.0%
+llm                44.7%            47.4%  12/20                 43.9%
+llm outputs identical across rounds for 20 of 20 clips
+### results/cleanup-pk-claude-haiku-4-5-20251001-v2.jsonl
+rows=40 errors=0 model=claude-haiku-4-5-20251001 engine=pk
+deterministic added latency: p50 68 us, p95 100 us
+llm added latency: p50 0.68 s, p95 0.89 s, max 1.50 s (n=40)
+option         WER words written-form err  vocab  changed words vs raw
+raw                 4.8%            11.7%  12/20                  0.0%
+det                 4.3%             9.0%  12/20                  0.5%
+llm                 0.8%             5.2%  19/20                  3.9%
+llm outputs identical across rounds for 18 of 20 clips
+### results/cleanup-pk-claude-haiku-4-5-20251001.jsonl
+rows=60 errors=0 model=claude-haiku-4-5-20251001 engine=pk
+deterministic added latency: p50 75 us, p95 153 us
+llm added latency: p50 0.68 s, p95 1.26 s, max 2.48 s (n=60)
+option         WER words written-form err  vocab  changed words vs raw
+raw                 4.8%            11.7%  12/20                  0.0%
+det                 4.3%             9.0%  12/20                  0.5%
+llm                32.6%            34.3%  13/20                 33.8%
+llm outputs identical across rounds for 12 of 20 clips
+### results/cleanup-pk-claude-haiku-5-5-v2.jsonl
+rows=40 errors=0 model=claude-haiku-5-5 engine=pk
+deterministic added latency: p50 79 us, p95 274 us
+llm added latency: p50 0.91 s, p95 1.66 s, max 1.94 s (n=40)
+option         WER words written-form err  vocab  changed words vs raw
+raw                 4.8%            11.7%  12/20                  0.0%
+det                 4.3%             9.0%  12/20                  0.5%
+llm                 1.3%             3.6%  19/20                  3.9%
+llm outputs identical across rounds for 18 of 20 clips
+### results/cleanup-pk-claude-haiku-5-5.jsonl
+rows=60 errors=0 model=claude-haiku-5-5 engine=pk
+deterministic added latency: p50 82 us, p95 164 us
+llm added latency: p50 1.00 s, p95 1.85 s, max 2.86 s (n=60)
+option         WER words written-form err  vocab  changed words vs raw
+raw                 4.8%            11.7%  12/20                  0.0%
+det                 4.3%             9.0%  12/20                  0.5%
+llm                 1.9%             4.0%  19/20                  4.5%
+llm outputs identical across rounds for 14 of 20 clips
+### results/cleanup-sa-claude-haiku-4-5-20251001.jsonl
+rows=20 errors=0 model=claude-haiku-4-5-20251001 engine=sa
+deterministic added latency: p50 76 us, p95 121 us
+llm added latency: p50 0.72 s, p95 1.34 s, max 1.45 s (n=20)
+option         WER words written-form err  vocab  changed words vs raw
+raw                 6.1%            10.5%  11/20                  0.0%
+det                 5.6%             8.6%  11/20                  0.5%
+llm                19.5%            21.0%  13/20                 20.9%
+llm outputs identical across rounds for 20 of 20 clips
