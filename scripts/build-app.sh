@@ -25,6 +25,25 @@ plutil -replace CFBundleVersion -string "$build_number" "$contents/Info.plist"
 for resource in selftest.wav start.wav stop.wav cancel.wav AppIcon.icns; do
     cp "$root/Resources/$resource" "$contents/Resources/$resource"
 done
+
+# The licenses of the code compiled into the app. Of FluidAudio's ThirdPartyLicenses, the linked ones cover code in
+# the FluidAudio product. The others cover the NemoTextProcessing binary target, which fetch-deps.sh removes, and
+# text-to-speech model files the app never downloads.
+fluid="$root/Vendor/FluidAudio"
+linked=(fastcluster-LICENSE.md vbx-LICENSE.md JapaneseG2P-LICENSE.md)
+not_linked=(NemoTextProcessing-LICENSE.md KokoroANE-v3 KokoroAneSpanishFrenchG2P-LICENSE.md)
+for entry in "$fluid"/ThirdPartyLicenses/*; do
+    if [[ " ${linked[*]} ${not_linked[*]} " != *" ${entry##*/} "* ]]; then
+        printf 'Check whether FluidAudio ThirdPartyLicenses/%s covers linked code, then list it in %s.\n' "${entry##*/}" "$0" >&2
+        exit 1
+    fi
+done
+licenses="$contents/Resources/Licenses"
+mkdir -p "$licenses/FluidAudio/ThirdPartyLicenses"
+cp "$root/LICENSE" "$licenses/LICENSE"
+cp "$fluid/LICENSE" "$licenses/FluidAudio/LICENSE"
+for name in "${linked[@]}"; do cp "$fluid/ThirdPartyLicenses/$name" "$licenses/FluidAudio/ThirdPartyLicenses/$name"; done
+
 "$root/scripts/sign.sh" "$staging/$bundle" com.hunterbohm.dictation
 codesign --verify --strict --verbose=2 "$staging/$bundle"
 if [[ -e "$app" ]]; then mv "$app" "$staging/old.app"; fi
