@@ -61,6 +61,10 @@ private final class RenderWindow: NSWindow {
             ("dictation", { state.search = ""; state.page = .dictation }),
             ("microphone", { state.page = .microphone }),
             ("dictionary", { state.page = .dictionary }),
+            ("dictionary-empty", {
+                try? Vocabulary.bundledDefault.write(to: vocabularyURL, atomically: true, encoding: .utf8)
+                preferences.reloadVocabularyIfChanged()
+            }),
             ("history", { state.page = .history }),
         ]
         var failures = 0

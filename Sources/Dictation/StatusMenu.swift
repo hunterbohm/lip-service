@@ -112,7 +112,7 @@ import DictationCore
         case .loading(.compiling): "Preparing model"
         case .loading(.preparingVocabulary): "Preparing vocabulary"
         case .ready(.on): "Ready"
-        case .ready(.off): "Ready, vocabulary boosting off"
+        case .ready(.off): preferences.current.activeVocabulary == nil ? "Ready, vocabulary boosting off" : "Ready"
         case .ready(.unavailable(let reason)): "Ready, vocabulary boosting unavailable: \(reason)"
         case .failed(let reason): "Model failed: \(reason)"
         }

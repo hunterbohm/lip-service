@@ -151,8 +151,8 @@ private struct TermEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(draft.original == nil ? "Add Word" : "Edit Word").font(.system(size: 17, weight: .semibold))
             Form {
-                TextField("Word", text: $draft.text, prompt: Text("ProfitPilot"))
-                TextField("Misheard as", text: $draft.aliases, prompt: Text("profit pilot, prophet pilot"))
+                TextField("Word", text: $draft.text, prompt: Text("Siobhan"))
+                TextField("Misheard as", text: $draft.aliases, prompt: Text("shivon, chevonne"))
             }
             Text("Separate misheard spellings with commas. Each one is replaced with the word.")
                 .font(.system(size: 12))

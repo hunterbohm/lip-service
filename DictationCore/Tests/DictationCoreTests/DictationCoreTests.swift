@@ -534,6 +534,12 @@ private final class FakePasteboard: Pasteboard {
         #expect(issues.map(\.line) == [2, 3, 4, 5, 6])
     }
 
+    @Test func aNewUserStartsWithNoWordsAndNoProblems() {
+        let (vocabulary, issues) = Vocabulary.parse(Vocabulary.bundledDefault)
+        #expect(vocabulary == Vocabulary(terms: []))
+        #expect(issues.isEmpty)
+    }
+
     @Test func theSelfTestAndBenchUseTheBakeoffTermsAndAliases() {
         let vocabulary = Vocabulary.bakeoff
         #expect(vocabulary.minSimilarity == 0.7)

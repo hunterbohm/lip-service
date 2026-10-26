@@ -5,8 +5,8 @@ import Foundation
 ///
 ///     # Comments and blank lines are ignored.
 ///     @min-similarity 0.7
-///     ProfitPilot
-///     Beehiiv: behive, bee hive
+///     Figma
+///     Siobhan: shivon, chevonne
 public struct Vocabulary: Equatable, Sendable {
     public struct Term: Equatable, Sendable {
         public var text: String
@@ -78,20 +78,10 @@ public struct Vocabulary: Equatable, Sendable {
         # One term per line, spelled the way it should appear.
         # After a colon, misheard spellings to replace with the term, separated by commas.
         # @min-similarity is how close a heard word must sound before boosting swaps in a term (0.5 to 1.0).
+        # Examples. Delete the # at the start of a line to use it.
+        # Figma
+        # Siobhan: shivon, chevonne
         @min-similarity 0.7
-        Hermes
-        ProfitPilot
-        Nective
-        HubSpot
-        Beehiiv: behive, beehive, bee hive
-        Obsidian
-        TaskNotes
-        Tailscale
-        Claude
-        Codex
-        Granola
-        Infisical: in physical, infisical
-        Executor
 
         """
 }
