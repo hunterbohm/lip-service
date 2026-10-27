@@ -65,6 +65,16 @@ The test clips are 15 chat messages, emails, notes, and prompts for AI agents, r
 
 Every row is 5 rounds of the 15 clips. The Lip Service row comes from `scripts/e2e.sh`, which runs the built app on each clip. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
 
+### Against Willow and Wispr Flow
+
+| | Text after you let go, median | Slowest 5% | Word error rate | Names spelled right |
+| --- | --- | --- | --- | --- |
+| Lip Service 1.0.0 | 0.21 s | 0.30 s | 1.3% | 19 of 20 |
+| Willow 2.6.9, Pro plan | 0.37 s | 0.53 s | 2.4% | 19 of 20 |
+| Wispr Flow 1.6.1264, Free plan | 0.39 s | 0.64 s | 2.2% | 20 of 20 |
+
+This test drives each app the way a person does. [RivalBench](bench/rivals) holds the app's key, plays each clip into a virtual microphone, lets go, and times the text landing in a text box. That time includes the paste, which is why Lip Service shows 0.21 s here and 0.16 s in the table above. Every row is 5 rounds of the 15 clips, with all three apps running at once on the same Mac mini. Most of the rivals' errors are formatting, such as turning a spoken list into a numbered one, so the accuracy columns are close to a tie. The setup and the raw results are in [bench/rivals/results/2026-10-27](bench/rivals/results/2026-10-27).
+
 ## Build from source
 
 You need a Mac with Apple silicon, macOS 26, and the Command Line Tools with Swift 6.2 or later. Xcode is not needed.

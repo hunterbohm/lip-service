@@ -1,0 +1,60 @@
+{
+  "Willow": {
+    "trials": 75,
+    "errors": 0,
+    "error_kinds": [],
+    "rounds": 5,
+    "wer_pct": 2.393617021276596,
+    "names_per_round": 19.0,
+    "names_possible": 20.0,
+    "missed_names": {
+      "Infisical": 5
+    },
+    "p50_s": 0.370170958340168,
+    "p95_s": 0.5336242916528136,
+    "max_s": 0.616577958338894,
+    "round_p50_range_s": [
+      0.34991200000513345,
+      0.3890024167485535
+    ],
+    "first_to_final_max_s": 0.0
+  },
+  "Lip Service": {
+    "trials": 75,
+    "errors": 0,
+    "error_kinds": [],
+    "rounds": 5,
+    "wer_pct": 1.3297872340425532,
+    "names_per_round": 19.0,
+    "names_possible": 20.0,
+    "missed_names": {
+      "Infisical": 5
+    },
+    "p50_s": 0.211731499992311,
+    "p95_s": 0.3022354166023433,
+    "max_s": 0.34325862501282245,
+    "round_p50_range_s": [
+      0.18820379162207246,
+      0.2339659583522007
+    ],
+    "first_to_final_max_s": 0.0
+  },
+  "Wispr Flow": {
+    "trials": 75,
+    "errors": 0,
+    "error_kinds": [],
+    "rounds": 5,
+    "wer_pct": 2.1808510638297873,
+    "names_per_round": 20.0,
+    "names_possible": 20.0,
+    "missed_names": {},
+    "p50_s": 0.38753854169044644,
+    "p95_s": 0.6399782916996628,
+    "max_s": 0.8191504166461527,
+    "round_p50_range_s": [
+      0.3707252083113417,
+      0.4114243749063462
+    ],
+    "first_to_final_max_s": 0.0
+  }
+}
