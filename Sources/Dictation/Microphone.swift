@@ -87,13 +87,12 @@ import Synchronization
     }
 }
 
-/// AVAudioEngine, touched only on `queue`. A fresh engine follows the system default input. A chosen device is set
-/// on a fresh engine before its first use, so any change of device replaces the engine.
+/// AVAudioEngine, touched only on `queue`. Every start builds a fresh engine, because a stopped engine keeps the input
+/// format it first read, and the next start fails once the default or chosen device changes rate or is replaced. A
+/// fresh engine follows the system default input. A chosen device is set on it before its first use.
 private final class InputDevice: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.hunterbohm.dictation.microphone", qos: .userInteractive)
     private var engine = AVAudioEngine()
-    /// The device set on `engine`, nil while it follows the default.
-    private var pinned: AudioDeviceID?
     private var sink: SampleSink?
     private var choice = MicrophoneChoice.systemDefault
     private var selected: (@Sendable (MicrophoneSource) -> Void)?
@@ -125,23 +124,10 @@ private final class InputDevice: @unchecked Sendable {
         let inputs = AudioDevices.inputs()
         let source = choice.source(connected: inputs.map(\.uid))
         selected?(source)
-        let chosen: AudioDevices.Input?
-        switch source {
-        case .systemDefault, .fallback:
-            chosen = nil
-        case .device(let uid):
-            chosen = inputs.first { $0.uid == uid }
-        }
-        guard pinned != chosen?.deviceID else { return }
         engine = AVAudioEngine()
         observe(engine)
-        pinned = nil
-        guard let chosen else { return }
-        if AudioDevices.select(chosen.deviceID, for: engine) {
-            pinned = chosen.deviceID
-        } else {
-            selected?(.fallback(missing: chosen.name))
-        }
+        guard case .device(let uid) = source, let chosen = inputs.first(where: { $0.uid == uid }) else { return }
+        if !AudioDevices.select(chosen.deviceID, for: engine) { selected?(.fallback(missing: chosen.name)) }
     }
 
     private func begin(_ sink: SampleSink) throws {
