@@ -262,6 +262,8 @@ public enum BarNotice: Equatable, Sendable {
     case nothingToPaste
     /// A dictation waits on a model that failed to load.
     case modelFailed(String)
+    /// fn is a dictation key, but Keyboard > Press fn key to is not Do Nothing, so macOS also acts on it.
+    case fnKeySetting
 
     public var title: String {
         switch self {
@@ -270,6 +272,7 @@ public enum BarNotice: Equatable, Sendable {
         case .microphoneMissing(let chosen, _): "\(chosen) isn't connected"
         case .nothingToPaste: "Nothing to paste yet"
         case .modelFailed: "The speech model didn't load"
+        case .fnKeySetting: "macOS also acts on fn"
         }
     }
 
@@ -281,20 +284,25 @@ public enum BarNotice: Equatable, Sendable {
         case .microphoneMissing(_, let using): "Using \(using) until it's back."
         case .nothingToPaste: "Dictate something first."
         case .modelFailed(let reason): reason
+        case .fnKeySetting: "Set Keyboard > Press fn key to > Do Nothing."
         }
     }
 
     public var tone: NoticeTone {
         switch self {
         case .copied, .nothingToPaste: .info
-        case .microphoneMissing: .warning
+        case .microphoneMissing, .fnKeySetting: .warning
         case .failed, .modelFailed: .failure
         }
     }
 
     /// The toast's one button, when it has one.
     public var action: BarToastAction? {
-        if case .modelFailed = self { .retryModel } else { nil }
+        switch self {
+        case .modelFailed: .retryModel
+        case .fnKeySetting: .openKeyboardSettings
+        default: nil
+        }
     }
 }
 
@@ -315,8 +323,14 @@ extension CopyReason {
 
 public enum BarToastAction: Equatable, Sendable {
     case retryModel
+    case openKeyboardSettings
 
-    public var title: String { "Retry" }
+    public var title: String {
+        switch self {
+        case .retryModel: "Retry"
+        case .openKeyboardSettings: "Open Settings"
+        }
+    }
 }
 
 /// What the bar shows: a body at the chosen edge and, attached to it, an optional toast.

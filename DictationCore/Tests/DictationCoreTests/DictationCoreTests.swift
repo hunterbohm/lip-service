@@ -632,6 +632,13 @@ private final class FakePasteboard: Pasteboard {
         #expect(missing.tone == .warning)
     }
 
+    @Test func theFnKeySettingToastWarnsAndOpensTheKeyboardSettings() {
+        #expect(BarNotice.fnKeySetting.title == "macOS also acts on fn")
+        #expect(BarNotice.fnKeySetting.tone == .warning)
+        #expect(BarNotice.fnKeySetting.action == .openKeyboardSettings)
+        #expect(BarToastAction.openKeyboardSettings.title == "Open Settings")
+    }
+
     @Test func aCopiedToastSaysWhyItCouldNotPaste() {
         #expect(BarNotice.copied(.secureInput).title == "Copied. Press ⌘V to paste.")
         #expect(BarNotice.copied(.secureInput).detail == "A password field doesn't allow pasting.")

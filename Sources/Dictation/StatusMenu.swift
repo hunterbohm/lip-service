@@ -51,7 +51,7 @@ import DictationCore
             menu.addItem(ActionItem("Allow Microphone Access…") { Self.openSettings("com.apple.preference.security?Privacy_Microphone") })
         }
         if preferences.fnKeyNeedsSetting {
-            menu.addItem(ActionItem("Set Keyboard > Press fn Key To > Do Nothing…") { Self.openSettings("com.apple.Keyboard-Settings.extension") })
+            menu.addItem(ActionItem("Set Keyboard > Press fn Key To > Do Nothing…") { Self.openSettings(Self.keyboardSettings) })
         }
         if let issue = configuration.issues.first {
             let more = configuration.issues.count > 1 ? " (and \(configuration.issues.count - 1) more)" : ""
@@ -137,7 +137,9 @@ import DictationCore
         NSWorkspace.shared.open(preferences.vocabularyURL)
     }
 
-    private static func openSettings(_ pane: String) {
+    static let keyboardSettings = "com.apple.Keyboard-Settings.extension"
+
+    static func openSettings(_ pane: String) {
         if let url = URL(string: "x-apple.systempreferences:\(pane)") { NSWorkspace.shared.open(url) }
     }
 

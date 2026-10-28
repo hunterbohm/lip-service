@@ -28,6 +28,7 @@ import os
     private var missingMicrophone = MissingMicrophone()
     private var notice: BarNotice?
     private var noticeSerial = 0
+    private var fnSettingMentioned = false
 
     init() {
         inserter = Inserter(preferences: preferences)
@@ -46,6 +47,7 @@ import os
             case .cancel: keyTap.click(.cancelClicked(.now))
             case .moved(let edge): preferences.change { $0.barEdge = edge }
             case .toastAction(.retryModel): engine.retry()
+            case .toastAction(.openKeyboardSettings): StatusMenu.openSettings(StatusMenu.keyboardSettings)
             }
         }
         preferences.onChange = { [unowned self] old, new in apply(old, new) }
@@ -117,9 +119,17 @@ import os
         if cue == .start {
             notice = nil
             showFallback()
+            showFnKeySetting()
         }
         if let cue, preferences.current.settings.sounds { sounds.play(cue) }
         render()
+    }
+
+    /// Once per launch, so a user who keeps the setting is not nagged.
+    private func showFnKeySetting() {
+        guard notice == nil, !fnSettingMentioned, preferences.fnKeyNeedsSetting else { return }
+        fnSettingMentioned = true
+        show(.fnKeySetting)
     }
 
     private func showFallback() {
