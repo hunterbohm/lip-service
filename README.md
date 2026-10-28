@@ -10,7 +10,7 @@ Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and 
 
 ## Download
 
-Download `Lip-Service-1.0.0.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.1.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
