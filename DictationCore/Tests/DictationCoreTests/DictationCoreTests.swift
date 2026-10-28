@@ -124,6 +124,19 @@ private func press(_ inputs: [KeyInput], timing: HotkeyTiming = HotkeyTiming()) 
         #expect(classify(.keyDown, 53, 0, [.fn]) == .otherKey(t(1), isEscape: true))
     }
 
+    /// Recorded on a MacBook Pro with Press fn key to set to Do Nothing. A quick fn release is followed by a
+    /// Globe key down and up, which a long hold does not send.
+    @Test func doubleTapOfARealFnKeyGoesHandsFree() {
+        let events: [(KeyInput.EventKind, Int, UInt64, Double)] = [
+            (.flagsChanged, 63, 0x80_0100, 0), (.flagsChanged, 63, 0x100, 0.103),
+            (.keyDown, 179, 0x100, 0.103), (.keyUp, 179, 0x100, 0.103),
+            (.flagsChanged, 63, 0x80_0100, 0.198), (.flagsChanged, 63, 0x100, 0.299),
+            (.keyDown, 179, 0x100, 0.299), (.keyUp, 179, 0x100, 0.299),
+        ]
+        let inputs = events.compactMap { classify($0.0, $0.1, $0.2, [.fn], at: t($0.3)) }
+        #expect(press(inputs) == (.handsFree(captureStart: t(0)), [.start]))
+    }
+
     @Test func anotherModifierPressedIsAChordButOneLetGoIsNothing() {
         let leftShift: UInt64 = 0x2_0002
         #expect(classify(.flagsChanged, 56, leftShift, [.fn]) == .otherKey(t(1), isEscape: false))
