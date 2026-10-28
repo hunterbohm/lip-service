@@ -127,6 +127,8 @@ public struct Shortcut: Hashable, Codable, Sendable {
 /// Names for keycodes, on a US layout.
 enum KeyNames {
     static let capsLock = 57
+    /// A quick fn release on a Mac with a Globe key also sends this key down and up. fn itself is code 63.
+    static let globe = 179
     static let functionKeys: Set<Int> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
 
     static func name(_ key: Int) -> String { names[key] ?? "Key \(key)" }
@@ -219,6 +221,7 @@ public enum KeyInput: Equatable, Sendable {
             return down ? .otherKey(time, isEscape: false) : nil
         case .keyDown:
             if own.contains(where: { $0.matches(flags: flags) }) { return isRepeat ? nil : .hotkeyDown(time) }
+            if keyCode == KeyNames.globe { return nil }
             return .otherKey(time, isEscape: keyCode == escapeKeyCode)
         case .keyUp:
             return own.isEmpty ? nil : .hotkeyUp(time)
