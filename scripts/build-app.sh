@@ -12,8 +12,9 @@ commit="$(git -C "$root" describe --always --dirty)"
 build_number="$(git -C "$root" rev-list --count HEAD)"
 
 # SwiftPM compiles the build directory's path into the binary, through FluidAudio's resource accessor. A neutral
-# path keeps the builder's home folder out of a released app.
-scratch=/tmp/lip-service-build
+# path keeps the builder's home folder out of a released app. A short hash of the checkout's path gives each
+# checkout its own folder, so two builds at once cannot package each other's binary.
+scratch="/tmp/lip-service-build-$(printf '%s' "$root" | shasum -a 256 | cut -c1-10)"
 mkdir -p "$scratch"
 if [[ ! -O "$scratch" ]]; then
     printf '%s belongs to another user. Remove it or build from another account.\n' "$scratch" >&2
