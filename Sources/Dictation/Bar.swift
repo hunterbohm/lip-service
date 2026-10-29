@@ -215,7 +215,7 @@ private final class BarHostingView: NSHostingView<AnyView> {
     func set(_ values: [Float]) { self.values = Array(values.suffix(Self.count)) }
 }
 
-/// Sizes shared by the views and the layout, measured from Willow's bar.
+/// Sizes shared by the views and the layout.
 @MainActor enum BarStyle {
     static let height: CGFloat = 40
     static let maxWidth: CGFloat = 560

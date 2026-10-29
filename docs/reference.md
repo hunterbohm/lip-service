@@ -163,7 +163,9 @@ The app is signed with a self-signed code-signing certificate. `scripts/sign.sh`
 
 macOS ties the Microphone and Accessibility permissions to the app's designated requirement, which is the bundle identifier plus that certificate. Every rebuild signed with the same certificate keeps the permissions. An ad hoc signature would lose them on every build, because its requirement is a hash of the binary. Releases are signed with the author's certificate, so a downloaded update keeps them too. A build signed with your own certificate is a different app to macOS, so switching between it and a release needs both permissions again.
 
-If the signing folder is lost, the next build generates a new certificate, and every Mac that runs the new build grants Microphone and Accessibility again, once.
+If the signing folder is lost, the next build generates a new certificate, and every Mac that runs the new build grants Microphone and Accessibility again, once. The README's install prompt also checks the certificate's SHA-256, so a new certificate needs its new hash there:
+
+	codesign -d --extract-certificates=cert "dist/Lip Service.app" && shasum -a 256 cert0
 
 The certificate is not from Apple and the app is not notarized, so macOS blocks a downloaded copy until you allow it. The README's install steps cover that. A copy that never had the quarantine flag, such as one you built or copied with `rsync`, opens without the block.
 
@@ -179,4 +181,4 @@ Build on one Mac, then copy the bundle over SSH. A copy made with `rsync` carrie
 
 On that Mac, open `~/Applications/Lip Service.app`, then grant the permissions and set the fn key as the README's install steps describe.
 
-To update, rebuild and run the same `rsync`. The certificate is unchanged, so the permissions stay. Builds before 1.0.0 were called Dictation, then Free Willow. If `~/Applications/Dictation.app` or `~/Applications/Free Willow.app` is still there, quit it and delete it, so the two do not answer the dictation key together. Lip Service keeps their settings and permissions, because the bundle identifier is the same.
+To update, rebuild and run the same `rsync`. The certificate is unchanged, so the permissions stay.

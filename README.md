@@ -7,6 +7,41 @@ Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and 
 - A Mac with Apple silicon. The app is built for arm64 only, so it does not run on Intel Macs.
 - macOS 26 or later.
 - About 460 MB of disk space for the speech model, and about 100 MB more once you add a word to the dictionary.
+- English. The speech model understands English only.
+
+## Install with an AI agent
+
+Paste this into Claude Code, Codex, or another coding agent that can run commands on your Mac. It installs the latest release, but only after it checks that the app is signed with the author's certificate. Read each command before you approve it.
+
+	Install Lip Service on this Mac. It's a free, open source dictation app:
+	https://github.com/hunterbohm/lip-service
+
+	Run these steps in Terminal. Tell me what each one does, and stop if a check
+	fails.
+
+	1. Check that this Mac has Apple silicon (`uname -m` prints arm64) and
+	   macOS 26 or later (`sw_vers -productVersion`).
+	2. Make a temporary folder. Find the .zip in the latest release with
+	   `curl -s https://api.github.com/repos/hunterbohm/lip-service/releases/latest`,
+	   download it with `curl -L`, and unzip it with `ditto -x -k`.
+	3. Check that the app is the real one.
+	   `codesign --verify --deep --strict "Lip Service.app"` must pass. Then run
+	   `codesign -d --extract-certificates=cert "Lip Service.app"` and
+	   `shasum -a 256 cert0`. The hash must be
+	   760d91571175800b1e66274c20aad991ce484d1fac366eab7c14d58a8e9feb0b.
+	4. If Lip Service is running, quit it. Move the app into /Applications,
+	   replacing any older copy.
+	5. The app is signed by its author but not notarized by Apple, so macOS
+	   would block it. Clear the download flag with
+	   `xattr -dr com.apple.quarantine "/Applications/Lip Service.app"`, open the
+	   app, and delete the temporary folder.
+	6. Tell me to finish the setup on the Home page of the Lip Service window:
+	   allow the microphone, turn on Lip Service under Accessibility, and set
+	   Keyboard > "Press fn key to" (or "Press 🌐 key to") to Do Nothing. Then
+	   tell me to wait while the bar downloads the speech model, about 460 MB,
+	   and how to use it: hold fn, talk, and let go.
+
+The same prompt updates Lip Service to the latest release.
 
 ## Download
 
@@ -44,12 +79,21 @@ To update, quit Lip Service and replace the app in **Applications** with the new
 
 The [reference](docs/reference.md) describes every feature and setting.
 
+## Uninstall
+
+1. Quit Lip Service from its menu bar icon, and move it from **Applications** to the Trash.
+2. To delete your history, dictionary, and settings, delete `~/Library/Application Support/Dictation` and run `defaults delete com.hunterbohm.dictation`.
+3. To delete the speech models, delete `~/Library/Application Support/FluidAudio`. Other apps built on FluidAudio keep their models there too.
+4. Remove Lip Service from System Settings > **Privacy & Security** > **Microphone** and **Accessibility**.
+
 ## Privacy
 
 - Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
 - Lip Service goes online only to download its models from Hugging Face. It has no account and no analytics.
-- Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file.
+- Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file.
 - To paste, Lip Service puts the text on the clipboard and presses Command+V for you. Then it puts back what the clipboard held before.
+- To spot your dictation keys, Lip Service sees every key you press, through Accessibility. It does not record, store, or send them.
+- With **Smart spacing** on, it reads the text just before the cursor to decide on a space and a capital letter. It does not keep that text.
 
 ## How well it works
 

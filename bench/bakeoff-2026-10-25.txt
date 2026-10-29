@@ -1,4 +1,4 @@
-Note: before the repo went public, the client name in clip u08 and the vocabulary was replaced with HubSpot.
+Note: clip u08 and the vocabulary now say HubSpot where the original run used a different company name.
 The numbers below are from the original run.
 
 # dictation engine prototype, mini (M4, macOS 26.6.2), Sat Oct 24 23:19:20 CDT 2026

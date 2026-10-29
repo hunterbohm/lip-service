@@ -151,7 +151,7 @@ public struct MissingMicrophone: Sendable {
 }
 
 /// Every switch the user sets, stored in UserDefaults as one JSON value. Keys missing from the stored value take
-/// the defaults below, so a setting added later needs no migration. The defaults match Hunter's Willow setup.
+/// the defaults below, so a setting added later needs no migration.
 public struct Settings: Equatable, Codable, Sendable {
     /// The keys held to dictate. Never empty, and no two alike.
     public var hotkeys: [Shortcut] = [.fn, .rightControl]
