@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Cleanup options on one engine's raw text: none, a deterministic pass, and a small-model call via the CLI gateway.
+"""Cleanup options on one engine's raw text: none, a deterministic pass, and a small-model call to the Anthropic
+Messages API. The call needs ANTHROPIC_API_KEY. CLEANUP_ENDPOINT points it at another server that speaks the same
+API. The deterministic pass needs neither.
 
-usage: cleanup.py probe <model>...                 time a few gateway calls per model
+usage: cleanup.py probe <model>...                 time a few API calls per model
        cleanup.py run <engine> <model> <rounds> results/main.jsonl...   writes results/cleanup-<engine>.jsonl
 """
 import json, os, re, sys, time, urllib.request
@@ -9,8 +11,7 @@ import json, os, re, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from score import VOCAB, edits, norm_words, pct, vocab_hits  # noqa: E402
 
-GATEWAY = "http://127.0.0.1:8317/v1/messages"
-KEY_FILE = os.path.expanduser("~/.config/cli-gateway/client.key")
+ENDPOINT = os.environ.get("CLEANUP_ENDPOINT", "https://api.anthropic.com/v1/messages")
 SYSTEM = (
     "You clean up dictated text before it is pasted into an app. Fix punctuation and capitalization, "
     "and delete filler words (um, uh, you know, I mean) only when they are fillers. Do not reword, "
@@ -47,13 +48,19 @@ def deterministic(text):
     return t
 
 
+def api_key():
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        sys.exit("Set ANTHROPIC_API_KEY to call the model.")
+    return key
+
+
 def llm(text, model, key):
     content = f"<dictation>\n{text}\n</dictation>" if V2 else text
     body = json.dumps({"model": model, "max_tokens": 600, "temperature": 0, "system": SYSTEM_V2 if V2 else SYSTEM,
                        "messages": [{"role": "user", "content": content}]}).encode()
-    req = urllib.request.Request(GATEWAY, data=body, headers={
-        "content-type": "application/json", "anthropic-version": "2023-06-01",
-        "authorization": "Bearer " + key, "x-api-key": key})
+    req = urllib.request.Request(ENDPOINT, data=body, headers={
+        "content-type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": key})
     t0 = time.perf_counter()
     with urllib.request.urlopen(req, timeout=60) as r:
         out = json.load(r)
@@ -66,7 +73,7 @@ def written_tokens(text):
 
 
 def probe(models):
-    key = open(KEY_FILE).read().strip()
+    key = api_key()
     sample = "um so I think we should uh push the launch to next week you know just to be safe"
     times = {m: [] for m in models}
     outs = {}
@@ -80,7 +87,7 @@ def probe(models):
 
 
 def run(engine, model, rounds, paths):
-    key = open(KEY_FILE).read().strip()
+    key = api_key()
     manifest = {r["id"]: r for r in map(json.loads, open("manifest.jsonl"))}
     raw = {}
     for p in paths:
