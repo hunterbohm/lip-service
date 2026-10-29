@@ -58,7 +58,7 @@ The window is always dark and follows the Tesla center screen: one dark canvas, 
 - **Dictionary** shows your vocabulary terms as tiles with their misheard spellings, or "No words yet" when there are none. **Add Word**, and the pencil and trash that appear when you hover over a tile, change the vocabulary file described below. Double-click a tile to edit it.
 - **History** has **Keep history**, **Delete All History**, and, when Willow's folder exists, **Import from Willow**.
 
-The history lives in `~/Library/Application Support/Dictation/history.jsonl`, one JSON line per dictation, oldest first. Each line holds the date, the text, the audio length, the word count, and the app. Audio is never written. **Keep history** off stops adding new dictations and keeps the old ones. **Delete All History** removes the file after you confirm.
+The history lives in `~/Library/Application Support/Dictation/history.jsonl`, one JSON line per dictation, oldest first. Each line holds the date, the text, the audio length, the word count, and the app. Audio is never written. **Keep history** off stops adding new dictations and keeps the old ones. **Delete All History** removes the file after you confirm. The history and the vocabulary file are readable by your account only: the app sets its umask to 077 at launch, so it creates them with mode 600, and it makes the `Dictation` folder mode 700 at every launch, which also covers files that 1.0.1 and earlier left at 644.
 
 ## Settings
 
@@ -78,7 +78,7 @@ In the menu, **Microphone** picks the input to dictate with: **System Default**,
 
 The app stores every setting as one JSON value under `settings` in the `com.hunterbohm.dictation` defaults domain.
 
-Lip Service needs two permissions. **Microphone** is requested at first launch. **Accessibility** lets the app see the dictation keys and paste. Until it is granted, the app asks for it at each launch and the menu links to the setting.
+Lip Service needs two permissions. **Microphone** is requested at first launch. The app runs with the hardened runtime, so the microphone also needs the audio-input entitlement, which the signed app holds. **Accessibility** lets the app see the dictation keys and paste. Until it is granted, the app asks for it at each launch and the menu links to the setting.
 
 For fn to work as a dictation key, set System Settings > Keyboard > **Press fn key to** to **Do Nothing**. On a keyboard with a globe key, the setting is called **Press 🌐 key to**. The menu shows a reminder while that setting has any other value.
 
@@ -122,16 +122,34 @@ It prints the number of dictations and words it would add, the skipped transcrip
 Build on a Mac with Apple silicon and macOS 26. The Command Line Tools with Swift 6.2 or later are enough. Xcode is not needed, and an SSH session works.
 
 1. Vendor FluidAudio with `scripts/fetch-deps.sh`. The script clones the pinned v0.17.7 commit into `Vendor/FluidAudio` and applies two patches. The first removes its `NemoTextProcessing` binary target, which the app never uses. SwiftPM would download that target with URLSession, and URLSession crashes in an SSH session. The second makes FluidAudio's vocabulary rescoring build a character set once instead of once per word, which cut rescoring a 75 s dictation from 0.15 s to 0.01 s without changing its output. A vendored copy without the second patch is re-vendored on the next run.
-2. If you will run the self-test, the bench, or `scripts/e2e.sh` over SSH, cache the models with `scripts/fetch-models.sh`, which downloads them with curl. The app downloads the same models itself on first launch, so a Mac that only runs the app does not need this step.
-3. Build and sign the app with `scripts/build-app.sh`. The script runs a release build, assembles `dist/Lip Service.app` beside the previous bundle, copies the license texts into `Contents/Resources/Licenses`, signs the bundle, checks the signature with `codesign --verify --strict`, and renames it into place.
+2. If you will run the self-test, the bench, or `scripts/e2e.sh` over SSH, cache the models with `scripts/fetch-models.sh`, which downloads them with curl at the pinned commits and checks every file, as the Speech models section describes. The app downloads the same models itself on first launch, so a Mac that only runs the app does not need this step.
+3. Build and sign the app with `scripts/build-app.sh`. The script runs a release build in `/tmp/lip-service-build`, a path that does not name your account, because SwiftPM compiles the build directory into the binary and a release must not carry the builder's home folder. It then assembles `dist/Lip Service.app` beside the previous bundle, copies the license texts into `Contents/Resources/Licenses`, signs the bundle, checks the signature with `codesign --verify --strict`, and renames it into place.
 
-The first release build of FluidAudio takes several minutes. Later builds take seconds.
+The first release build of FluidAudio takes several minutes. Later builds take seconds. To check a build, `strings "dist/Lip Service.app/Contents/MacOS/Dictation" | grep /Users/` prints nothing.
 
 The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio third-party licenses that cover code in the FluidAudio product: fastcluster, VBx, and the Japanese text frontend. FluidAudio's other third-party licenses cover the binary target that `fetch-deps.sh` removes and text-to-speech model files the app never downloads. The build stops if FluidAudio adds a third-party license that `build-app.sh` does not list yet.
 
 To make a release zip, name it after the version in `Info.plist`:
 
 	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.1.zip
+
+## Speech models
+
+The app downloads two models from Hugging Face on first launch: Parakeet TDT 0.6B v2, and the Parakeet CTC 110M model behind vocabulary boosting, which loads only when the vocabulary has terms. Both are pinned to a commit, not to a branch, and every file is checked before Core ML reads it.
+
+- `DictationCore/Sources/DictationCore/PinnedModels.swift` holds the table. Each model has its repository, a full 40-character commit, its folder in FluidAudio's cache, and every file with its size and SHA-256. The commits are the heads of both repositories on 2026-10-25, the files that every benchmark in this repository used.
+- Before the app loads a model, `ModelCheck` compares its folder with the table. It reports a missing file, a wrong size, a wrong hash, and a file inside a Core ML bundle that the table does not list. A file outside the bundles, such as FluidAudio's `.fluidaudio-revision` marker, is ignored. The check reads the cached files once and added about 0.3 s to a launch on the Mac mini, measured with the files in memory.
+- The app points FluidAudio at the pinned commits, downloads with `ModelHub.download`, which does not load anything, checks the folder, and only then loads it. The vocabulary file comes from the pinned commit as well. After a folder passes, the app writes the revision marker FluidAudio reads, which also adopts a cache that 1.0.0 or 1.0.1 downloaded from the main branch when its files are the pinned ones.
+- A cache that fails the check is deleted and downloaded once more. If the new download fails the check too, the bar shows the first file that differs, and Retry Loading the Model tries again. A download that stopped halfway is kept and resumed instead.
+- Loading runs in FluidAudio's offline mode, so its own recovery from a failed load, which deletes the folder and downloads again, cannot hand Core ML files that nothing checked.
+
+To move to other model files, change the commits in `scripts/pin-models.py` and run it:
+
+	python3 -I scripts/pin-models.py
+
+The script downloads every file the app reads at those commits, compares each with the hash the Hub publishes, and rewrites `PinnedModels.swift` and `scripts/models.lock`. Review the diff. `scripts/fetch-models.sh` reads `models.lock`, downloads with curl, and checks size and SHA-256. A folder that is already there is checked and never deleted. `MODELS_DIR` replaces FluidAudio's models folder for the script.
+
+The self-test and the bench never download or delete. They stop with the files that fail the check. `--models DIR` runs them on another models folder, such as a copy, and `scripts/e2e.sh` passes `MODELS_DIR` along. The app writes the revision marker into the folder it checks, so use a copy to keep a cache untouched.
 
 ## Test
 
@@ -149,17 +167,19 @@ The app binary has six headless modes. Both scripts use the first two:
 
 `--render-window` draws every page of the window with sample history, settings, vocabulary, and microphones, and the Dictionary page once more with the vocabulary a new user starts with, to PNG files in the folder. It works over SSH and leaves your settings, history, and vocabulary file alone. `--import-willow-dry-run` is described in the Import from Willow section.
 
-`--self-test` loads the models the way the app does and transcribes `selftest.wav` from the bundle. The clip says "Profit Pilot" and "Bee hive" the way the engine mishears them, so the test exits 1 unless ProfitPilot, Beehiiv, and Friday reach the final text. `--bench` simulates a key press, plays the clip in real time to the live previews, releases after the clip's length or `--hold-cap` seconds, whichever is shorter, and prints one JSON line per clip and round. With a hold cap shorter than the clip, the part before it counts as already captured at the press. `--preview off` skips the previews. Both modes use the 13 terms the bakeoff measured, `Vocabulary.bakeoff`, not your vocabulary file. `--bench --vocabulary PATH` reads the terms from a file instead. Both modes stop with `models missing: run scripts/fetch-models.sh` when the models are not cached. `--self-test --allow-download` downloads them instead. Use it only in a GUI session.
+`--self-test` loads the models the way the app does and transcribes `selftest.wav` from the bundle. The clip says "Profit Pilot" and "Bee hive" the way the engine mishears them, so the test exits 1 unless ProfitPilot, Beehiiv, and Friday reach the final text. `--bench` simulates a key press, plays the clip in real time to the live previews, releases after the clip's length or `--hold-cap` seconds, whichever is shorter, and prints one JSON line per clip and round. With a hold cap shorter than the clip, the part before it counts as already captured at the press. `--preview off` skips the previews. Both modes use the 13 terms the bakeoff measured, `Vocabulary.bakeoff`, not your vocabulary file. `--bench --vocabulary PATH` reads the terms from a file instead. Both modes stop with `models missing: run scripts/fetch-models.sh` when the models are not cached, and with the first file that differs when a cached model fails the check. `--self-test --allow-download` downloads them instead. Use it only in a GUI session.
 
 `--list-inputs` prints each audio input's name and UID, then the system default. `--render-bar DIR` draws every state of the bar, in every position, with the app's own views on a stand-in screen, and writes a PNG of each and a close-up into DIR. It needs a user logged in to the Mac's desktop. An SSH session to that Mac works.
 
-Two scripts regenerate test inputs. `scripts/make-cleanup-fixtures.sh` runs `bench/cleanup-inputs.txt` through `bench/cleanup.py`, the Python cleanup that the bakeoff measured, and writes the expected outputs as a Swift test fixture. `scripts/make-selftest-clip.sh` rebuilds `Resources/selftest.wav` with `say`.
+Two scripts regenerate test inputs. `scripts/make-cleanup-fixtures.sh` runs `bench/cleanup-inputs.txt` through `bench/cleanup.py`, the Python cleanup that the bakeoff measured, and writes the expected outputs as a Swift test fixture. `bench/cleanup.py` can also send text to a small model for the bakeoff's comparisons. That call needs `ANTHROPIC_API_KEY` for the Anthropic Messages API, and `CLEANUP_ENDPOINT` points it at another server with the same API. The fixtures need neither. `scripts/make-selftest-clip.sh` rebuilds `Resources/selftest.wav` with `say`.
 
 Two more regenerate the app's resources. `scripts/make-icon.sh` builds `Resources/AppIcon.icns` from `Resources/AppIcon-1024.png` with `sips` and `iconutil`. `scripts/make-sounds.py Resources` writes the three cues, `start.wav`, `stop.wav`, and `cancel.wav`.
 
 ## Signing
 
 The app is signed with a self-signed code-signing certificate. `scripts/sign.sh` generates it on the first build and keeps it on the Mac that builds, in `~/.config/dictation/signing`, as `identity.p12` and `identity.pass`, both mode 600.
+
+The signature carries the hardened runtime flag (`--options runtime`). A hardened app records silence unless it holds the audio-input entitlement, so `scripts/sign.sh` signs the app bundle with `Resources/Dictation.entitlements`, which holds `com.apple.security.device.audio-input` and nothing else. The self-test and `scripts/e2e.sh` run the models under the hardened runtime. Neither the flag nor the entitlements change the designated requirement, so a build keeps its permissions. `codesign -dvvv` shows `flags=0x10000(runtime)`, and `codesign -d --entitlements - "dist/Lip Service.app"` shows the entitlement.
 
 macOS ties the Microphone and Accessibility permissions to the app's designated requirement, which is the bundle identifier plus that certificate. Every rebuild signed with the same certificate keeps the permissions. An ad hoc signature would lose them on every build, because its requirement is a hash of the binary. Releases are signed with the author's certificate, so a downloaded update keeps them too. A build signed with your own certificate is a different app to macOS, so switching between it and a release needs both permissions again.
 
