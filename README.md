@@ -45,7 +45,7 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.1.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.2.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
@@ -89,7 +89,7 @@ The [reference](docs/reference.md) describes every feature and setting.
 ## Privacy
 
 - Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
-- Lip Service goes online only to download its models from Hugging Face. It has no account and no analytics.
+- Lip Service goes online only to download its models from Hugging Face. It downloads a fixed version of each, and it checks every file against a SHA-256 hash built into the app before it uses it. It has no account and no analytics.
 - Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file.
 - To paste, Lip Service puts the text on the clipboard and presses Command+V for you. Then it puts back what the clipboard held before.
 - To spot your dictation keys, Lip Service sees every key you press, through Accessibility. It does not record, store, or send them.
