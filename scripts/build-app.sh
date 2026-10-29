@@ -46,7 +46,7 @@ for name in "${linked[@]}"; do cp "$fluid/ThirdPartyLicenses/$name" "$licenses/F
 
 # The umask above keeps build files private, but every account on the Mac must be able to open the app.
 chmod -R go+rX "$staging/$bundle"
-"$root/scripts/sign.sh" "$staging/$bundle" com.hunterbohm.dictation
+"$root/scripts/sign.sh" "$staging/$bundle" com.hunterbohm.dictation "$root/Resources/Dictation.entitlements"
 codesign --verify --strict --verbose=2 "$staging/$bundle"
 if [[ -e "$app" ]]; then mv "$app" "$staging/old.app"; fi
 mv "$staging/$bundle" "$app"

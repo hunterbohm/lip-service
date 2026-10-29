@@ -1,6 +1,8 @@
 #!/bin/bash
-# Usage: sign.sh PATH IDENTIFIER
-# Signs an app bundle or a bare binary with the local signing certificate.
+# Usage: sign.sh PATH IDENTIFIER [ENTITLEMENTS]
+# Signs an app bundle or a bare binary with the local signing certificate and the hardened runtime. The
+# hardened runtime blocks microphone capture unless the app holds the audio-input entitlement, so the app
+# bundle passes its entitlements file. A bare binary passes none.
 set -euo pipefail
 umask 077
 target="$1"
@@ -62,4 +64,6 @@ security set-keychain-settings "$keychain"
 security import "$signing_dir/identity.p12" -k "$keychain" -P "$(cat "$signing_dir/identity.pass")" -T /usr/bin/codesign >/dev/null
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_pass" "$keychain" >/dev/null
 identity="$(security find-identity -p codesigning "$keychain" | awk -v name="\"$identity_name\"" 'index($0, name) { print $2; exit }')"
-codesign --force --keychain "$keychain" --sign "$identity" --identifier "$identifier" "$target"
+codesign_args=(--force --keychain "$keychain" --sign "$identity" --identifier "$identifier" --options runtime)
+[[ -n "${3:-}" ]] && codesign_args+=(--entitlements "$3")
+codesign "${codesign_args[@]}" "$target"
