@@ -16,11 +16,12 @@ enum Mode {
     static let usage = """
         usage: Dictation
                    Runs the menu bar app.
-               Dictation --self-test [--clip PATH] [--allow-download]
+               Dictation --self-test [--clip PATH] [--models DIR] [--allow-download]
                    Transcribes the bundled clip through the app's pipeline and exits 1 on failure.
                    --clip locates the clip when the binary runs outside the app bundle.
+                   --models reads the models from DIR instead of FluidAudio's folder.
                Dictation --bench [--rounds N] [--hold-cap S] [--gap S] [--warm on|off] [--preview on|off]
-                         [--vocabulary PATH] CLIP.wav...
+                         [--vocabulary PATH] [--models DIR] CLIP.wav...
                    Prints one JSON line per clip and round. Round 0 warms up on the first clip.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
@@ -42,6 +43,7 @@ enum Mode {
                 while let flag = rest.popFirst() {
                     switch flag {
                     case "--clip": options.clip = URL(fileURLWithPath: try Self.value(of: flag, from: &rest))
+                    case "--models": options.models = URL(fileURLWithPath: try Self.value(of: flag, from: &rest))
                     case "--allow-download": options.allowDownload = true
                     default: throw DictationError("unknown option \(flag)")
                     }
@@ -57,6 +59,7 @@ enum Mode {
                     case "--warm": options.warm = try Self.switchValue(of: argument, from: &rest)
                     case "--preview": options.preview = try Self.switchValue(of: argument, from: &rest)
                     case "--vocabulary": options.vocabulary = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case "--models": options.models = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case let flag where flag.hasPrefix("--"): throw DictationError("unknown option \(flag)")
                     default: options.clips.append(URL(fileURLWithPath: argument))
                     }
@@ -108,6 +111,7 @@ enum Mode {
 enum Headless {
     struct SelfTestOptions {
         var clip: URL?
+        var models: URL?
         var allowDownload = false
     }
 
@@ -123,6 +127,8 @@ enum Headless {
         var preview = true
         /// The bakeoff's unless given.
         var vocabulary: URL?
+        /// FluidAudio's folder unless given.
+        var models: URL?
     }
 
     /// The bundled clip says "Profit Pilot" and "Bee hive" the way the engine mishears them, so boosting or an
@@ -131,7 +137,8 @@ enum Headless {
 
     static func selfTest(_ options: SelfTestOptions) async -> Int32 {
         setvbuf(stdout, nil, _IOLBF, 0)
-        guard options.allowDownload || modelsAreCached() else { return 1 }
+        let store = ModelStore(directory: options.models ?? ModelStore.defaultDirectory)
+        guard options.allowDownload || modelsAreCached(in: store) else { return 1 }
         guard let clip = options.clip ?? Bundle.main.url(forResource: "selftest", withExtension: "wav") else {
             log("selftest.wav is not in the app bundle. Pass --clip PATH.")
             return 1
@@ -143,7 +150,7 @@ enum Headless {
         }
 
         let loadStarted = Instant.now
-        let engine = SpeechEngine(vocabulary: .bakeoff)
+        let engine = SpeechEngine(vocabulary: .bakeoff, options: .init(models: store))
         guard let boosting = await waitUntilReady(engine, printProgress: true) else { return 1 }
         print(String(format: "model: ready in %.1f s, boosting %@", Instant.now - loadStarted, describe(boosting)))
 
@@ -175,7 +182,8 @@ enum Headless {
 
     static func bench(_ options: BenchOptions) async -> Int32 {
         setvbuf(stdout, nil, _IOLBF, 0)
-        guard modelsAreCached() else { return 1 }
+        let store = ModelStore(directory: options.models ?? ModelStore.defaultDirectory)
+        guard modelsAreCached(in: store) else { return 1 }
         var vocabulary = Vocabulary.bakeoff
         if let file = options.vocabulary {
             guard let text = try? String(contentsOf: file, encoding: .utf8) else {
@@ -194,7 +202,7 @@ enum Headless {
             return 1
         }
 
-        let engine = SpeechEngine(vocabulary: vocabulary)
+        let engine = SpeechEngine(vocabulary: vocabulary, options: .init(models: store))
         guard let boosting = await waitUntilReady(engine, printProgress: false) else { return 1 }
         log("bench: model ready, boosting \(describe(boosting)), \(clips.count) clips, \(options.rounds) rounds, "
             + "hold cap \(options.holdCap) s, gap \(options.gap) s, warm \(options.warm ? "on" : "off"), "
@@ -247,11 +255,10 @@ enum Headless {
     }
 
     /// Refuses before FluidAudio can reach URLSession, which traps (exit 133) in an SSH session. Offline mode
-    /// also stops FluidAudio from re-downloading a cache it judges corrupt.
-    private static func modelsAreCached() -> Bool {
-        guard AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: .v2), version: .v2),
-              CtcModels.modelsExist(at: CtcModels.defaultCacheDirectory(for: .ctc110m))
-        else {
+    /// also stops the engine from deleting a cache that fails its check or downloading a new one, so the run
+    /// reports the failure and leaves the folder alone. The engine does the check itself.
+    private static func modelsAreCached(in store: ModelStore) -> Bool {
+        guard PinnedModels.all.allSatisfy({ FileManager.default.fileExists(atPath: store.folder(for: $0).path) }) else {
             log("models missing: run scripts/fetch-models.sh")
             return false
         }

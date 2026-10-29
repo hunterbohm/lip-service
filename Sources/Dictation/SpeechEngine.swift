@@ -18,6 +18,7 @@ final class SpeechEngine: Sendable {
     struct Options: Sendable {
         /// Key-down warms the model only after this much idle time.
         var warmAfterIdle = 2.0
+        var models = ModelStore(directory: ModelStore.defaultDirectory)
     }
 
     /// Measured on the M4 mini over the bench clips: with a preview every 0.3 s, release to text stayed at
@@ -120,14 +121,14 @@ private struct Booster: Sendable {
     let thresholds: ContextBiasingConstants.VocabSizeConfig
 
     /// The session is built only to tokenize the terms, which FluidAudio does not expose on its own.
-    init(vocabulary: Vocabulary, ctc: CtcModels) async throws {
+    init(vocabulary: Vocabulary, ctc: CtcModels, directory: URL) async throws {
         let context = CustomVocabularyContext(terms: vocabulary.terms.map { CustomVocabularyTerm(text: $0.text) },
                                               minSimilarity: Float(vocabulary.minSimilarity))
         let tokenized = try await VocabularyBoostingSession(vocabulary: context, ctcModels: ctc).vocabulary
         self.vocabulary = tokenized
         spotter = CtcKeywordSpotter(models: ctc, blankId: ctc.vocabulary.count)
         rescorer = try await VocabularyRescorer.create(spotter: spotter, vocabulary: tokenized, config: .default,
-                                                       ctcModelDirectory: CtcModels.defaultCacheDirectory(for: ctc.variant))
+                                                       ctcModelDirectory: directory)
         thresholds = ContextBiasingConstants.rescorerConfig(forVocabSize: tokenized.terms.count)
     }
 
@@ -174,6 +175,7 @@ private struct Worker {
     static let previewSamples = 15 * 16_000
 
     let asr: AsrManager
+    let store: ModelStore
     var ctc: CtcModels?
     var booster: Booster?
     var finisher: TextFinisher
@@ -189,7 +191,7 @@ private struct Worker {
         var worker: Worker
         while true {
             do {
-                worker = try await load(vocabulary, onStatus)
+                worker = try await load(vocabulary, options.models, onStatus)
                 break
             } catch {
                 onStatus(.failed(error.localizedDescription))
@@ -219,17 +221,18 @@ private struct Worker {
         }
     }
 
-    static func load(_ vocabulary: Vocabulary?, _ onStatus: @escaping @Sendable (EngineStatus) -> Void) async throws -> Worker {
+    static func load(_ vocabulary: Vocabulary?, _ store: ModelStore,
+                     _ onStatus: @escaping @Sendable (EngineStatus) -> Void) async throws -> Worker {
         onStatus(.loading(.compiling))
         // Fractions run 0 to 0.5 while downloading and 0.5 to 1 while compiling. A cached model reports 0.5.
-        let models = try await AsrModels.downloadAndLoad(version: .v2, progressHandler: { progress in
+        let models = try await store.speechModels(progress: { progress in
             let fraction = progress.fractionCompleted
             onStatus(.loading(fraction < 0.5 ? .downloading(fraction: fraction / 0.5) : .compiling))
         })
         let asr = AsrManager(config: ASRConfig(tdtConfig: TdtConfig(blankId: AsrModelVersion.v2.blankId),
                                                encoderHiddenSize: AsrModelVersion.v2.encoderHiddenSize))
         try await asr.loadModels(models)
-        var worker = Worker(asr: asr, finisher: TextFinisher(vocabulary: vocabulary))
+        var worker = Worker(asr: asr, store: store, finisher: TextFinisher(vocabulary: vocabulary))
         await worker.reconfigure(vocabulary, onStatus)
         return worker
     }
@@ -250,10 +253,11 @@ private struct Worker {
                 ctc = loaded
             } else {
                 onStatus(.loading(.preparingVocabulary))
-                ctc = try await CtcModels.downloadAndLoad(variant: .ctc110m)
+                ctc = try await store.boostingModels()
                 self.ctc = ctc
             }
-            booster = try await Booster(vocabulary: vocabulary, ctc: ctc)
+            booster = try await Booster(vocabulary: vocabulary, ctc: ctc,
+                                        directory: store.folder(for: PinnedModels.parakeetCTC))
             onStatus(.ready(boosting: .on(terms: vocabulary.terms.count)))
         } catch {
             onStatus(.ready(boosting: .unavailable(error.localizedDescription)))
