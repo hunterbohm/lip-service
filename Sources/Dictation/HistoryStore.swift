@@ -10,7 +10,7 @@ import os
 
     @ObservationIgnored private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "history")
 
-    init(url: URL = URL.applicationSupportDirectory.appending(path: "Dictation/history.jsonl")) {
+    init(url: URL = SupportFolder.url.appending(path: "history.jsonl")) {
         self.url = url
         entries = Self.load(url, log: log)
     }

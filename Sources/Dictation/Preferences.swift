@@ -18,7 +18,7 @@ import Observation
     @ObservationIgnored private var loadedStamp: FileStamp?
 
     init(defaults: UserDefaults = .standard,
-         vocabularyURL: URL = URL.applicationSupportDirectory.appending(path: "Dictation/vocabulary.txt")) {
+         vocabularyURL: URL = SupportFolder.url.appending(path: "vocabulary.txt")) {
         self.defaults = defaults
         self.vocabularyURL = vocabularyURL
         let stored = defaults.data(forKey: Self.settingsKey)

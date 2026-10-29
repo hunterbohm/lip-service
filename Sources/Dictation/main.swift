@@ -2,6 +2,7 @@ import AppKit
 
 switch Mode(arguments: Array(CommandLine.arguments.dropFirst())) {
 case .app:
+    SupportFolder.makePrivate()
     MainActor.assumeIsolated {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
