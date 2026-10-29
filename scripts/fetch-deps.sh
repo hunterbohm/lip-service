@@ -1,15 +1,18 @@
 #!/bin/bash
-# Vendors FluidAudio at a pinned commit into Vendor/FluidAudio and applies two patches. The first deletes the
+# Vendors FluidAudio at a pinned commit into Vendor/FluidAudio and applies three patches. The first deletes the
 # NemoTextProcessing binary target from the Swift 6.2+ manifest. The app never uses that text normalizer, and
 # SwiftPM downloads binary targets with URLSession, which traps (exit 133) when run from an SSH session. The
 # second builds the rescorer's character set once instead of on every word it compares, which was most of the
-# rescoring time on long dictations. Its output is unchanged. Safe to rerun.
+# rescoring time on long dictations. Its output is unchanged. The third adds VocabularyRescorer.create with a
+# tokenizer that is already loaded, so the app reads tokenizer.json once, from the folder it checked, and a later
+# vocabulary change reads no file. The existing create loads it from a directory and now calls the new one. Safe
+# to rerun.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tag=v0.17.7
 commit=503b4bd1bbf7220882de39fe8ae6716aae4132da
 dest="$root/Vendor/FluidAudio"
-patches=2
+patches=3
 stamp="$dest/.vendored-$commit-patches-$patches"
 [[ -f "$stamp" ]] && exit 0
 
@@ -54,6 +57,28 @@ new = """    private static let similarityCharacters = CharacterSet.alphanumeric
 """
 if text.count(old) != 1:
     sys.exit(f"{path}: expected one normalizeForSimilarity to patch, found {text.count(old)}")
+open(path, "w").write(text.replace(old, new))
+
+path = f"{package}/Sources/FluidAudio/ASR/Parakeet/SlidingWindow/CustomVocabulary/Rescorer/VocabularyRescorer.swift"
+text = open(path).read()
+old = """
+        let useBKTree = ContextBiasingConstants.useBkTree
+"""
+new = """
+        return create(spotter: spotter, vocabulary: vocabulary, config: config, ctcTokenizer: tokenizer)
+    }
+
+    /// Create rescorer with a tokenizer that is already loaded, so nothing is read from disk.
+    public static func create(
+        spotter: CtcKeywordSpotter,
+        vocabulary: CustomVocabularyContext,
+        config: Config = .default,
+        ctcTokenizer tokenizer: CtcTokenizer
+    ) -> VocabularyRescorer {
+        let useBKTree = ContextBiasingConstants.useBkTree
+"""
+if text.count(old) != 1:
+    sys.exit(f"{path}: expected one useBKTree line to patch, found {text.count(old)}")
 open(path, "w").write(text.replace(old, new))
 PATCH
 

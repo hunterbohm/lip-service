@@ -17,9 +17,12 @@ struct ModelStore: Sendable {
         return try await loadingOffline { try await AsrModels.load(from: folder, version: .v2, progressHandler: progress) }
     }
 
-    func boostingModels() async throws -> CtcModels {
+    /// The tokenizer is read here, right after the check, and kept, so rebuilding the vocabulary later reads no file.
+    func boostingModels() async throws -> BoostingModels {
         let folder = try await verifiedFolder(PinnedModels.parakeetCTC, repo: .parakeetCtc110m, progress: nil)
-        return try await loadingOffline { try await CtcModels.load(from: folder, variant: .ctc110m) }
+        let tokenizer = try await CtcTokenizer.load(from: folder)
+        let ctc = try await loadingOffline { try await CtcModels.load(from: folder, variant: .ctc110m) }
+        return BoostingModels(ctc: ctc, tokenizer: tokenizer)
     }
 
     /// Fetches the pinned commit when the cache is missing, partial, or not the pinned files, and throws unless
@@ -62,6 +65,11 @@ struct ModelStore: Sendable {
         defer { ModelHub.offlineMode = before }
         return try await load()
     }
+}
+
+struct BoostingModels: Sendable {
+    let ctc: CtcModels
+    let tokenizer: CtcTokenizer
 }
 
 struct ModelCheckFailure: LocalizedError {

@@ -120,15 +120,12 @@ private struct Booster: Sendable {
     let rescorer: VocabularyRescorer
     let thresholds: ContextBiasingConstants.VocabSizeConfig
 
-    /// The session is built only to tokenize the terms, which FluidAudio does not expose on its own.
-    init(vocabulary: Vocabulary, ctc: CtcModels, directory: URL) async throws {
-        let context = CustomVocabularyContext(terms: vocabulary.terms.map { CustomVocabularyTerm(text: $0.text) },
-                                              minSimilarity: Float(vocabulary.minSimilarity))
-        let tokenized = try await VocabularyBoostingSession(vocabulary: context, ctcModels: ctc).vocabulary
+    init(vocabulary: Vocabulary, models: BoostingModels) {
+        let tokenized = tokenizedVocabulary(vocabulary, using: models.tokenizer)
         self.vocabulary = tokenized
-        spotter = CtcKeywordSpotter(models: ctc, blankId: ctc.vocabulary.count)
-        rescorer = try await VocabularyRescorer.create(spotter: spotter, vocabulary: tokenized, config: .default,
-                                                       ctcModelDirectory: directory)
+        spotter = CtcKeywordSpotter(models: models.ctc, blankId: models.ctc.vocabulary.count)
+        rescorer = VocabularyRescorer.create(spotter: spotter, vocabulary: tokenized, config: .default,
+                                             ctcTokenizer: models.tokenizer)
         thresholds = ContextBiasingConstants.rescorerConfig(forVocabSize: tokenized.terms.count)
     }
 
@@ -176,7 +173,7 @@ private struct Worker {
 
     let asr: AsrManager
     let store: ModelStore
-    var ctc: CtcModels?
+    var boostingModels: BoostingModels?
     var booster: Booster?
     var finisher: TextFinisher
     /// Nil until the first model run after loading, which counts as idle.
@@ -248,16 +245,15 @@ private struct Worker {
             return
         }
         do {
-            let ctc: CtcModels
-            if let loaded = self.ctc {
-                ctc = loaded
+            let models: BoostingModels
+            if let loaded = boostingModels {
+                models = loaded
             } else {
                 onStatus(.loading(.preparingVocabulary))
-                ctc = try await store.boostingModels()
-                self.ctc = ctc
+                models = try await store.boostingModels()
+                boostingModels = models
             }
-            booster = try await Booster(vocabulary: vocabulary, ctc: ctc,
-                                        directory: store.folder(for: PinnedModels.parakeetCTC))
+            booster = Booster(vocabulary: vocabulary, models: models)
             onStatus(.ready(boosting: .on(terms: vocabulary.terms.count)))
         } catch {
             onStatus(.ready(boosting: .unavailable(error.localizedDescription)))
