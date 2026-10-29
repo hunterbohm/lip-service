@@ -42,6 +42,8 @@ public enum ModelProblem: Equatable, Sendable, CustomStringConvertible {
     case wrongHash(String)
     /// In a listed bundle but not in the table.
     case unexpected(String)
+    /// Inspecting the path, or listing the folder, failed, so the check cannot say what is there.
+    case unreadable(String)
 
     public var description: String {
         switch self {
@@ -49,6 +51,7 @@ public enum ModelProblem: Equatable, Sendable, CustomStringConvertible {
         case .wrongSize(let path, let expected, let actual): "\(path) is \(actual) bytes, not \(expected)"
         case .wrongHash(let path): "\(path) has the wrong contents"
         case .unexpected(let path): "\(path) should not be there"
+        case .unreadable(let path): "\(path) could not be read"
         }
     }
 
@@ -58,47 +61,82 @@ public enum ModelProblem: Equatable, Sendable, CustomStringConvertible {
         switch self {
         case .missing: true
         case .unexpected(let path): path.hasSuffix(".partial") || path.hasSuffix(".partial.etag")
-        case .wrongSize, .wrongHash: false
+        case .wrongSize, .wrongHash, .unreadable: false
         }
     }
 }
 
 public enum ModelCheck {
-    /// Every way `directory` differs from `model`, in table order, then the extra files. Empty means Core ML may
-    /// read it. Reads each listed file once, so it costs about the time to read the model.
+    /// Every way `directory` differs from `model`, in table order, then the extra files by path. Empty means Core ML
+    /// may read it. Reads each listed file once, so it costs about the time to read the model.
     public static func problems(in directory: URL, for model: PinnedModel) -> [ModelProblem] {
         var problems: [ModelProblem] = []
         for file in model.files {
             let url = directory.appending(path: file.path, directoryHint: .notDirectory)
-            // attributesOfItem does not follow a symbolic link, so one in a file's place reads as not regular.
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                attributes[.type] as? FileAttributeType == .typeRegular
-            else {
+            switch entry(at: url) {
+            case .absent:
                 problems.append(.missing(file.path))
-                continue
-            }
-            let size = (attributes[.size] as? NSNumber)?.intValue ?? -1
-            if size != file.size {
-                problems.append(.wrongSize(file.path, expected: file.size, actual: size))
-            } else if sha256(of: url) != file.sha256 {
-                problems.append(.wrongHash(file.path))
+            case .unreadable:
+                problems.append(.unreadable(file.path))
+            case .present(let kind, _) where kind != S_IFREG:
+                problems.append(.missing(file.path))
+            case .present(_, let size):
+                if size != file.size {
+                    problems.append(.wrongSize(file.path, expected: file.size, actual: size))
+                } else if sha256(of: url) != file.sha256 {
+                    problems.append(.wrongHash(file.path))
+                }
             }
         }
         let listed = Set(model.files.map(\.path))
-        var extra: [String] = []
+        var extra: [(path: String, problem: ModelProblem)] = []
         for bundle in model.bundles {
             let root = directory.appending(path: bundle, directoryHint: .isDirectory)
-            guard let items = FileManager.default.enumerator(
-                at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            else { continue }
-            for case let item as URL in items {
-                let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                if values?.isDirectory == true, values?.isSymbolicLink != true { continue }
-                let path = bundle + "/" + relativePath(of: item, under: root)
-                if !listed.contains(path) { extra.append(path) }
+            // A bundle that is not there is already reported file by file. A link in its place would lead the
+            // listed files, and the listing below, somewhere else.
+            switch entry(at: root) {
+            case .absent: continue
+            case .unreadable: extra.append((bundle, .unreadable(bundle))); continue
+            case .present(let kind, _) where kind != S_IFDIR: extra.append((bundle, .unreadable(bundle))); continue
+            case .present: break
             }
+            // Without a handler the enumerator skips what it cannot open, which would hide files from this check.
+            var failed: [String] = []
+            guard let items = FileManager.default.enumerator(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                errorHandler: { url, _ in
+                    failed.append(bundle + "/" + relativePath(of: url, under: root))
+                    return true
+                })
+            else {
+                extra.append((bundle, .unreadable(bundle)))
+                continue
+            }
+            for case let item as URL in items {
+                let path = bundle + "/" + relativePath(of: item, under: root)
+                guard let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else {
+                    extra.append((path, .unreadable(path)))
+                    continue
+                }
+                if values.isDirectory == true, values.isSymbolicLink != true { continue }
+                if !listed.contains(path) { extra.append((path, .unexpected(path))) }
+            }
+            extra += failed.map { ($0, .unreadable($0)) }
         }
-        return problems + extra.sorted().map(ModelProblem.unexpected)
+        return problems + extra.sorted { $0.path < $1.path }.map(\.problem)
+    }
+
+    private enum Entry {
+        case absent
+        case unreadable
+        /// `kind` is the file-type bits of the mode. A link is `S_IFLNK`, since the lookup does not follow it.
+        case present(kind: mode_t, size: Int)
+    }
+
+    private static func entry(at url: URL) -> Entry {
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return errno == ENOENT ? .absent : .unreadable }
+        return .present(kind: info.st_mode & S_IFMT, size: Int(info.st_size))
     }
 
     private static func relativePath(of item: URL, under root: URL) -> String {

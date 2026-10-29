@@ -111,6 +111,26 @@ private struct Fixture {
         #expect(fixture.problems() == [.unexpected("Decoder.mlmodelc/link")])
     }
 
+    @Test func aBundleThatIsALinkCannotBeListed() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let bundle = fixture.directory.appending(path: "Decoder.mlmodelc")
+        let elsewhere = fixture.directory.appending(path: "Elsewhere.mlmodelc")
+        try FileManager.default.moveItem(at: bundle, to: elsewhere)
+        try FileManager.default.createSymbolicLink(at: bundle, withDestinationURL: elsewhere)
+        #expect(fixture.problems() == [.unreadable("Decoder.mlmodelc")])
+    }
+
+    @Test(.enabled(if: getuid() != 0)) func aFolderThatCannotBeListedIsAProblem() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try fixture.write("payload", to: "Decoder.mlmodelc/cache/extra.bin")
+        let hidden = fixture.directory.appending(path: "Decoder.mlmodelc/cache")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: hidden.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hidden.path) }
+        #expect(fixture.problems() == [.unreadable("Decoder.mlmodelc/cache")])
+    }
+
     @Test func hashingMatchesTheStandardTestVector() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -126,6 +146,7 @@ private struct Fixture {
         #expect(!ModelProblem.unexpected("B.mlmodelc/w").isInterruptedDownload)
         #expect(!ModelProblem.wrongSize("a", expected: 1, actual: 2).isInterruptedDownload)
         #expect(!ModelProblem.wrongHash("a").isInterruptedDownload)
+        #expect(!ModelProblem.unreadable("a").isInterruptedDownload)
     }
 
     @Test func theCheckedInTableIsWellFormed() {
