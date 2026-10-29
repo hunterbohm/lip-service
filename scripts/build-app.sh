@@ -11,8 +11,16 @@ app="$root/dist/$bundle"
 commit="$(git -C "$root" describe --always --dirty)"
 build_number="$(git -C "$root" rev-list --count HEAD)"
 
-swift build --package-path "$root" -c release
-binary_dir="$(swift build --package-path "$root" -c release --show-bin-path)"
+# SwiftPM compiles the build directory's path into the binary, through FluidAudio's resource accessor. A neutral
+# path keeps the builder's home folder out of a released app.
+scratch=/tmp/lip-service-build
+mkdir -p "$scratch"
+if [[ ! -O "$scratch" ]]; then
+    printf '%s belongs to another user. Remove it or build from another account.\n' "$scratch" >&2
+    exit 1
+fi
+swift build --package-path "$root" --scratch-path "$scratch" -c release
+binary_dir="$(swift build --package-path "$root" --scratch-path "$scratch" -c release --show-bin-path)"
 
 mkdir -p "$root/dist"
 staging="$(mktemp -d "$root/dist/.build-app.XXXXXX")"
