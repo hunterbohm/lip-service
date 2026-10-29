@@ -36,32 +36,41 @@ public struct PinnedModel: Equatable, Sendable {
 }
 
 public enum ModelProblem: Equatable, Sendable, CustomStringConvertible {
-    /// Absent, or not a regular file.
+    /// A listed file that is not there.
     case missing(String)
+    /// A listed file that is there as a link, a folder, or anything else that is not a regular file.
+    case notRegular(String)
     case wrongSize(String, expected: Int, actual: Int)
     case wrongHash(String)
     /// In a listed bundle but not in the table.
     case unexpected(String)
+    /// FluidAudio's `.partial` file, or its `.partial.etag`, for a listed file that is still missing. A retry resumes it.
+    case interrupted(String)
+    /// A `.partial` file whose final file is there or is not listed. FluidAudio skips a file it already has, so the
+    /// partial stays and no retry removes it.
+    case orphanPartial(String)
     /// Inspecting the path, or listing the folder, failed, so the check cannot say what is there.
     case unreadable(String)
 
     public var description: String {
         switch self {
         case .missing(let path): "\(path) is missing"
+        case .notRegular(let path): "\(path) is not a regular file"
         case .wrongSize(let path, let expected, let actual): "\(path) is \(actual) bytes, not \(expected)"
         case .wrongHash(let path): "\(path) has the wrong contents"
         case .unexpected(let path): "\(path) should not be there"
+        case .interrupted(let path): "\(path) is an unfinished download"
+        case .orphanPartial(let path): "\(path) is left over from a download that finished"
         case .unreadable(let path): "\(path) could not be read"
         }
     }
 
-    /// What a download that stopped halfway leaves: files not yet fetched and FluidAudio's `.partial` files. A
-    /// retry resumes from them, so they are worth keeping. Anything else means files that are wrong, not late.
+    /// What a download that stopped halfway leaves: files not yet fetched and the partial files of those. A retry
+    /// resumes from them, so they are worth keeping. Anything else means files that are wrong, not late.
     public var isInterruptedDownload: Bool {
         switch self {
-        case .missing: true
-        case .unexpected(let path): path.hasSuffix(".partial") || path.hasSuffix(".partial.etag")
-        case .wrongSize, .wrongHash, .unreadable: false
+        case .missing, .interrupted: true
+        case .notRegular, .wrongSize, .wrongHash, .unexpected, .orphanPartial, .unreadable: false
         }
     }
 }
@@ -71,15 +80,17 @@ public enum ModelCheck {
     /// may read it. Reads each listed file once, so it costs about the time to read the model.
     public static func problems(in directory: URL, for model: PinnedModel) -> [ModelProblem] {
         var problems: [ModelProblem] = []
+        var missing = Set<String>()
         for file in model.files {
             let url = directory.appending(path: file.path, directoryHint: .notDirectory)
             switch entry(at: url) {
             case .absent:
                 problems.append(.missing(file.path))
+                missing.insert(file.path)
             case .unreadable:
                 problems.append(.unreadable(file.path))
             case .present(let kind, _) where kind != S_IFREG:
-                problems.append(.missing(file.path))
+                problems.append(.notRegular(file.path))
             case .present(_, let size):
                 if size != file.size {
                     problems.append(.wrongSize(file.path, expected: file.size, actual: size))
@@ -119,11 +130,23 @@ public enum ModelCheck {
                     continue
                 }
                 if values.isDirectory == true, values.isSymbolicLink != true { continue }
-                if !listed.contains(path) { extra.append((path, .unexpected(path))) }
+                if !listed.contains(path) { extra.append((path, extraFile(path, missing: missing))) }
             }
             extra += failed.map { ($0, .unreadable($0)) }
         }
         return problems + extra.sorted { $0.path < $1.path }.map(\.problem)
+    }
+
+    /// Whether a retry can finish the download without deleting the folder first.
+    public static func canResume(_ problems: [ModelProblem]) -> Bool {
+        problems.allSatisfy(\.isInterruptedDownload)
+    }
+
+    private static func extraFile(_ path: String, missing: Set<String>) -> ModelProblem {
+        for suffix in [".partial.etag", ".partial"] where path.hasSuffix(suffix) {
+            return missing.contains(String(path.dropLast(suffix.count))) ? .interrupted(path) : .orphanPartial(path)
+        }
+        return .unexpected(path)
     }
 
     private enum Entry {

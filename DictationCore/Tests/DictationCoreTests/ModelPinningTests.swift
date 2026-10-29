@@ -100,15 +100,18 @@ private struct Fixture {
         let elsewhere = fixture.directory.appending(path: "vocab.json")
         try FileManager.default.removeItem(at: path)
         try FileManager.default.createSymbolicLink(at: path, withDestinationURL: elsewhere)
-        #expect(fixture.problems() == [.missing("Decoder.mlmodelc/model.mil")])
+        let problems = fixture.problems()
+        #expect(problems == [.notRegular("Decoder.mlmodelc/model.mil")])
+        #expect(!ModelCheck.canResume(problems))
     }
 
-    @Test func aSymbolicLinkInsideABundleIsUnexpected() throws {
+    @Test func aFolderInPlaceOfAListedFileIsNotRegular() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        try FileManager.default.createSymbolicLink(
-            at: fixture.directory.appending(path: "Decoder.mlmodelc/link"), withDestinationURL: FileManager.default.temporaryDirectory)
-        #expect(fixture.problems() == [.unexpected("Decoder.mlmodelc/link")])
+        let path = fixture.directory.appending(path: "vocab.json")
+        try FileManager.default.removeItem(at: path)
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
+        #expect(fixture.problems() == [.notRegular("vocab.json")])
     }
 
     @Test func aBundleThatIsALinkCannotBeListed() throws {
@@ -131,6 +134,14 @@ private struct Fixture {
         #expect(fixture.problems() == [.unreadable("Decoder.mlmodelc/cache")])
     }
 
+    @Test func aSymbolicLinkInsideABundleIsUnexpected() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try FileManager.default.createSymbolicLink(
+            at: fixture.directory.appending(path: "Decoder.mlmodelc/link"), withDestinationURL: FileManager.default.temporaryDirectory)
+        #expect(fixture.problems() == [.unexpected("Decoder.mlmodelc/link")])
+    }
+
     @Test func hashingMatchesTheStandardTestVector() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -139,14 +150,56 @@ private struct Fixture {
                 == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
 
+    @Test func aPartialFileOfAMissingFileIsAnInterruptedDownload() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try FileManager.default.removeItem(at: fixture.directory.appending(path: "Encoder.mlmodelc/weights/weight.bin"))
+        try fixture.write("half", to: "Encoder.mlmodelc/weights/weight.bin.partial")
+        try fixture.write("\"tag\"", to: "Encoder.mlmodelc/weights/weight.bin.partial.etag")
+        let problems = fixture.problems()
+        #expect(problems == [.missing("Encoder.mlmodelc/weights/weight.bin"),
+                             .interrupted("Encoder.mlmodelc/weights/weight.bin.partial"),
+                             .interrupted("Encoder.mlmodelc/weights/weight.bin.partial.etag")])
+        #expect(ModelCheck.canResume(problems))
+    }
+
+    @Test func aPartialFileBesideItsFinishedFileIsCorruption() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try fixture.write("half", to: "Encoder.mlmodelc/weights/weight.bin.partial")
+        let problems = fixture.problems()
+        #expect(problems == [.orphanPartial("Encoder.mlmodelc/weights/weight.bin.partial")])
+        #expect(!ModelCheck.canResume(problems))
+    }
+
+    @Test func aPartialFileOfAnUnlistedFileIsCorruption() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try fixture.write("half", to: "Decoder.mlmodelc/other.bin.partial.etag")
+        #expect(fixture.problems() == [.orphanPartial("Decoder.mlmodelc/other.bin.partial.etag")])
+    }
+
+    @Test func aPartialFileBesideAFileThatIsNotRegularIsCorruption() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let path = fixture.directory.appending(path: "Decoder.mlmodelc/model.mil")
+        try FileManager.default.removeItem(at: path)
+        try FileManager.default.createSymbolicLink(at: path, withDestinationURL: fixture.directory.appending(path: "vocab.json"))
+        try fixture.write("half", to: "Decoder.mlmodelc/model.mil.partial")
+        let problems = fixture.problems()
+        #expect(problems == [.notRegular("Decoder.mlmodelc/model.mil"), .orphanPartial("Decoder.mlmodelc/model.mil.partial")])
+        #expect(!ModelCheck.canResume(problems))
+    }
+
     @Test func onlyAnInterruptedDownloadIsWorthKeeping() {
         #expect(ModelProblem.missing("a").isInterruptedDownload)
-        #expect(ModelProblem.unexpected("B.mlmodelc/w.partial").isInterruptedDownload)
-        #expect(ModelProblem.unexpected("B.mlmodelc/w.partial.etag").isInterruptedDownload)
+        #expect(ModelProblem.interrupted("a.partial").isInterruptedDownload)
+        #expect(!ModelProblem.orphanPartial("a.partial").isInterruptedDownload)
         #expect(!ModelProblem.unexpected("B.mlmodelc/w").isInterruptedDownload)
+        #expect(!ModelProblem.notRegular("a").isInterruptedDownload)
+        #expect(!ModelProblem.unreadable("a").isInterruptedDownload)
         #expect(!ModelProblem.wrongSize("a", expected: 1, actual: 2).isInterruptedDownload)
         #expect(!ModelProblem.wrongHash("a").isInterruptedDownload)
-        #expect(!ModelProblem.unreadable("a").isInterruptedDownload)
     }
 
     @Test func theCheckedInTableIsWellFormed() {

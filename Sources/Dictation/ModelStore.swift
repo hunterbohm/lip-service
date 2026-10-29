@@ -39,7 +39,7 @@ struct ModelStore: Sendable {
         var problems = ModelCheck.problems(in: folder, for: model)
         if !problems.isEmpty {
             guard !ModelHub.offlineMode else { throw ModelCheckFailure(model: model, problems: problems) }
-            if !problems.allSatisfy(\.isInterruptedDownload) { try FileManager.default.removeItem(at: folder) }
+            if !ModelCheck.canResume(problems) { try FileManager.default.removeItem(at: folder) }
             try await ModelHub.download(repo, to: directory, progressHandler: progress)
             problems = ModelCheck.problems(in: folder, for: model)
             guard problems.isEmpty else { throw ModelCheckFailure(model: model, problems: problems) }
