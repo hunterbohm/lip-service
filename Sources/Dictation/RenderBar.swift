@@ -3,7 +3,7 @@ import DictationCore
 
 /// `--render-bar DIR`: lays out every bar state with the app's own Bar on a stand-in screen kept off the displays,
 /// and writes each as a PNG, the whole stage and a close-up, so the look can be checked without a key press. The
-/// voice is frozen mid-speech and the animations settled, so a still shows the scope at a fixed moment.
+/// voice is frozen mid-speech and the animations settled, so a still shows the lips at a fixed moment. One scene is captured while its words are still printing in.
 @MainActor enum RenderBar {
     private struct Scene {
         var name: String
@@ -11,9 +11,11 @@ import DictationCore
         var edge = BarEdge.bottom
         var dragNearest: BarEdge?
         var quiet = false
+        /// How long to let the animations run before the snapshot. Short, and a word is caught mid-print.
+        var settle = 1.2
     }
 
-    /// Mid-speech: loud now, with swells before it that the scope carries leftward, so its columns stand at different heights.
+    /// Mid-speech: loud now, with swells before it that the lips carry outward, so the corners open a moment after the middle.
     nonisolated private static func speaking(_ age: Double) -> Float {
         Float(min(max(0.45 + 0.4 * cos(age * 10) * exp(-age * 0.7), 0), 1))
     }
@@ -55,6 +57,7 @@ import DictationCore
         Scene(name: "25-toast-top", state: BarState(body: .idle, toast: .copied(.focusMoved)), edge: .top),
         Scene(name: "26-dragging", state: BarState(body: .idle), edge: .bottom, dragNearest: .right),
         Scene(name: "27-listening-quiet", state: BarState(body: .listening(words: "", handsFree: false)), quiet: true),
+        Scene(name: "28-listening-word-printing", state: BarState(body: .listening(words: short, handsFree: false)), settle: 0.12),
     ]
 
     static func run(into directory: URL) -> Int32 {
@@ -71,7 +74,7 @@ import DictationCore
             bar.meter.freeze(at: frozenAt, profile: scene.quiet ? { _ in 0 } : speaking)
             bar.render(scene.state, edge: scene.edge)
             bar.showOutlines(nearest: scene.dragNearest)
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.2))
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
             let panels = bar.visiblePanels.map { (frame: $0.frame.offsetBy(dx: -stage.minX, dy: -stage.minY), image: snapshot($0)) }
             let stagePath = directory.appending(path: "\(scene.name).png")
             let closeUpPath = directory.appending(path: "\(scene.name)-closeup.png")

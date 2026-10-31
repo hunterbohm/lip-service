@@ -13,7 +13,7 @@ enum BarEvent: Equatable {
 /// BarState. It owns only what it shows: the screen it sits on, the voice meter, and a drag in progress.
 @MainActor final class Bar {
     var onEvent: ((BarEvent) -> Void)?
-    /// The smoothed microphone level the scope draws from, sampled while listening.
+    /// The smoothed microphone level the lips draw from, sampled while listening.
     let meter = VoiceMeter()
 
     private let bodyPanel = BarPanel()
@@ -37,7 +37,7 @@ enum BarEvent: Equatable {
         var area: NSRect
     }
 
-    /// `level` is polled while listening, for the scope. `area` replaces the screen, for --render-bar.
+    /// `level` is polled while listening, for the lips. `area` replaces the screen, for --render-bar.
     init(level: @escaping @MainActor () -> Float, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
         self.level = level
         self.area = area
@@ -247,9 +247,7 @@ struct VoiceReading {
     static let maxWidth: CGFloat = 560
     static let padding: CGFloat = 18
     static let glyphGap: CGFloat = 13
-    /// The scope: 15 columns by 7 rows of dots, 3 pt apart.
-    static let scopePitch: CGFloat = 3
-    static let glyphWidth = CGFloat(HalftoneScope.columns - 1) * scopePitch + 3
+    static let glyphWidth = CGFloat(HalftoneLips.width)
     static let buttonSize: CGFloat = 24
     static let buttonsWidth = 2 * buttonSize + 6
     static let idle = CGSize(width: 28, height: 14)
@@ -371,7 +369,7 @@ private struct BodyView: View {
 
     @ViewBuilder private var content: some View {
         if let bar = shown.wordsBar {
-            capsule(behind: Scope(meter: meter, finishing: bar.finishing)) {
+            capsule(behind: Lips(meter: meter, finishing: bar.finishing)) {
                 Color.clear.frame(width: BarStyle.glyphWidth)
                 if !bar.words.isEmpty {
                     Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree), dimmed: bar.finishing)
@@ -430,71 +428,56 @@ private struct BodyView: View {
     }
 }
 
-/// Redraws every frame, or once at the time --render-bar froze. Nothing here runs once the view is out of the window.
+/// Redraws every frame, or once at the time --render-bar froze, or once when `still` is set. Nothing here runs once the
+/// view is out of the window.
 private struct Ticker<Content: View>: View {
     let frozenAt: Double?
+    var still = false
     @ViewBuilder let content: (Double) -> Content
 
     var body: some View {
         if let frozenAt {
             content(frozenAt)
+        } else if still {
+            content(0)
         } else {
             TimelineView(.animation) { context in content(context.date.timeIntervalSinceReferenceDate) }
         }
     }
 }
 
-/// The scope, a fine halftone grid under the capsule's content. The newest voice is the column next to the words, and
-/// older voice moves left and fades, so it reads as flowing into the text. Speaking grows dots out from the middle row.
-/// While the words are being finished the grid settles to the middle row and a ripple runs toward the words. A soft
-/// blue light rises behind it with the voice.
-private struct Scope: View {
+/// The glyph under the capsule's content: two lips of white dots on a fine 45-degree halftone screen. They part as the
+/// voice rises, the middle first and the corners a moment later. While the words are being finished the lips close and
+/// a light runs along the seam. With Reduce Motion the lips stay closed and the seam is a still, dim line.
+private struct Lips: View {
     let meter: VoiceMeter
     let finishing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var listening = Eased()
     @State private var turning = Eased()
 
-    private static let base = (r: 90.0, g: 132.0, b: 240.0), core = (r: 238.0, g: 242.0, b: 255.0)
-    private static let light = Color(red: 0x3E / 255, green: 0x6A / 255, blue: 0xE1 / 255)
+    private static let ink = Color(red: 0xF4 / 255, green: 0xF4 / 255, blue: 0xF5 / 255).opacity(0.96)
 
     var body: some View {
-        Ticker(frozenAt: meter.frozenAt) { time in
+        Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
             Canvas { context, size in draw(into: &context, size: size, time: time) }
         }
     }
 
     private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
-        let frozen = meter.frozenAt != nil
-        let listen = frozen ? listening.settle(at: finishing ? 0 : 1) : listening.step(toward: finishing ? 0 : 1, tau: 0.12, at: time)
-        let spin = frozen ? turning.settle(at: finishing ? 1 : 0) : turning.step(toward: finishing ? 1 : 0, tau: 0.12, at: time)
-        let voice = meter.reading(at: time)
-        let pitch = BarStyle.scopePitch
-        let left = BarStyle.padding + 1.5, centerY = size.height / 2
+        let settled = meter.frozenAt != nil || reduceMotion
+        let listen = settled ? listening.settle(at: finishing ? 0 : 1) : listening.step(toward: finishing ? 0 : 1, tau: 0.12, at: time)
+        let spin = settled ? turning.settle(at: finishing ? 1 : 0) : turning.step(toward: finishing ? 1 : 0, tau: 0.12, at: time)
+        let voice = reduceMotion ? nil : meter.reading(at: time)
+        let seam = reduceMotion ? HalftoneLips.Seam.still : .running(time: time)
+        let left = BarStyle.padding, centerY = size.height / 2
 
-        let glow = voice.level(delay: 0.04) * listen
-        if glow > 0.01 {
-            let center = CGPoint(x: left + Double(HalftoneScope.lastColumn) * pitch * 0.7, y: centerY)
-            var lit = context
-            lit.opacity = glow
-            lit.fill(Path(CGRect(x: center.x - 30, y: center.y - 30, width: 60, height: 60)),
-                     with: .radialGradient(Gradient(colors: [Self.light.opacity(0.2), Self.light.opacity(0)]),
-                                           center: center, startRadius: 0, endRadius: 30))
-        }
-
-        for column in 0..<HalftoneScope.columns {
-            let heard = voice.level(delay: HalftoneScope.delay(column: column)) * listen
-            for row in 0..<HalftoneScope.rows {
-                let s = HalftoneScope.brightness(column: column, row: row, voice: heard, spin: spin, time: time, still: reduceMotion)
-                let radius = 0.38 + 1.02 * s
-                let mix = s * s
-                let color = Color(red: (Self.base.r + (Self.core.r - Self.base.r) * mix) / 255,
-                                  green: (Self.base.g + (Self.core.g - Self.base.g) * mix) / 255,
-                                  blue: (Self.base.b + (Self.core.b - Self.base.b) * mix) / 255)
-                let x = left + Double(column) * pitch, y = centerY + Double(row - HalftoneScope.middleRow) * pitch
-                context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius)),
-                             with: .color(color.opacity(0.11 + 0.89 * s)))
-            }
+        for dot in HalftoneLips.dots {
+            let heard = (voice?.level(delay: dot.delay) ?? 0) * listen
+            let covered = HalftoneLips.coverage(of: dot, voice: heard, spin: spin, seam: seam)
+            guard let radius = HalftoneLips.radius(coverage: covered) else { continue }
+            let x = left + dot.x, y = centerY - dot.y
+            context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius)), with: .color(Self.ink))
         }
     }
 }
@@ -513,7 +496,7 @@ private struct Spinner: View {
     }
 }
 
-/// One line. Each new word fades in out of a blur, rising a little. When the line overflows, the newest words stay and
+/// One line. Each new word prints in through a dot screen. When the line overflows, the newest words stay and
 /// the start fades out; the line slides over to make room.
 private struct Words: View {
     let words: String
@@ -550,18 +533,47 @@ private struct Word: View {
     @State private var arrived = false
 
     var body: some View {
-        Text(text)
+        let label = Text(text)
             .font(.system(size: 15))
             .foregroundStyle(.white)
             .lineLimit(1)
             .fixedSize()
             .frame(width: width, alignment: .leading)
-            .opacity(arrived ? 1 : 0)
-            .blur(radius: arrived || reduceMotion ? 0 : 6)
-            .offset(y: arrived || reduceMotion ? 0 : 3)
-            .onAppear {
-                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .timingCurve(0.22, 1, 0.36, 1, duration: 0.6)) { arrived = true }
+        if reduceMotion {
+            label
+                .opacity(arrived ? 1 : 0)
+                .onAppear { withAnimation(.easeOut(duration: 0.2)) { arrived = true } }
+        } else {
+            label
+                .opacity(arrived ? 1 : 0.5)
+                .mask { DotScreen(radius: arrived ? DotScreen.full : 0) }
+                .onAppear { withAnimation(.timingCurve(0.33, 0, 0.2, 1, duration: 0.55)) { arrived = true } }
+        }
+    }
+}
+
+/// A grid of circles in 3 pt cells. At `full` radius they overlap and cover every cell whole, so a word masked with it
+/// is solid; at 0 nothing shows.
+private struct DotScreen: Shape {
+    static let cell = 3.0
+    static let full = 2.4
+    var radius: Double
+
+    var animatableData: Double {
+        get { radius }
+        set { radius = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard radius > 0.01 else { return path }
+        for column in 0..<Int((rect.width / Self.cell).rounded(.up)) {
+            for row in 0..<Int((rect.height / Self.cell).rounded(.up)) {
+                let x = rect.minX + (Double(column) + 0.5) * Self.cell, y = rect.minY + (Double(row) + 0.5) * Self.cell
+                path.addEllipse(in: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius))
             }
+        }
+        return path
     }
 }
 
