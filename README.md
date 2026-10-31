@@ -1,5 +1,7 @@
 # Lip Service
 
+![Hold fn and talk. The words show in a bar as you speak, and the text is typed 0.21 s after you let go.](docs/images/hero.gif)
+
 Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about 0.21 s later. Speech becomes text on your Mac, so your voice never leaves it.
 
 ## Requirements
@@ -72,12 +74,14 @@ To update, quit Lip Service and replace the app in **Applications** with the new
 - Hold fn or Right Control, speak, and let go. The text is pasted at the cursor.
 - To dictate without holding the key, tap it twice. Press it once more to insert the text, or press Escape to throw it away.
 - To paste your last dictation again, press Control+Command+V.
-- While you speak, a bar at the bottom of the screen shows the words heard so far. Drag it to the top or to either side of the screen.
+- While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far. Drag it to the top or to either side of the screen.
 - Lip Service removes filler words such as "um" and fixes capitals and punctuation.
 - To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.
 - To open the Lip Service window, open the app again from Spotlight or the Finder, or choose **Open Lip Service…** from its menu bar icon. The window has your dictation history and the settings for the keys, the microphone, and the bar.
 - The **Stats** page shows how many words you dictated, how fast you talk, and the time you saved compared with typing. **Share** makes an image of your totals.
 - If you used Willow Voice, click **Import from Willow** on the Home page to bring over its history and settings.
+
+![The Stats page, with sample data](docs/images/stats.png)
 
 The [reference](docs/reference.md) describes every feature and setting.
 
