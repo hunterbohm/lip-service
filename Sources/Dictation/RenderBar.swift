@@ -2,17 +2,22 @@ import AppKit
 import DictationCore
 
 /// `--render-bar DIR`: lays out every bar state with the app's own Bar on a stand-in screen kept off the displays,
-/// and writes each as a PNG, the whole stage and a close-up, so the look can be checked without a key press.
+/// and writes each as a PNG, the whole stage and a close-up, so the look can be checked without a key press. The
+/// voice is frozen mid-speech and the animations settled, so a still shows the scope at a fixed moment.
 @MainActor enum RenderBar {
     private struct Scene {
         var name: String
         var state: BarState
         var edge = BarEdge.bottom
-        var levels: [Float] = speaking
         var dragNearest: BarEdge?
+        var quiet = false
     }
 
-    nonisolated private static let speaking: [Float] = [0.002, 0.003, 0.002, 0.004, 0.09, 0.003, 0.045, 0.06, 0.05]
+    /// Mid-speech: loud now, with swells before it that the scope carries leftward, so its columns stand at different heights.
+    nonisolated private static func speaking(_ age: Double) -> Float {
+        Float(min(max(0.45 + 0.4 * cos(age * 10) * exp(-age * 0.7), 0), 1))
+    }
+    private static let frozenAt = 0.9
     private static let short = "Teo Yep, I'll share the latest version in a few minutes"
     private static let long = "Okay so the plan for Friday is to ship the new onboarding flow to everyone, then check the "
         + "Beehiiv numbers on Monday and ask ProfitPilot to draft the follow-up email for the people who signed up late"
@@ -49,6 +54,7 @@ import DictationCore
               edge: .right),
         Scene(name: "25-toast-top", state: BarState(body: .idle, toast: .copied(.focusMoved)), edge: .top),
         Scene(name: "26-dragging", state: BarState(body: .idle), edge: .bottom, dragNearest: .right),
+        Scene(name: "27-listening-quiet", state: BarState(body: .listening(words: "", handsFree: false)), quiet: true),
     ]
 
     static func run(into directory: URL) -> Int32 {
@@ -58,18 +64,14 @@ import DictationCore
             FileHandle.standardError.write(Data("cannot create \(directory.path): \(error.localizedDescription)\n".utf8))
             return 1
         }
-        var script: [Float] = []
-        var tick = 0
-        let bar = Bar(level: {
-            defer { tick += 1 }
-            return script.isEmpty ? 0 : script[tick % script.count]
-        }, area: { _ in stage })
+        let bar = Bar(level: { 0 }, area: { _ in stage })
         for scene in scenes {
             bar.render(BarState(body: .hidden), edge: scene.edge)
-            (script, tick) = (scene.levels, 0)
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+            bar.meter.freeze(at: frozenAt, profile: scene.quiet ? { _ in 0 } : speaking)
             bar.render(scene.state, edge: scene.edge)
             bar.showOutlines(nearest: scene.dragNearest)
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: Double(LevelHistory.count + 2) / LevelHistory.rate))
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.2))
             let panels = bar.visiblePanels.map { (frame: $0.frame.offsetBy(dx: -stage.minX, dy: -stage.minY), image: snapshot($0)) }
             let stagePath = directory.appending(path: "\(scene.name).png")
             let closeUpPath = directory.appending(path: "\(scene.name)-closeup.png")

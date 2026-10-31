@@ -10,11 +10,11 @@ enum BarEvent: Equatable {
 }
 
 /// The floating bar: a body at the chosen screen edge and a toast attached to it, each in its own panel. Renders a
-/// BarState. It owns only what it shows: the screen it sits on, the meter history, and a drag in progress.
+/// BarState. It owns only what it shows: the screen it sits on, the voice meter, and a drag in progress.
 @MainActor final class Bar {
     var onEvent: ((BarEvent) -> Void)?
-    /// Recent microphone levels for the waveform, sampled while listening.
-    let levels = LevelHistory()
+    /// The smoothed microphone level the scope draws from, sampled while listening.
+    let meter = VoiceMeter()
 
     private let bodyPanel = BarPanel()
     private let toastPanel = BarPanel()
@@ -37,7 +37,7 @@ enum BarEvent: Equatable {
         var area: NSRect
     }
 
-    /// `level` is polled while listening, for the waveform. `area` replaces the screen, for --render-bar.
+    /// `level` is polled while listening, for the scope. `area` replaces the screen, for --render-bar.
     init(level: @escaping @MainActor () -> Float, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
         self.level = level
         self.area = area
@@ -81,7 +81,7 @@ enum BarEvent: Equatable {
             bodyHost.rootView = AnyView(EmptyView())
             return nil
         }
-        bodyHost.rootView = AnyView(BodyView(shown: state.body, edge: edge, levels: levels,
+        bodyHost.rootView = AnyView(BodyView(shown: state.body, edge: edge, meter: meter,
                                              onEvent: { [weak self] in self?.onEvent?($0) },
                                              onDrag: { [weak self] ended in self?.dragged(ended: ended) }))
         let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area),
@@ -144,12 +144,12 @@ enum BarEvent: Equatable {
         guard listening != (sampler != nil) else { return }
         sampler?.invalidate()
         sampler = nil
-        guard listening else { return }
-        levels.reset()
-        let timer = Timer(timeInterval: 1.0 / LevelHistory.rate, repeats: true) { [weak self] _ in
+        guard listening else { return meter.follow(0) }
+        meter.reset()
+        let timer = Timer(timeInterval: 1.0 / VoiceMeter.sampleRate, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.levels.push(self.level())
+                self.meter.follow(Loudness.fraction(rms: self.level()))
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -204,15 +204,41 @@ private final class BarHostingView: NSHostingView<AnyView> {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 }
 
-/// Microphone levels, newest last, one per bar of the waveform.
-@MainActor @Observable final class LevelHistory {
-    nonisolated static let count = 9
-    nonisolated static let rate = 12.0
-    private(set) var values = [Float](repeating: 0, count: count)
+/// The voice as the bar draws it: the microphone level, smoothed, with the last two seconds kept. Views read it with
+/// the time they are drawing for, and it moves its own clock up to that time, so every dot is continuous.
+/// Not observable: the views run on a timeline and look at it each frame.
+@MainActor final class VoiceMeter {
+    nonisolated static let sampleRate = 60.0
+    private var envelope = LevelEnvelope()
+    /// Set by --render-bar: the time every view draws for, and the envelope stays as `freeze` left it.
+    private(set) var frozenAt: Double?
 
-    func push(_ level: Float) { values = Array(values.dropFirst()) + [level] }
-    func reset() { values = [Float](repeating: 0, count: Self.count) }
-    func set(_ values: [Float]) { self.values = Array(values.suffix(Self.count)) }
+    func reset() {
+        guard frozenAt == nil else { return }
+        envelope.reset()
+    }
+
+    func follow(_ fraction: Float) {
+        guard frozenAt == nil else { return }
+        envelope.follow(fraction)
+    }
+
+    func freeze(at time: Double, profile: (Double) -> Float) {
+        frozenAt = time
+        envelope = LevelEnvelope(filling: profile)
+    }
+
+    func reading(at time: Double) -> VoiceReading {
+        if frozenAt == nil { envelope.advance(to: time) }
+        return VoiceReading(envelope: envelope, time: frozenAt == nil ? time : envelope.clock ?? 0)
+    }
+}
+
+struct VoiceReading {
+    fileprivate let envelope: LevelEnvelope
+    fileprivate let time: Double
+
+    func level(delay: Double) -> Double { Double(envelope.level(delay: delay, at: time)) }
 }
 
 /// Sizes shared by the views and the layout.
@@ -221,10 +247,9 @@ private final class BarHostingView: NSHostingView<AnyView> {
     static let maxWidth: CGFloat = 560
     static let padding: CGFloat = 18
     static let glyphGap: CGFloat = 13
-    static let barWidth: CGFloat = 2.5
-    static let barSpacing: CGFloat = 2.5
-    static let glyphHeight: CGFloat = 16
-    static let glyphWidth = CGFloat(LevelHistory.count) * barWidth + CGFloat(LevelHistory.count - 1) * barSpacing
+    /// The scope: 15 columns by 7 rows of dots, 3 pt apart.
+    static let scopePitch: CGFloat = 3
+    static let glyphWidth = CGFloat(HalftoneScope.columns - 1) * scopePitch + 3
     static let buttonSize: CGFloat = 24
     static let buttonsWidth = 2 * buttonSize + 6
     static let idle = CGSize(width: 28, height: 14)
@@ -256,18 +281,31 @@ private final class BarHostingView: NSHostingView<AnyView> {
     struct WordsLayout: Equatable {
         /// The words' frame. Narrower than the words when they overflow, and then the newest words show.
         var textWidth: CGFloat
+        /// The whole line's width.
+        var naturalWidth: CGFloat
         var overflows: Bool
         var capsuleWidth: CGFloat
     }
 
     static func wordsLayout(_ words: String, handsFree: Bool) -> WordsLayout {
         let fixed = padding + glyphWidth + (handsFree ? glyphGap + buttonsWidth : 0) + padding
-        guard !words.isEmpty else { return WordsLayout(textWidth: 0, overflows: false, capsuleWidth: fixed) }
-        let natural = measure(words, wordsFont)
+        let line = tokens(words).joined(separator: " ")
+        guard !line.isEmpty else { return WordsLayout(textWidth: 0, naturalWidth: 0, overflows: false, capsuleWidth: fixed) }
+        let natural = measure(line, wordsFont)
         let room = maxWidth - fixed - glyphGap
         let textWidth = min(natural, room)
-        return WordsLayout(textWidth: textWidth, overflows: natural > room, capsuleWidth: fixed + glyphGap + textWidth)
+        return WordsLayout(textWidth: textWidth, naturalWidth: natural, overflows: natural > room,
+                           capsuleWidth: fixed + glyphGap + textWidth)
     }
+
+    /// The words one by one, which is how they fade in.
+    static func tokens(_ words: String) -> [Substring] { words.split(whereSeparator: \.isWhitespace) }
+
+    static let spaceWidth = rawWidth(" ")
+
+    /// A word's width as the line was measured. SwiftUI rounds each word's own width up, which over a line adds up to
+    /// several points, so the words are framed to this instead.
+    static func rawWidth(_ text: String) -> CGFloat { NSAttributedString(string: text, attributes: [.font: wordsFont]).size().width }
 
     /// The text column's width in a toast: each line on one line when it fits, else the widest the toast allows,
     /// wrapping.
@@ -293,6 +331,15 @@ private final class BarHostingView: NSHostingView<AnyView> {
 
 private extension BarState.Body {
     var isListening: Bool { if case .listening = self { true } else { false } }
+    /// The capsule with the glyph and the words, while listening and while the last words are finished. It is one
+    /// view in both, so the glyph can crossfade from one to the other.
+    var wordsBar: (words: String, handsFree: Bool, finishing: Bool)? {
+        switch self {
+        case .listening(let words, let handsFree): (words, handsFree, false)
+        case .transcribing(let words, nil): (words, false, true)
+        default: nil
+        }
+    }
     /// Anything but hidden and idle, which keep the screen the bar was last on.
     var isActive: Bool { self != .hidden && self != .idle }
     /// The idle pill and the listening capsule can be dragged, and hands-free has buttons.
@@ -310,7 +357,7 @@ private extension NSRect {
 private struct BodyView: View {
     let shown: BarState.Body
     let edge: BarEdge
-    let levels: LevelHistory
+    let meter: VoiceMeter
     let onEvent: (BarEvent) -> Void
     let onDrag: (_ ended: Bool) -> Void
 
@@ -323,70 +370,132 @@ private struct BodyView: View {
     }
 
     @ViewBuilder private var content: some View {
-        switch shown {
-        case .hidden:
-            EmptyView()
-        case .idle:
-            IdlePill(upright: edge.isSide)
-        case .listening(let words, let handsFree):
-            capsule {
-                Waveform(values: levels.values)
-                if !words.isEmpty { Words(words: words, layout: BarStyle.wordsLayout(words, handsFree: handsFree)) }
-                Spacer(minLength: 0)
-                if handsFree { HandsFreeButtons(onEvent: onEvent) }
-            }
-        case .transcribing(let words, nil):
-            capsule {
-                Group {
-                    Waveform(values: [])
-                    if !words.isEmpty { Words(words: words, layout: BarStyle.wordsLayout(words, handsFree: false)) }
+        if let bar = shown.wordsBar {
+            capsule(behind: Scope(meter: meter, finishing: bar.finishing)) {
+                Color.clear.frame(width: BarStyle.glyphWidth)
+                if !bar.words.isEmpty {
+                    Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree), dimmed: bar.finishing)
                 }
-                .opacity(0.5)
                 Spacer(minLength: 0)
+                if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
             }
-        case .transcribing(_, .some(let phase)), .preparing(let phase):
-            capsule {
-                Spinner()
-                Text(BarStyle.describe(phase))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.leading, 10)
-                Spacer(minLength: 0)
+        } else {
+            switch shown {
+            case .hidden, .listening, .transcribing(_, nil):
+                EmptyView()
+            case .idle:
+                IdlePill(upright: edge.isSide)
+            case .transcribing(_, .some(let phase)), .preparing(let phase):
+                capsule(behind: EmptyView()) {
+                    Spinner()
+                    Text(BarStyle.describe(phase))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.leading, 10)
+                    Spacer(minLength: 0)
+                }
             }
         }
     }
 
-    private func capsule(@ViewBuilder _ content: () -> some View) -> some View {
+    /// `behind` fills the capsule under its content and is clipped to it.
+    private func capsule(behind: some View, @ViewBuilder _ content: () -> some View) -> some View {
         HStack(spacing: 0) { content() }
             .padding(.horizontal, BarStyle.padding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(alignment: .leading) { behind }
             .background(Capsule().fill(BarStyle.fill))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.07)))
             .clipShape(Capsule())
     }
 }
 
-/// Nine thin bars, newest level on the right. A quiet moment is a dot.
-private struct Waveform: View {
-    let values: [Float]
+/// Runs a time to a value the way a spring-less ease does: each frame closes a share of the gap.
+@MainActor private final class Eased {
+    private var value = 0.0
+    private var last: Double?
 
-    var body: some View {
-        HStack(alignment: .center, spacing: BarStyle.barSpacing) {
-            ForEach(0..<LevelHistory.count, id: \.self) { index in
-                Capsule()
-                    .fill(Color.white)
-                    .frame(width: BarStyle.barWidth, height: height(index))
-            }
-        }
-        .frame(width: BarStyle.glyphWidth, height: BarStyle.glyphHeight)
-        .animation(.easeOut(duration: 0.1), value: values)
+    func step(toward target: Double, tau: Double, at time: Double) -> Double {
+        defer { last = time }
+        guard let last else { return value }
+        value += (target - value) * (1 - exp(-min(0.05, max(0, time - last)) / tau))
+        return value
     }
 
-    private func height(_ index: Int) -> CGFloat {
-        guard index < values.count else { return BarStyle.barWidth }
-        return BarStyle.barWidth + (BarStyle.glyphHeight - BarStyle.barWidth) * CGFloat(Loudness.fraction(rms: values[index]))
+    func settle(at target: Double) -> Double {
+        value = target
+        return target
+    }
+}
+
+/// Redraws every frame, or once at the time --render-bar froze. Nothing here runs once the view is out of the window.
+private struct Ticker<Content: View>: View {
+    let frozenAt: Double?
+    @ViewBuilder let content: (Double) -> Content
+
+    var body: some View {
+        if let frozenAt {
+            content(frozenAt)
+        } else {
+            TimelineView(.animation) { context in content(context.date.timeIntervalSinceReferenceDate) }
+        }
+    }
+}
+
+/// The scope, a fine halftone grid under the capsule's content. The newest voice is the column next to the words, and
+/// older voice moves left and fades, so it reads as flowing into the text. Speaking grows dots out from the middle row.
+/// While the words are being finished the grid settles to the middle row and a ripple runs toward the words. A soft
+/// blue light rises behind it with the voice.
+private struct Scope: View {
+    let meter: VoiceMeter
+    let finishing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var listening = Eased()
+    @State private var turning = Eased()
+
+    private static let base = (r: 90.0, g: 132.0, b: 240.0), core = (r: 238.0, g: 242.0, b: 255.0)
+    private static let light = Color(red: 0x3E / 255, green: 0x6A / 255, blue: 0xE1 / 255)
+
+    var body: some View {
+        Ticker(frozenAt: meter.frozenAt) { time in
+            Canvas { context, size in draw(into: &context, size: size, time: time) }
+        }
+    }
+
+    private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
+        let frozen = meter.frozenAt != nil
+        let listen = frozen ? listening.settle(at: finishing ? 0 : 1) : listening.step(toward: finishing ? 0 : 1, tau: 0.12, at: time)
+        let spin = frozen ? turning.settle(at: finishing ? 1 : 0) : turning.step(toward: finishing ? 1 : 0, tau: 0.12, at: time)
+        let voice = meter.reading(at: time)
+        let pitch = BarStyle.scopePitch
+        let left = BarStyle.padding + 1.5, centerY = size.height / 2
+
+        let glow = voice.level(delay: 0.04) * listen
+        if glow > 0.01 {
+            let center = CGPoint(x: left + Double(HalftoneScope.lastColumn) * pitch * 0.7, y: centerY)
+            var lit = context
+            lit.opacity = glow
+            lit.fill(Path(CGRect(x: center.x - 30, y: center.y - 30, width: 60, height: 60)),
+                     with: .radialGradient(Gradient(colors: [Self.light.opacity(0.2), Self.light.opacity(0)]),
+                                           center: center, startRadius: 0, endRadius: 30))
+        }
+
+        for column in 0..<HalftoneScope.columns {
+            let heard = voice.level(delay: HalftoneScope.delay(column: column)) * listen
+            for row in 0..<HalftoneScope.rows {
+                let s = HalftoneScope.brightness(column: column, row: row, voice: heard, spin: spin, time: time, still: reduceMotion)
+                let radius = 0.38 + 1.02 * s
+                let mix = s * s
+                let color = Color(red: (Self.base.r + (Self.core.r - Self.base.r) * mix) / 255,
+                                  green: (Self.base.g + (Self.core.g - Self.base.g) * mix) / 255,
+                                  blue: (Self.base.b + (Self.core.b - Self.base.b) * mix) / 255)
+                let x = left + Double(column) * pitch, y = centerY + Double(row - HalftoneScope.middleRow) * pitch
+                context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius)),
+                             with: .color(color.opacity(0.11 + 0.89 * s)))
+            }
+        }
     }
 }
 
@@ -404,28 +513,55 @@ private struct Spinner: View {
     }
 }
 
-/// One line. When it overflows, the newest words stay and the start fades out.
+/// One line. Each new word fades in out of a blur, rising a little. When the line overflows, the newest words stay and
+/// the start fades out; the line slides over to make room.
 private struct Words: View {
     let words: String
     let layout: BarStyle.WordsLayout
+    let dimmed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Text(words.replacingOccurrences(of: "\n", with: " "))
+        let shift = layout.overflows ? layout.naturalWidth - layout.textWidth : 0
+        HStack(spacing: BarStyle.spaceWidth) {
+            ForEach(Array(BarStyle.tokens(words).enumerated()), id: \.offset) { _, token in
+                Word(text: String(token), width: BarStyle.rawWidth(String(token)))
+            }
+        }
+        .fixedSize()
+        .offset(x: -shift)
+        .animation(reduceMotion ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.55), value: shift)
+        .frame(width: layout.textWidth, height: BarStyle.height, alignment: .leading)
+        .clipped()
+        .mask {
+            LinearGradient(stops: [.init(color: .black.opacity(layout.overflows ? 0 : 1), location: 0), .init(color: .black, location: 0.12)],
+                           startPoint: .leading, endPoint: .trailing)
+        }
+        .opacity(dimmed ? 0.5 : 1)
+        .animation(.easeOut(duration: 0.3), value: dimmed)
+        .padding(.leading, BarStyle.glyphGap)
+    }
+}
+
+private struct Word: View {
+    let text: String
+    let width: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var arrived = false
+
+    var body: some View {
+        Text(text)
             .font(.system(size: 15))
             .foregroundStyle(.white)
             .lineLimit(1)
             .fixedSize()
-            .frame(width: layout.textWidth, alignment: layout.overflows ? .trailing : .leading)
-            .clipped()
-            .mask {
-                if layout.overflows {
-                    LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.12)],
-                                   startPoint: .leading, endPoint: .trailing)
-                } else {
-                    Color.black
-                }
+            .frame(width: width, alignment: .leading)
+            .opacity(arrived ? 1 : 0)
+            .blur(radius: arrived || reduceMotion ? 0 : 6)
+            .offset(y: arrived || reduceMotion ? 0 : 3)
+            .onAppear {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .timingCurve(0.22, 1, 0.36, 1, duration: 0.6)) { arrived = true }
             }
-            .padding(.leading, BarStyle.glyphGap)
     }
 }
 
@@ -460,10 +596,8 @@ private struct IdlePill: View {
             .fill(BarStyle.fill)
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.white.opacity(0.12)))
             .overlay {
-                HStack(spacing: 2) {
-                    ForEach([3.0, 6, 3], id: \.self) { height in
-                        Capsule().fill(Color.white.opacity(0.75)).frame(width: 1.5, height: height)
-                    }
+                HStack(spacing: 2.6) {
+                    ForEach(0..<3, id: \.self) { _ in Circle().fill(Color.white.opacity(0.72)).frame(width: 2.4, height: 2.4) }
                 }
                 .rotationEffect(.degrees(upright ? 90 : 0))
             }
