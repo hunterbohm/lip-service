@@ -13,7 +13,7 @@ enum BarEvent: Equatable {
 /// BarState. It owns only what it shows: the screen it sits on, the voice meter, and a drag in progress.
 @MainActor final class Bar {
     var onEvent: ((BarEvent) -> Void)?
-    /// The smoothed microphone level the lips draw from, sampled while listening.
+    /// The smoothed microphone level the print draws from, sampled while listening.
     let meter = VoiceMeter()
 
     private let bodyPanel = BarPanel()
@@ -37,7 +37,7 @@ enum BarEvent: Equatable {
         var area: NSRect
     }
 
-    /// `level` is polled while listening, for the lips. `area` replaces the screen, for --render-bar.
+    /// `level` is polled while listening, for the print. `area` replaces the screen, for --render-bar.
     init(level: @escaping @MainActor () -> Float, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
         self.level = level
         self.area = area
@@ -247,7 +247,7 @@ struct VoiceReading {
     static let maxWidth: CGFloat = 560
     static let padding: CGFloat = 18
     static let glyphGap: CGFloat = 13
-    static let glyphWidth = CGFloat(HalftoneLips.width)
+    static let glyphWidth = CGFloat(HalftonePrint.width)
     static let buttonSize: CGFloat = 24
     static let buttonsWidth = 2 * buttonSize + 6
     static let idle = CGSize(width: 28, height: 14)
@@ -369,7 +369,7 @@ private struct BodyView: View {
 
     @ViewBuilder private var content: some View {
         if let bar = shown.wordsBar {
-            capsule(behind: Lips(meter: meter, finishing: bar.finishing)) {
+            capsule(behind: Print(meter: meter, finishing: bar.finishing)) {
                 Color.clear.frame(width: BarStyle.glyphWidth)
                 if !bar.words.isEmpty {
                     Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree), dimmed: bar.finishing)
@@ -446,10 +446,11 @@ private struct Ticker<Content: View>: View {
     }
 }
 
-/// The glyph under the capsule's content: two lips of white dots on a fine 45-degree halftone screen. They part as the
-/// voice rises, the middle first and the corners a moment later. While the words are being finished the lips close and
-/// a light runs along the seam. With Reduce Motion the lips stay closed and the seam is a still, dim line.
-private struct Lips: View {
+/// The glyph under the capsule's content: a halftone print of the voice in white dots on a fine 45-degree screen. The
+/// newest voice is at the left and older voice runs right into the words, thinning as it arrives. While the words are
+/// being finished the print settles to a dim baseline and a light runs along it. With Reduce Motion the print is a still
+/// baseline while listening and a still dim baseline while finishing.
+private struct Print: View {
     let meter: VoiceMeter
     let finishing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -469,13 +470,13 @@ private struct Lips: View {
         let listen = settled ? listening.settle(at: finishing ? 0 : 1) : listening.step(toward: finishing ? 0 : 1, tau: 0.12, at: time)
         let spin = settled ? turning.settle(at: finishing ? 1 : 0) : turning.step(toward: finishing ? 1 : 0, tau: 0.12, at: time)
         let voice = reduceMotion ? nil : meter.reading(at: time)
-        let seam = reduceMotion ? HalftoneLips.Seam.still : .running(time: time)
+        let light = reduceMotion ? HalftonePrint.Light.still : .running(time: time)
         let left = BarStyle.padding, centerY = size.height / 2
 
-        for dot in HalftoneLips.dots {
+        for dot in HalftonePrint.dots {
             let heard = (voice?.level(delay: dot.delay) ?? 0) * listen
-            let covered = HalftoneLips.coverage(of: dot, voice: heard, spin: spin, seam: seam)
-            guard let radius = HalftoneLips.radius(coverage: covered) else { continue }
+            let covered = HalftonePrint.coverage(of: dot, voice: heard, spin: spin, light: light)
+            guard let radius = HalftonePrint.radius(coverage: covered) else { continue }
             let x = left + dot.x, y = centerY - dot.y
             context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius)), with: .color(Self.ink))
         }

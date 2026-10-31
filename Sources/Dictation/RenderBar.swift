@@ -3,7 +3,7 @@ import DictationCore
 
 /// `--render-bar DIR`: lays out every bar state with the app's own Bar on a stand-in screen kept off the displays,
 /// and writes each as a PNG, the whole stage and a close-up, so the look can be checked without a key press. The
-/// voice is frozen mid-speech and the animations settled, so a still shows the lips at a fixed moment. One scene is captured while its words are still printing in.
+/// voice is frozen mid-speech and the animations settled, so a still shows the print at a fixed moment. One scene is captured while its words are still printing in.
 @MainActor enum RenderBar {
     private struct Scene {
         var name: String
@@ -15,7 +15,7 @@ import DictationCore
         var settle = 1.2
     }
 
-    /// Mid-speech: loud now, with swells before it that the lips carry outward, so the corners open a moment after the middle.
+    /// Mid-speech: loud now, with swells before it that the print carries rightward, so the print rises and falls from left to right.
     nonisolated private static func speaking(_ age: Double) -> Float {
         Float(min(max(0.45 + 0.4 * cos(age * 10) * exp(-age * 0.7), 0), 1))
     }
