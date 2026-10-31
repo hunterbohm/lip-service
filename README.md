@@ -1,6 +1,6 @@
 # Lip Service
 
-Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about 0.16 s later. Speech becomes text on your Mac, so your voice never leaves it.
+Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about 0.21 s later. Speech becomes text on your Mac, so your voice never leaves it.
 
 ## Requirements
 
@@ -30,7 +30,8 @@ Paste this into Claude Code, Codex, or another coding agent that can run command
 	   `shasum -a 256 cert0`. The hash must be
 	   760d91571175800b1e66274c20aad991ce484d1fac366eab7c14d58a8e9feb0b.
 	4. If Lip Service is running, quit it. Move the app into /Applications,
-	   replacing any older copy.
+	   replacing any older copy. If there is also a copy in ~/Applications,
+	   move that one to the Trash, so only one copy is left.
 	5. The app is signed by its author but not notarized by Apple, so macOS
 	   would block it. Clear the download flag with
 	   `xattr -dr com.apple.quarantine "/Applications/Lip Service.app"`, open the
@@ -45,7 +46,7 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.2.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.3.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
@@ -75,6 +76,7 @@ To update, quit Lip Service and replace the app in **Applications** with the new
 - Lip Service removes filler words such as "um" and fixes capitals and punctuation.
 - To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.
 - To open the Lip Service window, open the app again from Spotlight or the Finder, or choose **Open Lip Service…** from its menu bar icon. The window has your dictation history and the settings for the keys, the microphone, and the bar.
+- The **Stats** page shows how many words you dictated, how fast you talk, and the time you saved compared with typing. **Share** makes an image of your totals.
 - If you used Willow Voice, click **Import from Willow** on the Home page to bring over its history and settings.
 
 The [reference](docs/reference.md) describes every feature and setting.
@@ -90,7 +92,7 @@ The [reference](docs/reference.md) describes every feature and setting.
 
 - Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
 - Lip Service goes online only to download its models from Hugging Face. It downloads a fixed version of each, and it checks every file against a SHA-256 hash built into the app before it uses it. It has no account and no analytics.
-- Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file.
+- Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file. The Stats page is counted from this file on your Mac, and its share image holds totals and a calendar, never your words or the apps.
 - To paste, Lip Service puts the text on the clipboard and presses Command+V for you. Then it puts back what the clipboard held before.
 - To spot your dictation keys, Lip Service sees every key you press, through Accessibility. It does not record, store, or send them.
 - With **Smart spacing** on, it reads the text just before the cursor to decide on a space and a capital letter. It does not keep that text.
@@ -133,7 +135,7 @@ You need a Mac with Apple silicon, macOS 26, and the Command Line Tools with Swi
 
 ## Credits
 
-- [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.7, by FluidInference, runs the speech models. It is licensed under Apache 2.0. `scripts/fetch-deps.sh` applies two patches to it. One removes the NemoTextProcessing binary target, which the app does not use. The other makes vocabulary rescoring faster without changing its output.
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.7, by FluidInference, runs the speech models. It is licensed under Apache 2.0. `scripts/fetch-deps.sh` applies three patches to it. One removes the NemoTextProcessing binary target, which the app does not use. One makes vocabulary rescoring faster without changing its output. The third lets the app give the rescorer a tokenizer it already loaded, so the tokenizer file is read once.
 - [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2), by NVIDIA, turns speech into text. Lip Service uses FluidInference's [Core ML conversion](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml). Both are licensed under CC BY 4.0.
 - [parakeet-ctc-110m](https://huggingface.co/FluidInference/parakeet-ctc-110m-coreml), FluidInference's Core ML conversion of NVIDIA's [Parakeet TDT-CTC 110M](https://huggingface.co/nvidia/parakeet-tdt_ctc-110m), boosts the words in your dictionary. Both are licensed under CC BY 4.0.
 

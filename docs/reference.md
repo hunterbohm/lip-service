@@ -15,11 +15,11 @@ Everything runs on the Mac. Parakeet TDT v2, through [FluidAudio](https://github
 
 ## The bar
 
-While you speak, a dark bar at the edge of the screen shows a small waveform that follows your voice and the words heard so far. The words update about three times a second, and the bar grows with them. A long dictation shows its newest words, with the start fading out. The text that gets inserted is transcribed again from the whole recording when you let go, with your vocabulary, so it can differ slightly from the words in the bar.
+While you speak, a dark bar at the edge of the screen shows a small grid of dots that follows your voice, and the words heard so far. Speaking grows the dots out from the middle row. Your newest voice is the column next to the words, and older voice moves left and fades. Each new word fades in. The words update about three times a second, and the bar grows with them. A long dictation shows its newest words, with the start fading out. The text that gets inserted is transcribed again from the whole recording when you let go, with your vocabulary, so it can differ slightly from the words in the bar.
 
 In hands-free mode the bar also has a stop button, which inserts the text, and a cancel button, which throws the recording away. Clicking them does not take focus from the app you are typing in.
 
-When you let go, the last words stay in the bar, dimmed, until the text is inserted. The bar also shows the model's progress while it downloads or prepares. The bar never takes focus.
+When you let go, the last words stay in the bar, dimmed, and a ripple runs along the middle row of dots until the text is inserted. With Reduce Motion on in System Settings > Accessibility > Display, the bar fades instead of moving. The bar also shows the model's progress while it downloads or prepares. The bar never takes focus.
 
 Short messages appear just above the bar, or below it when the bar is at the top of the screen. Each has a title, a second line that says why, and an icon that is green for information, amber for a problem Lip Service works around, and red for a failure:
 
@@ -56,6 +56,7 @@ The window is always dark and follows the Tesla center screen: one dark canvas, 
 - **Dictation** sets the dictation keys, the bar position, **Sounds**, **Smart spacing**, **Vocabulary boost**, **Hide bar when idle**, **Launch at login**, and **Show menu bar icon**, described in the Settings section below.
 - **Microphone** lists System Default and every input. Click one to dictate with it. A chosen microphone that is unplugged stays in the list, marked not connected, under a message naming the one used instead. The input level below moves while you speak. It records only while this page is open, so the menu bar's microphone indicator shows then.
 - **Dictionary** shows your vocabulary terms as tiles with their misheard spellings, or "No words yet" when there are none. **Add Word**, and the pencil and trash that appear when you hover over a tile, change the vocabulary file described below. Double-click a tile to edit it.
+- **Stats** is counted from your history. **Week**, **Month**, **Year**, and **All** pick the period. The top numbers are the words, the time saved, your speaking speed, the dictations, and your streak. Time saved is how long typing the same words at 40 words a minute would take, minus the time you spent talking; a dictation whose audio length is unknown counts at your measured speed. Below them, short insights say when, where, and how you dictate, each shown only when enough history backs it. Charts show a calendar of the days you talked, your words by week, by weekday and hour, and by app, your dictation lengths, and your speed over time; hover over one for its numbers. **Share** makes a 1600 by 900 image of the period's totals and a calendar of the last 13 weeks, which you can copy or save. It holds no dictated text and no app names. Before the first dictation, or with **Keep history** off and no history, the page says what to do.
 - **History** has **Keep history**, **Delete All History**, and, when Willow's folder exists, **Import from Willow**.
 
 The history lives in `~/Library/Application Support/Dictation/history.jsonl`, one JSON line per dictation, oldest first. Each line holds the date, the text, the audio length, the word count, and the app. Audio is never written. **Keep history** off stops adding new dictations and keeps the old ones. **Delete All History** removes the file after you confirm. The history and the vocabulary file are readable by your account only: the app sets its umask to 077 at launch, so it creates them with mode 600, and it makes the `Dictation` folder mode 700 at every launch, which also covers files that 1.0.1 and earlier left at 644.
@@ -131,7 +132,7 @@ The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio 
 
 To make a release zip, name it after the version in `Info.plist`:
 
-	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.2.zip
+	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.3.zip
 
 ## Speech models
 
