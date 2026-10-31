@@ -6,6 +6,8 @@ import DictationCore
 private final class RenderWindow: NSWindow {
     @objc var hasKeyAppearance: Bool { true }
     @objc var hasMainAppearance: Bool { true }
+    /// Lets the tall Stats shots keep their height instead of shrinking to the screen.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
 @MainActor enum WindowRender {
@@ -37,6 +39,7 @@ private final class RenderWindow: NSWindow {
         }
         let history = HistoryStore(url: scratch.appending(path: "history.jsonl"))
         _ = history.merge(sampleHistory(now: .now))
+        let statsSample = statsSampleHistory(now: .now)
         var checks = SetupChecks(microphone: true, accessibility: false, fnKey: .needsSetting)
         let setup = SetupStatus { checks }
         let willow = WillowImporter(folder: scratch.appending(path: "willow"), defaults: defaults, history: history,
@@ -66,8 +69,35 @@ private final class RenderWindow: NSWindow {
                 preferences.reloadVocabularyIfChanged()
             }),
             ("history", { state.page = .history }),
+            ("stats", {
+                history.deleteAll()
+                _ = history.merge(statsSample)
+                state.page = .stats
+                window.setContentSize(NSSize(width: 1000, height: 940))
+            }),
+            ("stats-insights", { state.statsView = .insights; window.setContentSize(NSSize(width: 1000, height: 1330)) }),
+            ("stats-charts", { state.statsView = .charts; window.setContentSize(NSSize(width: 1000, height: 1160)) }),
+            ("stats-week", { state.statsPeriod = .week; state.statsView = .insights; window.setContentSize(NSSize(width: 1000, height: 1330)) }),
+            ("stats-share", { state.statsPeriod = .all; state.statsView = .overview; state.sharingStats = true; window.setContentSize(NSSize(width: 1000, height: 640)) }),
+            ("stats-empty", {
+                state.sharingStats = false
+                preferences.change { $0.keepHistory = false }
+                history.deleteAll()
+            }),
         ]
         var failures = 0
+        if let card = ShareImage.png(UsageReport(entries: statsSample, period: .all, now: .now, calendar: .current), now: .now) {
+            let url = directory.appending(path: "stats-share-card.png")
+            do {
+                try card.write(to: url)
+                print(url.path)
+            } catch {
+                failures += 1
+                FileHandle.standardError.write(Data("\(url.path): \(error.localizedDescription)\n".utf8))
+            }
+        } else {
+            failures += 1
+        }
         for shot in shots {
             shot.prepare()
             setup.refresh()
@@ -106,6 +136,58 @@ private final class RenderWindow: NSWindow {
         Obsidian
 
         """
+
+    /// About seven months of made-up history for the Stats shots: imported dictations with no app first, then
+    /// the app's own, busier at night, with a spread of apps and lengths. A fixed seed keeps the shots repeatable.
+    static func statsSampleHistory(now: Date) -> [HistoryEntry] {
+        var seed: UInt64 = 20_261_030
+        func next() -> Double {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Double(seed >> 11) / Double(1 << 53)
+        }
+        func pick<T>(_ weighted: [(T, Double)]) -> T {
+            var roll = next() * weighted.reduce(0) { $0 + $1.1 }
+            for (value, weight) in weighted {
+                roll -= weight
+                if roll <= 0 { return value }
+            }
+            return weighted[weighted.count - 1].0
+        }
+        let apps: [(HistoryApp?, Double)] = [
+            (HistoryApp(name: "T3 Code", bundleID: "com.t3tools.t3code"), 28),
+            (HistoryApp(name: "ChatGPT", bundleID: "com.openai.chat"), 20),
+            (HistoryApp(name: "Ghostty", bundleID: "com.mitchellh.ghostty"), 14),
+            (HistoryApp(name: "Claude", bundleID: "com.anthropic.claudefordesktop"), 9),
+            (HistoryApp(name: "Obsidian", bundleID: "md.obsidian"), 7),
+            (HistoryApp(name: "Messages", bundleID: "com.apple.MobileSMS"), 7),
+            (HistoryApp(name: "Helium", bundleID: "net.imput.helium"), 4),
+            (nil, 11),
+        ]
+        let hours: [(Int, Double)] = Array([9, 10, 6, 5, 2, 2, 1, 0.5, 1, 0.5, 1, 1, 1.5, 3, 1.5, 2, 1, 1.5, 2.5, 2, 3.5, 4.5, 6.5, 8].enumerated()).map { ($0.offset, $0.element) }
+        let lengths: [(ClosedRange<Int>, Double)] = [(1...5, 14), (6...10, 11), (11...20, 16), (21...40, 20), (41...80, 15), (81...160, 7), (161...300, 1.5)]
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let span = 210, switchedDaysAgo = 40
+        var entries: [HistoryEntry] = []
+        for daysAgo in stride(from: span, through: 0, by: -1) {
+            guard daysAgo < 14 || next() < 0.66, let day = calendar.date(byAdding: .day, value: -daysAgo, to: today) else { continue }
+            let busy = next() < 0.06 ? 3.0 : 1.0
+            let count = Int((1 + pow(next(), 2.2) * 12) * busy)
+            let imported = daysAgo > switchedDaysAgo
+            let progress = Double(span - daysAgo) / Double(span)
+            for _ in 0..<count {
+                let date = day.addingTimeInterval(Double(pick(hours)) * 3600 + next() * 3599)
+                guard date <= now else { continue }
+                let words = pick(lengths).clamped(next())
+                let speed = 138 + 30 * progress + (next() - 0.5) * 14
+                entries.append(HistoryEntry(id: imported ? "willow:\(entries.count)" : "sample-\(entries.count)", date: date,
+                                            text: Array(repeating: "word", count: words).joined(separator: " "),
+                                            audioSeconds: next() < 0.85 ? Double(words) / speed * 60 : nil,
+                                            app: imported ? nil : pick(apps)))
+            }
+        }
+        return entries
+    }
 
     static func sampleHistory(now: Date) -> [HistoryEntry] {
         let apps = [
@@ -154,4 +236,8 @@ private final class RenderWindow: NSWindow {
         }
         return entries
     }
+}
+
+private extension ClosedRange where Bound == Int {
+    func clamped(_ fraction: Double) -> Int { lowerBound + Int(Double(upperBound - lowerBound) * fraction * fraction.squareRoot()) }
 }

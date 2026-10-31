@@ -13,6 +13,7 @@ struct WindowRoot: View {
                 Group {
                     switch state.page {
                     case .home: HomePage(services: services, state: state)
+                    case .stats: StatsPage(services: services, state: state)
                     case .dictation: DictationPage(services: services)
                     case .microphone: MicrophonePage(services: services)
                     case .dictionary: DictionaryPage(preferences: services.preferences)

@@ -26,13 +26,14 @@ import SwiftUI
 }
 
 enum Page: String, CaseIterable, Identifiable {
-    case home, dictation, microphone, dictionary, history
+    case home, stats, dictation, microphone, dictionary, history
 
     var id: Self { self }
     var title: String { rawValue.capitalized }
     var symbol: String {
         switch self {
         case .home: "house"
+        case .stats: "chart.bar"
         case .dictation: "keyboard"
         case .microphone: "mic"
         case .dictionary: "character.book.closed"
@@ -44,6 +45,9 @@ enum Page: String, CaseIterable, Identifiable {
 @MainActor @Observable final class WindowState {
     var page = Page.home
     var search = ""
+    var statsView = StatsView.overview
+    var statsPeriod = UsagePeriod.all
+    var sharingStats = false
 }
 
 @MainActor final class MainWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
