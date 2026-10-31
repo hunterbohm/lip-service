@@ -15,11 +15,11 @@ Everything runs on the Mac. Parakeet TDT v2, through [FluidAudio](https://github
 
 ## The bar
 
-While you speak, a dark bar at the edge of the screen shows a small grid of dots that follows your voice, and the words heard so far. Speaking grows the dots out from the middle row. Your newest voice is the column next to the words, and older voice moves left and fades. Each new word fades in. The words update about three times a second, and the bar grows with them. A long dictation shows its newest words, with the start fading out. The text that gets inserted is transcribed again from the whole recording when you let go, with your vocabulary, so it can differ slightly from the words in the bar.
+While you speak, a dark bar at the edge of the screen shows a small pair of lips drawn in dots that part as you speak, the middle first, and the words heard so far. Each new word prints in through a fine dot screen. The words update about three times a second, and the bar grows with them. A long dictation shows its newest words, with the start fading out. The text that gets inserted is transcribed again from the whole recording when you let go, with your vocabulary, so it can differ slightly from the words in the bar.
 
 In hands-free mode the bar also has a stop button, which inserts the text, and a cancel button, which throws the recording away. Clicking them does not take focus from the app you are typing in.
 
-When you let go, the last words stay in the bar, dimmed, and a ripple runs along the middle row of dots until the text is inserted. With Reduce Motion on in System Settings > Accessibility > Display, the bar fades instead of moving. The bar also shows the model's progress while it downloads or prepares. The bar never takes focus.
+When you let go, the last words stay in the bar, dimmed, and the lips close with a light running along them until the text is inserted. With Reduce Motion on in System Settings > Accessibility > Display, the bar fades instead of moving. The bar also shows the model's progress while it downloads or prepares. The bar never takes focus.
 
 Short messages appear just above the bar, or below it when the bar is at the top of the screen. Each has a title, a second line that says why, and an icon that is green for information, amber for a problem Lip Service works around, and red for a failure:
 
@@ -132,7 +132,7 @@ The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio 
 
 To make a release zip, name it after the version in `Info.plist`:
 
-	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.3.zip
+	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.4.zip
 
 ## Speech models
 
