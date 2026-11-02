@@ -122,9 +122,12 @@ public struct HandOffRequest: Equatable, Sendable {
 
     public static let windowTextCap = 4_000
 
+    /// The window's text as every destination gets it: none from a private app, and at most `windowTextCap` characters.
+    public var windowText: String { context.withheld ? "" : String(context.text.prefix(Self.windowTextCap)) }
+
     /// The words first, then the window's text as a capped block when the setting allows it.
     public func message(includeWindowText: Bool) -> String {
-        let window = context.withheld ? "" : String(context.text.prefix(Self.windowTextCap))
+        let window = windowText
         guard includeWindowText, !window.isEmpty else { return words }
         let app = context.app.map { " in \($0.name)" } ?? ""
         return "\(words)\n\n---\nFrom the window I was in\(app):\n\(window)"
@@ -139,7 +142,7 @@ public struct HandOffRequest: Equatable, Sendable {
             if let bundleID = app.bundleID { context["bundle_id"] = .string(bundleID) }
         }
         if let title = self.context.windowTitle, includeWindowText, !self.context.withheld { context["window_title"] = .string(title) }
-        if includeWindowText, !self.context.withheld { context["text"] = .string(String(self.context.text.prefix(Self.windowTextCap))) }
+        if includeWindowText, !self.context.withheld { context["text"] = .string(windowText) }
         return ["type": "handoff", "id": .string(id), "text": .string(words), "context": .object(context), "timestamp": .string(iso),
                 "source": "lip-service"]
     }

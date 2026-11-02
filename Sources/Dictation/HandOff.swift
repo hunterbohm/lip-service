@@ -175,7 +175,7 @@ struct CommandSender: HandOffSender {
         var contextFile: URL?
         if context.includeWindowText, !request.context.withheld {
             let file = FileManager.default.temporaryDirectory.appending(path: "lip-service-handoff-\(request.id).txt")
-            FileManager.default.createFile(atPath: file.path, contents: Data(request.context.text.utf8), attributes: [.posixPermissions: 0o600])
+            FileManager.default.createFile(atPath: file.path, contents: Data(request.windowText.utf8), attributes: [.posixPermissions: 0o600])
             contextFile = file
         }
         defer { if let contextFile { try? FileManager.default.removeItem(at: contextFile) } }

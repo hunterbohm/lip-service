@@ -312,6 +312,7 @@ public struct Settings: Equatable, Codable, Sendable {
             if let problem = shortcut.problem { return problem }
             if shortcut.isModifierKey { return "Pasting needs a key with modifiers, such as ⌃⌘V." }
             if hotkeys.contains(shortcut) { return "\(shortcut.title) is already a dictation key." }
+            if let use = agentKeyUse(shortcut) { return "\(shortcut.title) is already \(use)." }
         }
         pasteLast = shortcut
         return nil

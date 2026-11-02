@@ -412,6 +412,16 @@ private struct Rig {
                                                    .send(words: "shorter", isChange: true)])
     }
 
+    @Test func everyHandOffDestinationGetsTheSameCappedWindowText() {
+        let long = String(repeating: "x", count: HandOffRequest.windowTextCap + 500)
+        let request = HandOffRequest(words: "remind me", context: WindowContext(app: HistoryApp(name: "Mail", bundleID: nil), nearby: [long]))
+        #expect(request.windowText.count == HandOffRequest.windowTextCap)
+        #expect(request.payload(includeWindowText: true)["context"]?["text"]?.string == request.windowText)
+        #expect(request.message(includeWindowText: true).hasSuffix(request.windowText))
+        let secret = HandOffRequest(words: "note", context: WindowContext(app: nil, nearby: ["hidden"], withheld: true))
+        #expect(secret.windowText.isEmpty)
+    }
+
     @Test func anAnswerFindsItsQuestionAfterTheCardReordersTheOptions() {
         let request = PermissionRequest(rpcID: 8, session: "s", title: "Edit a file", options: [
             .init(id: "once", name: "Allow once", kind: "allow_once"), .init(id: "always", name: "Always", kind: "allow_always"),

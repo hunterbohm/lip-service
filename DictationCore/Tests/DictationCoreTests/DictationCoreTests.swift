@@ -314,6 +314,10 @@ private func press(_ inputs: [KeyInput], timing: HotkeyTiming = HotkeyTiming()) 
         #expect(settings.pasteLast?.title == "⌥⌘V")
         #expect(settings.setPasteLast(nil) == nil)
         #expect(settings.pasteLast == nil)
+        let commandG = Shortcut(key: 5, modifiers: [.control, .command])
+        #expect(settings.setAgentKey(.ghostwrite, commandG) == nil)
+        #expect(settings.setPasteLast(commandG) == "\(commandG.title) is already the Ghostwrite key.")
+        #expect(settings.pasteLast == nil)
     }
 }
 
