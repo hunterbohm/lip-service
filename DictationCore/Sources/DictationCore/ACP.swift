@@ -145,7 +145,11 @@ public enum ACP {
          "clientInfo": ["name": "lip-service", "version": .string(version)]]
     }
 
-    public static func newSession(cwd: String) -> JSONValue { ["cwd": .string(cwd), "mcpServers": []] }
+    public static func newSession(cwd: String, meta: JSONValue? = nil) -> JSONValue {
+        var params: [String: JSONValue] = ["cwd": .string(cwd), "mcpServers": []]
+        if let meta { params["_meta"] = meta }
+        return .object(params)
+    }
 
     public static func set(_ choice: ConfigChoice, session: String) -> (method: String, params: JSONValue) {
         switch choice {
