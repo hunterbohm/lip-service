@@ -114,7 +114,8 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
         guard let host = remoteHost?.trimmingCharacters(in: .whitespaces), !host.isEmpty else { return "exec " + local }
         let preset = AgentPreset.with(id: presetID)
         let words = (preset?.command == command ? preset?.remoteCommand : nil) ?? command
-        let remote = words.map(ShellQuote.quote).joined(separator: " ")
+        // Through the far side's login shell, as here, so a program on its .zprofile PATH, such as Homebrew's, is found.
+        let remote = #"exec "${SHELL:-/bin/sh}" -lc "# + ShellQuote.quote(ShellWords.join(words))
         return "exec ssh -T -o BatchMode=yes " + ShellQuote.quote(host) + " " + ShellQuote.quote(remote)
     }
 }

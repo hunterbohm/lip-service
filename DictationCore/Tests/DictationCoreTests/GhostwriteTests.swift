@@ -169,11 +169,18 @@ private struct Rig {
         var hermes = AgentPreset.with(id: "hermes")!.connection()
         #expect(hermes.shellCommand == "exec hermes acp")
         hermes.remoteHost = "mini"
-        #expect(hermes.shellCommand == "exec ssh -T -o BatchMode=yes mini 'hermes acp'")
+        // Unwrap the way the shells do: the local shell's words, ssh's remote string, the remote login shell's -lc.
+        func agentWords(_ agent: AgentConnection) -> [String]? {
+            let local = ShellWords.split(agent.shellCommand)
+            guard local.prefix(5) == ["exec", "ssh", "-T", "-o", "BatchMode=yes"], local.count == 7, local[5] == "mini" else { return nil }
+            let remote = ShellWords.split(local[6])
+            guard remote.count == 4, remote[0] == "exec", remote[1] == "${SHELL:-/bin/sh}", remote[2] == "-lc" else { return nil }
+            return ShellWords.split(remote[3])
+        }
+        #expect(agentWords(hermes) == ["hermes", "acp"], "a login shell on the other Mac runs the preset's remote command")
         var custom = hermes
-        custom.command = ["/opt/tools/hermes", "acp", "--profile", "work"]
-        #expect(custom.shellCommand == "exec ssh -T -o BatchMode=yes mini '/opt/tools/hermes acp --profile work'",
-                "a command changed from the preset runs as configured on the other Mac")
+        custom.command = ["/opt/My Tools/hermes", "acp", "--profile", "it's work"]
+        #expect(agentWords(custom) == custom.command, "a command changed from the preset runs as configured, quoting intact")
         #expect(ShellQuote.quote("it's") == "'it'\\''s'")
     }
 
