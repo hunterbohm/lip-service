@@ -10,7 +10,7 @@ private final class DefaultsStore: UsageCountStore {
 }
 
 enum UsageCount {
-    static let url = URL(string: "https://lipservice-usage.hunterbohm8.workers.dev/v1/ping")!
+    static let url = URL(string: "https://lipservice-usage.hunterbohm.me/v1/ping")!
 
     /// Off whenever `LS_DEFAULTS` points the app at a test's settings, so no test or bench run is ever counted.
     @MainActor static func reporter(preferences: Preferences) -> UsageReporter {

@@ -6,7 +6,7 @@ A Cloudflare Worker with a D1 table that counts active Lip Service installs. The
 - `GET /v1/stats` needs `Authorization: Bearer <READ_TOKEN>`. It returns the active installs today, over 7 days and over 30 days, installs by version over 7 days, all installs ever seen, and a daily table for 30 days.
 
 ```sh
-curl -H "Authorization: Bearer $LIPSERVICE_USAGE_READ_TOKEN" https://lipservice-usage.hunterbohm8.workers.dev/v1/stats
+curl -H "Authorization: Bearer $LIPSERVICE_USAGE_READ_TOKEN" https://lipservice-usage.hunterbohm.me/v1/stats
 ```
 
 The token is `LIPSERVICE_USAGE_READ_TOKEN` in Infisical `/agents`, and the Worker's `READ_TOKEN` secret holds the same value.
