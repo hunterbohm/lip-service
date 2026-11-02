@@ -20,6 +20,45 @@ const narrow = () => innerWidth < 700;
 const barRes = () => Math.min(devicePixelRatio || 1, 2);
 const now = () => performance.now() / 1000;
 
+// ---------- the download link and the install prompt. A release changes DOWNLOAD_URL only; the HTML keeps the same href for no-JS. ----------
+const DOWNLOAD_URL = "https://github.com/hunterbohm/lip-service/releases/download/v1.0.8/Lip-Service-1.0.8.zip";
+$$("a[data-download]").forEach(a => { a.href = DOWNLOAD_URL; });
+
+(() => {
+  const pre = $("#prompt"), wrap = pre.parentElement, more = $(".more", wrap), status = $("#copy-status");
+  const buttons = $$("[data-copy]");
+  const timers = new Map();
+  // The prompt shows 8 lines with a fade; the toggle only appears when the text is taller than that.
+  if (pre.scrollHeight > pre.clientHeight + 4) more.hidden = false; else wrap.dataset.collapsed = "false";
+  const expand = open => {
+    wrap.dataset.collapsed = String(!open);
+    more.setAttribute("aria-expanded", String(open));
+    $(".t", more).textContent = open ? "Show less" : "Show all";
+  };
+  more.addEventListener("click", () => expand(wrap.dataset.collapsed === "true"));
+
+  function selectPrompt() {
+    expand(true);
+    const range = document.createRange(); range.selectNodeContents(pre);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    try { return document.execCommand("copy") ? "copied" : "selected"; } catch { return "selected"; }
+  }
+  async function copy() {
+    try { await navigator.clipboard.writeText(pre.textContent); return "copied"; } catch {}
+    return selectPrompt();
+  }
+  const MSG = { copied: "Copied. Paste it into Claude Code or Codex.", selected: "Selected. Press ⌘C to copy it." };
+  buttons.forEach(btn => btn.addEventListener("click", async () => {
+    const state = await copy();
+    if (state === "selected" && !btn.closest("#install")) $("#install").scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    $(".done", btn).textContent = MSG[state];
+    status.textContent = ""; requestAnimationFrame(() => { status.textContent = MSG[state]; });
+    btn.dataset.state = state;
+    clearTimeout(timers.get(btn));
+    timers.set(btn, setTimeout(() => { delete btn.dataset.state; }, 4500));
+  }));
+})();
+
 function pop(el, t, a, dur = .45, from = .9, dy = 24) {
   const p = out3(seg(t, a, a + dur));
   el.style.opacity = p;

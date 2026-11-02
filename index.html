@@ -59,6 +59,16 @@ button { font: inherit; color: inherit; }
 .pill svg { width: 18px; height: 18px; flex: none; }
 .pill.ghost { background: rgba(18,19,22,.86); color: var(--text); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
 .pill.ghost:hover { background: rgba(32,33,37,.92); }
+.pill.light { background: #F5F5F7; color: #0B0C0E; box-shadow: 0 10px 34px rgba(245,245,247,.1); }
+.pill.light:hover { background: #fff; }
+button.pill { border: 0; cursor: pointer; }
+.pill .lbl { display: inline-flex; align-items: center; justify-content: center; gap: 10px; grid-area: 1 / 1; }
+button.pill { display: inline-grid; place-items: center; }
+button.pill .done { visibility: hidden; white-space: normal; text-align: center; line-height: 1.2; font-size: .92em; }
+button.pill[data-state] .idle { visibility: hidden; }
+button.pill[data-state] .done { visibility: visible; }
+.pill.light[data-state=copied], .pill.light[data-state=copied]:hover { background: var(--fill); color: #fff; box-shadow: 0 10px 34px rgba(62,106,225,.3); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .pill.small { height: 36px; padding: 0 16px; border-radius: 18px; font-size: 14.5px; box-shadow: none; }
 .pill.big { height: 72px; padding: 0 42px; border-radius: 36px; font-size: 21px; gap: 12px; }
 .pill.big svg { width: 22px; height: 22px; }
@@ -100,8 +110,13 @@ button.key { cursor: pointer; touch-action: none; user-select: none; -webkit-use
 .js .hero h1.listen .l2, .js .hero h1.typed .l1 { opacity: .36; }
 .lede { max-width: 720px; margin: 24px auto 0; color: var(--grey); font-size: clamp(17px, 1.3vw, 19px); text-wrap: pretty; }
 .lede b { color: var(--text); font-weight: 600; }
-.ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
-.req { margin-top: 18px; color: var(--dim); font-size: 14px; text-wrap: balance; }
+.ctas { display: grid; grid-template-columns: repeat(2, minmax(0, 300px)); gap: 14px; justify-content: center; margin-top: 34px; }
+.ctas .pill { height: 58px; padding: 0 22px; font-size: 17px; }
+.codelink { margin-top: 20px; font-size: 15px; }
+.codelink a { display: inline-flex; align-items: center; gap: 8px; color: var(--grey); text-decoration: underline; text-decoration-color: rgba(255,255,255,.2); text-underline-offset: 4px; transition: color .2s; }
+.codelink a:hover { color: var(--text); }
+.codelink svg { width: 16px; height: 16px; }
+.req { margin-top: 16px; color: var(--dim); font-size: 14px; text-wrap: balance; }
 .demo { position: relative; max-width: 700px; margin: clamp(40px, 6vh, 72px) auto 0; display: flex; flex-direction: column; align-items: center; }
 .msg { width: 100%; text-align: left; }
 .msg .to { display: flex; align-items: baseline; gap: 6px; padding: 15px 24px 13px; font-size: 15.5px; color: var(--grey); border-bottom: 1px solid rgba(255,255,255,.07); }
@@ -219,14 +234,36 @@ kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; bo
 .steps .num { display: block; font-size: 60px; font-weight: 400; line-height: 1; letter-spacing: -.03em; color: var(--accent); }
 .steps p { margin-top: 20px; font-size: 15.5px; color: var(--grey); }
 .steps b { color: var(--text); font-weight: 600; }
-.install .note { margin-top: 28px; }
+.install .agentcard { max-width: 860px; margin: 52px auto 0; padding: 34px 34px 30px; text-align: center; }
+.agentcard h3 { font-size: clamp(22px, 2.4vw, 28px); font-weight: 600; letter-spacing: -.02em; line-height: 1.2; text-wrap: balance; }
+.codewrap { position: relative; margin-top: 24px; text-align: left; border-radius: 16px; background: #0B0C0E; box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.codewrap pre { margin: 0; padding: 22px 24px; font: 13.5px/1.7 ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; color: #C9CBD1; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; border-radius: 16px; transition: max-height .4s var(--o3); }
+.codewrap pre::selection, .codewrap pre *::selection { background: rgba(90,139,255,.45); color: #fff; }
+.js .codewrap[data-collapsed=true] pre { max-height: calc(8 * 1.7em + 44px); overflow: hidden; }
+.js .codewrap[data-collapsed=true]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 110px; pointer-events: none; background: linear-gradient(rgba(11,12,14,0), #0B0C0E 85%); }
+.js .codewrap[data-collapsed=false] pre { max-height: 1200px; }
+.more { position: absolute; z-index: 1; left: 50%; bottom: 14px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 16px; border: 0; border-radius: 18px; background: rgba(32,34,38,.96); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); color: var(--text); font-size: 14.5px; font-weight: 500; cursor: pointer; transition: background .2s; }
+.more[hidden] { display: none; }
+.more:hover { background: rgba(46,48,53,.98); }
+.more svg { width: 16px; height: 16px; transition: transform .3s var(--o3); }
+.codewrap[data-collapsed=false] .more { position: static; transform: none; margin: 0 0 16px 24px; }
+.codewrap[data-collapsed=false] .more svg { transform: rotate(180deg); }
+.agentcard .pill.big { display: inline-grid; width: 100%; max-width: 560px; margin-top: 26px; }
+.agentcard .note { margin-top: 18px; color: var(--grey); font-size: 15px; }
+.install .alt { margin-top: 64px; text-align: center; color: var(--dim); font-size: 15px; font-weight: 500; }
+.steps.quiet { margin-top: 18px; max-width: 860px; gap: 12px; }
+.steps.quiet li { padding: 20px 22px 22px; border-radius: 18px; background: rgba(8,9,11,.62); box-shadow: inset 0 0 0 1px var(--line); }
+.steps.quiet .num { font-size: 34px; color: rgba(90,139,255,.6); }
+.steps.quiet p { margin-top: 12px; font-size: 15px; }
+.steps.quiet a { color: var(--accent); }
+.steps.quiet a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .end { position: relative; text-align: center; padding: var(--gap-section) 24px clamp(110px, 16vh, 170px); }
 .glow { position: absolute; left: 50%; top: 52%; width: 1000px; height: 1000px; margin: -500px 0 0 -500px; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(62,106,225,.30) 0%, rgba(62,106,225,.09) 35%, rgba(62,106,225,0) 68%); }
 .lock { position: relative; display: inline-flex; align-items: center; gap: 14px; font-size: clamp(28px, 3.2vw, 42px); font-weight: 700; letter-spacing: -.03em; }
 .lock img { width: clamp(64px, 6.4vw, 88px); height: auto; margin: -6px; }
 .end .cap.huge { position: relative; margin-top: 30px; }
-.end .pill.big { position: relative; margin-top: 48px; }
+.end-ctas { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; max-width: 980px; margin: 48px auto 0; }
 .end .req { position: relative; margin-top: 22px; }
 .end .req a { color: var(--grey); text-decoration: underline; text-decoration-color: rgba(255,255,255,.22); text-underline-offset: 3px; }
 .end .req a:hover { color: var(--text); }
@@ -241,6 +278,15 @@ kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; bo
   .nav { height: 64px; }
   .navr { gap: 16px; }
   .pill.big { height: 62px; padding: 0 32px; font-size: 19px; }
+  .ctas { grid-template-columns: minmax(0, 1fr); max-width: 380px; margin-left: auto; margin-right: auto; }
+  .end-ctas { grid-template-columns: minmax(0, 1fr); max-width: 380px; }
+  .install .agentcard { padding: 24px 16px 22px; }
+  .codewrap pre { padding: 18px 16px; font-size: 12.5px; }
+  .codewrap[data-collapsed=false] .more { margin-left: 16px; }
+  .agentcard .pill.big { height: 64px; padding: 0 20px; font-size: 18px; }
+  .steps.quiet li { padding: 16px 16px; align-items: start; }
+  .steps.quiet .num { font-size: 32px; }
+  .steps.quiet p { margin-top: 0; }
   .lede { font-size: 16.5px; }
   .msg .body { min-height: calc(2.76em + 48px); }
   .slot { height: 92px; }
@@ -279,6 +325,8 @@ kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; bo
   .apps .row { animation: none; }
   .js .hero h1 .l1, .js .hero h1 .l2 { opacity: 1; }
   .hint { display: none; }
+  .codewrap pre, .more svg { transition: none; }
+  .pill, .pill:active { transition: none; transform: none; }
 }
 </style>
 <script>document.documentElement.classList.add("js")</script>
@@ -292,7 +340,7 @@ kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; bo
   <a class="brand" href="/"><img src="assets/icon-256.webp" alt="" width="34" height="34">Lip Service</a>
   <div class="navr">
     <a class="navlink" href="https://github.com/hunterbohm/lip-service">GitHub</a>
-    <a class="pill small" href="https://github.com/hunterbohm/lip-service/releases/latest">Download</a>
+    <a class="pill small" href="https://github.com/hunterbohm/lip-service/releases/download/v1.0.8/Lip-Service-1.0.8.zip" data-download>Download</a>
   </div>
 </nav>
 
@@ -301,9 +349,10 @@ kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; bo
   <h1 class="cap" id="headline"><span class="l1">Hold <span class="a">fn</span> and talk.</span><br><span class="l2">Let go. <span class="a">It's typed.</span></span></h1>
   <p class="lede pop" style="--d:.45s">Free dictation that runs on your Mac. Your words land at the cursor in any app <b>0.21&nbsp;s</b> after you let go, and your voice never leaves your Mac.</p>
   <div class="ctas pop" style="--d:.6s">
-    <a class="pill" href="https://github.com/hunterbohm/lip-service/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Download for Mac</a>
-    <a class="pill ghost" href="https://github.com/hunterbohm/lip-service"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2a9.9 9.9 0 0 0-3.13 19.29c.5.09.68-.21.68-.48v-1.7c-2.77.6-3.35-1.18-3.35-1.18-.45-1.15-1.11-1.46-1.11-1.46-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.21-.25-4.54-1.1-4.54-4.93 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.56 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A9.9 9.9 0 0 0 12 2.2z"/></svg>View the code</a>
+    <a class="pill" href="https://github.com/hunterbohm/lip-service/releases/download/v1.0.8/Lip-Service-1.0.8.zip" data-download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Download for Mac</a>
+    <button class="pill light" type="button" data-copy aria-describedby="copy-status"><span class="lbl idle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5l5.5 5.5-5.5 5.5M12.5 18h7"/></svg>Copy install prompt</span><span class="lbl done" aria-hidden="true">Copied. Paste it into Claude Code or Codex.</span></button>
   </div>
+  <p class="codelink pop" style="--d:.66s"><a href="https://github.com/hunterbohm/lip-service"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.2a9.9 9.9 0 0 0-3.13 19.29c.5.09.68-.21.68-.48v-1.7c-2.77.6-3.35-1.18-3.35-1.18-.45-1.15-1.11-1.46-1.11-1.46-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.21-.25-4.54-1.1-4.54-4.93 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.56 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A9.9 9.9 0 0 0 12 2.2z"/></svg>View the code</a></p>
   <p class="req pop" style="--d:.7s">Free and open source · Apple silicon · macOS 26 or later</p>
 
   <div class="demo pop" id="demo" style="--d:.85s">
@@ -392,19 +441,56 @@ kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; bo
 
 <section class="install wrap" id="install">
   <h2 class="cap">Install in a <span class="a">minute.</span></h2>
-  <ol class="steps" data-reveal>
-    <li class="card pop"><span class="num">1</span><p><b>Download</b> the zip and drag Lip Service into Applications.</p></li>
+  <div class="agentcard card pop" data-reveal>
+    <h3>Paste this into Claude Code or Codex</h3>
+    <div class="codewrap" data-collapsed="true">
+      <pre id="prompt" tabindex="0" aria-label="Install prompt">Install Lip Service on this Mac. It's a free, open source dictation app:
+https://github.com/hunterbohm/lip-service
+
+Run these steps in Terminal. Tell me what each one does, and stop if a check
+fails.
+
+1. Check that this Mac has Apple silicon (`uname -m` prints arm64) and
+   macOS 26 or later (`sw_vers -productVersion`).
+2. Make a temporary folder. Find the .zip in the latest release with
+   `curl -s https://api.github.com/repos/hunterbohm/lip-service/releases/latest`,
+   download it with `curl -L`, and unzip it with `ditto -x -k`.
+3. Check that the app is the real one.
+   `codesign --verify --deep --strict "Lip Service.app"` must pass. Then run
+   `codesign -d --extract-certificates=cert "Lip Service.app"` and
+   `shasum -a 256 cert0`. The hash must be
+   760d91571175800b1e66274c20aad991ce484d1fac366eab7c14d58a8e9feb0b.
+4. If Lip Service is running, quit it. Move the app into /Applications,
+   replacing any older copy. If there is also a copy in ~/Applications,
+   move that one to the Trash, so only one copy is left.
+5. The app is signed by its author but not notarized by Apple, so macOS
+   would block it. Clear the download flag with
+   `xattr -dr com.apple.quarantine "/Applications/Lip Service.app"`, open the
+   app, and delete the temporary folder.
+6. Tell me to finish the setup on the Home page of the Lip Service window:
+   allow the microphone, turn on Lip Service under Accessibility, and set
+   Keyboard &gt; "Press fn key to" (or "Press 🌐 key to") to Do Nothing. Then
+   tell me to wait while the bar downloads the speech model, about 460 MB,
+   and how to use it: hold fn, talk, and let go.</pre>
+      <button class="more" type="button" aria-expanded="false" aria-controls="prompt" hidden><span class="t">Show all</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9.5l6 6 6-6"/></svg></button>
+    </div>
+    <button class="pill big light" type="button" data-copy aria-describedby="copy-status"><span class="lbl idle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5l5.5 5.5-5.5 5.5M12.5 18h7"/></svg>Copy install prompt</span><span class="lbl done" aria-hidden="true">Copied. Paste it into Claude Code or Codex.</span></button>
+    <p class="note">It checks the app's signature before installing.</p>
+  </div>
+  <p class="alt pop" data-reveal>Or install it yourself</p>
+  <ol class="steps quiet" data-reveal>
+    <li class="card pop"><span class="num">1</span><p><b>Download</b> the <a href="https://github.com/hunterbohm/lip-service/releases/download/v1.0.8/Lip-Service-1.0.8.zip" data-download>zip</a> and drag Lip Service into Applications.</p></li>
     <li class="card pop" style="--d:.12s"><span class="num">2</span><p><b>Open it.</b> macOS blocks it once, because it isn't notarized yet. Go to System Settings › Privacy &amp; Security and click Open Anyway.</p></li>
     <li class="card pop" style="--d:.24s"><span class="num">3</span><p><b>Allow</b> the microphone and Accessibility, then hold fn and talk.</p></li>
   </ol>
-  <p class="note pop" data-reveal>Or paste the <a href="https://github.com/hunterbohm/lip-service#install-with-an-ai-agent">install prompt</a> into Claude Code or Codex, and it checks the app's signature before installing.</p>
+  <p id="copy-status" class="sr" role="status" aria-live="polite"></p>
 </section>
 
 <section class="end" id="end" data-reveal>
   <div class="glow" aria-hidden="true"></div>
   <div class="lock pop"><img src="assets/icon-256.webp" alt="" width="88" height="88">Lip Service</div>
   <h2 class="cap huge" style="--d:.2s"><span class="a">Free</span> and <span class="a">local.</span></h2>
-  <div><a class="pill big pop" style="--d:.85s" href="https://github.com/hunterbohm/lip-service/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Download for Mac</a></div>
+  <div class="end-ctas pop" style="--d:.85s"><a class="pill big" href="https://github.com/hunterbohm/lip-service/releases/download/v1.0.8/Lip-Service-1.0.8.zip" data-download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Download for Mac</a><button class="pill big light" type="button" data-copy aria-describedby="copy-status"><span class="lbl idle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.5l5.5 5.5-5.5 5.5M12.5 18h7"/></svg>Copy install prompt</span><span class="lbl done" aria-hidden="true">Copied. Paste it into Claude Code or Codex.</span></button></div>
   <p class="req pop" style="--d:1.05s">Apple silicon · macOS 26 or later · <a href="https://github.com/hunterbohm/lip-service">View the code</a></p>
   <div class="particles" aria-hidden="true"></div>
 </section>
