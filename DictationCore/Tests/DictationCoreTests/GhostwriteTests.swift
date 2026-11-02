@@ -656,8 +656,8 @@ private enum Drafts {
                 ["optionId": "a", "name": "Allow", "kind": "allow_once"], ["optionId": "r", "name": "Reject", "kind": "reject_once"],
             ]])!
         }
-        for kind in ["read", "search", "fetch", "think"] { #expect(VoiceNotes.answer(asking(kind)) == "a", "\(kind)") }
-        for kind in ["edit", "delete", "move", "execute", "other", nil] { #expect(VoiceNotes.answer(asking(kind)) == "r", "\(kind ?? "none")") }
+        for kind in ["read", "search", "think"] { #expect(VoiceNotes.answer(asking(kind)) == "a", "\(kind)") }
+        for kind in ["edit", "delete", "move", "execute", "fetch", "other", nil] { #expect(VoiceNotes.answer(asking(kind)) == "r", "\(kind ?? "none")") }
     }
 
     @Test func aCommandGetsNoWindowTextFileWhenNoneIsSent() {
