@@ -303,6 +303,10 @@ import os
             await Task.yield()
             log.info("ghostwrite done \(Instant.now - started, format: .fixed(precision: 3)) s after send")
             event(.finished, in: run)
+        } catch is SessionRetired where isChange {
+            guard !Task.isCancelled, run.turn == turn else { return }
+            run.session = nil
+            await send(run.draft?.words ?? words, isChange: false, turn: turn, in: run)
         } catch {
             guard !Task.isCancelled, run.turn == turn else { return }
             fail(Self.unreachable(run.agent.name, error), in: run)

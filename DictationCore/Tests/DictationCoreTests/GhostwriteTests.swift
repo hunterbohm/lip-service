@@ -170,6 +170,10 @@ private struct Rig {
         #expect(hermes.shellCommand == "exec hermes acp")
         hermes.remoteHost = "mini"
         #expect(hermes.shellCommand == "exec ssh -T -o BatchMode=yes mini 'hermes acp'")
+        var custom = hermes
+        custom.command = ["/opt/tools/hermes", "acp", "--profile", "work"]
+        #expect(custom.shellCommand == "exec ssh -T -o BatchMode=yes mini '/opt/tools/hermes acp --profile work'",
+                "a command changed from the preset runs as configured on the other Mac")
         #expect(ShellQuote.quote("it's") == "'it'\\''s'")
     }
 

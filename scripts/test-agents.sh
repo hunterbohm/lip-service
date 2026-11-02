@@ -30,6 +30,9 @@ check "a missing agent says it isn't installed" '"installed" in rows[0].get("err
 check "a change cancels the draft still streaming, and only the change comes back" \
     'rows[0]["first_stop"]=="cancelled" and rows[0]["text"]=="Tuesday at 3 works. I'"'"'ll bring the latest cut."' \
     --command "$fake --mode supersede" --runs 1 --supersede 0.5
+check "a turn that ignores the cancel retires its session, so none of its output reaches the change" \
+    '"new session" in rows[0].get("error", "") and "old" not in rows[0].get("text", "")' \
+    --command "$fake --mode stubborn" --runs 1 --supersede 0.5
 check "an agent still answering is not stopped as idle" 'rows[0].get("text","").startswith("Tuesday")' \
     --command "$fake --mode draft --delay 3" --runs 1 --idle-limit 1
 tag="fake-acp-child-$$"

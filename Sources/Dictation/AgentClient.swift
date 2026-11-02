@@ -2,6 +2,12 @@ import DictationCore
 import Foundation
 import os
 
+/// A session whose last turn did not stop when cancelled. Its late output must not reach a new turn, so the caller
+/// starts a new session.
+struct SessionRetired: LocalizedError {
+    var errorDescription: String? { "The agent didn't stop its last answer, so a new session is needed." }
+}
+
 struct AgentError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
@@ -24,6 +30,8 @@ actor ACPClient {
     private var permissions: [String: PermissionHandler] = [:]
     /// The request id of the prompt running in each session. A newer prompt cancels it and waits for it to end.
     private var prompting: [String: Int] = [:]
+    /// Sessions whose turn ignored a cancel.
+    private var retired: Set<String> = []
     private var lastActivity = Instant.now
     private var stderrTail: [String] = []
     private(set) var exited = false
@@ -127,6 +135,7 @@ actor ACPClient {
     func prompt(_ text: String, session: String, timeout: Double, onUpdate: @escaping UpdateHandler,
                 onPermission: @escaping PermissionHandler) async throws -> String {
         await supersede(session)
+        if retired.contains(session) { throw SessionRetired() }
         let id = claimID()
         prompting[session] = id
         updates[session] = onUpdate
@@ -148,6 +157,7 @@ actor ACPClient {
         notify("session/cancel", ACP.cancel(session: session))
         for _ in 0..<150 where prompting[session] == running { try? await Task.sleep(for: .milliseconds(20)) }
         guard prompting[session] == running else { return }
+        retired.insert(session)
         prompting[session] = nil
         updates[session] = nil
         permissions[session] = nil
@@ -233,6 +243,8 @@ actor ACPClient {
     var onCatalog: ((String) -> Void)?
     private var warm: [String: Warm] = [:]
     private var starting: [String: Task<ACPClient, any Error>] = [:]
+    /// Which start is current for each agent. A start that finishes after it was stopped or replaced is not.
+    private var startTokens: [String: UUID] = [:]
     private var reaper: Task<Void, Never>?
     let workingDirectory: URL
     private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "agent")
@@ -266,6 +278,7 @@ actor ACPClient {
     func stop(_ agentID: String) {
         starting[agentID]?.cancel()
         starting[agentID] = nil
+        startTokens[agentID] = nil
         guard let entry = warm.removeValue(forKey: agentID) else { return }
         entry.spare?.cancel()
         Task { await entry.client.terminate() }
@@ -318,10 +331,15 @@ actor ACPClient {
             stop(agent.id)
         }
         if let task = starting[agent.id] { return try await task.value }
-        let cwd = workingDirectory, started = Instant.now
+        let cwd = workingDirectory, started = Instant.now, token = UUID()
         // Every caller waiting on this start finds the agent in `warm` once it resolves, so the entry is made here.
         let task = Task { () throws -> ACPClient in
-            defer { starting[agent.id] = nil }
+            defer {
+                if startTokens[agent.id] == token {
+                    starting[agent.id] = nil
+                    startTokens[agent.id] = nil
+                }
+            }
             let client = try ACPClient(name: agent.name, shellCommand: command, cwd: cwd)
             do {
                 try await client.initialize()
@@ -330,12 +348,17 @@ actor ACPClient {
                 await client.terminate()
                 throw AgentError(Self.explain(agent: agent.name, error: error, stderr: detail))
             }
+            guard startTokens[agent.id] == token else {
+                await client.terminate()
+                throw AgentError("\(agent.name) was stopped while it started.")
+            }
             log.info("\(agent.name, privacy: .public) started in \(Instant.now - started, format: .fixed(precision: 2)) s")
             warm[agent.id] = Warm(client: client, spare: nil, command: command, draftOptions: agent.draftOptions)
             scheduleReaper()
             return client
         }
         starting[agent.id] = task
+        startTokens[agent.id] = token
         return try await task.value
     }
 

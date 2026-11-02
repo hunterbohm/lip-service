@@ -112,7 +112,9 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
     public var shellCommand: String {
         let local = command.map(ShellQuote.quote).joined(separator: " ")
         guard let host = remoteHost?.trimmingCharacters(in: .whitespaces), !host.isEmpty else { return "exec " + local }
-        let remote = (AgentPreset.with(id: presetID)?.remoteCommand ?? command).map(ShellQuote.quote).joined(separator: " ")
+        let preset = AgentPreset.with(id: presetID)
+        let words = (preset?.command == command ? preset?.remoteCommand : nil) ?? command
+        let remote = words.map(ShellQuote.quote).joined(separator: " ")
         return "exec ssh -T -o BatchMode=yes " + ShellQuote.quote(host) + " " + ShellQuote.quote(remote)
     }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A stand-in ACP agent for testing Lip Service. Speaks newline-delimited JSON-RPC on stdio.
 
-usage: fake-acp-agent.py [--mode draft|permission|error|die|slow|silent|supersede] [--delay S] [--start-delay S] [--reply TEXT]
+usage: fake-acp-agent.py [--mode draft|permission|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
                          [--spawn-child TAG]
 
 draft       streams --reply in a few chunks after --delay
@@ -11,6 +11,7 @@ die         exits during the prompt, after a line on stderr; with --marker, only
 slow        waits 30 s, or stops early on session/cancel
 silent      never answers initialize
 supersede   the first prompt streams "old " until session/cancel, then answers cancelled; later prompts stream --reply
+stubborn    like supersede, but the first prompt ignores session/cancel and streams "old " for 5 s
 
 --spawn-child starts a long sleeper tagged TAG, as npx starts node, to check that stopping the agent stops it too.
 """
@@ -51,6 +52,12 @@ def chunk(session, text):
 
 def prompt(rid, params):
     session = params["sessionId"]
+    if args.mode == "stubborn" and next(prompts) == 1:
+        started = time.time()
+        while time.time() - started < 5:
+            chunk(params["sessionId"], "old ")
+            time.sleep(0.1)
+        return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
     if args.mode == "supersede" and next(prompts) == 1:
         started = time.time()
         while not cancelled.wait(0.1) and time.time() - started < 3:
