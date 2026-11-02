@@ -469,6 +469,21 @@ private struct Rig {
         #expect(card.phase == .ready("Hello world"))
     }
 
+    @Test func aDirectDraftThatFinishesWhileTheAgentAsksIsTypedOnceAnswered() {
+        let request = PermissionRequest(rpcID: 11, session: "s", title: "Read a file", options: [
+            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
+        ])
+        var card = DraftCard(typesDirectly: true)
+        _ = card.handle(.released)
+        _ = card.handle(.heard("say hi"))
+        _ = card.handle(DraftCard.Event.chunk("Hi"))
+        _ = card.handle(.asked(PermissionPrompt(request)))
+        _ = card.handle(DraftCard.Event.chunk(" there"))
+        #expect(card.handle(.finished).isEmpty, "nothing is typed while the question is open")
+        #expect(card.handle(.answered("allow")) == [.answer(request, optionID: "allow"), .type("Hi there")])
+        #expect(card.phase == .typed)
+    }
+
     @Test func anUnreachableAgentKeepsTheWordsForCopyAndRetry() {
         var card = DraftCard(typesDirectly: false)
         _ = card.handle(.released)

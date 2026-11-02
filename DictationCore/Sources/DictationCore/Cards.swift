@@ -227,17 +227,23 @@ public struct DraftCard: Equatable, Sendable {
             phase = .typed
             return [.type(cleaned)]
 
-        // An agent can keep streaming while it asks: the text goes into the draft under the question.
+        // An agent can keep streaming while it asks: the text goes into the draft under the question. A draft that
+        // finishes there waits as ready, even when it types directly, and answering types it.
         case (.permission(let prompt, let resume), .chunk), (.permission(let prompt, let resume), .finished):
-            phase = .permission(prompt, resume: continuing(resume, with: event, at: now))
+            var draft = self
+            draft.phase = resume
+            draft.typesDirectly = false
+            _ = draft.handle(event, at: now)
+            reply = draft.reply
+            phase = .permission(prompt, resume: draft.phase)
             return []
         case (.permission(let prompt, let resume), .key(.number(let number))):
             guard prompt.request.options.indices.contains(number - 1) else { return [] }
             phase = resume
-            return [.answer(prompt.request, optionID: prompt.request.options[number - 1].id)]
+            return [.answer(prompt.request, optionID: prompt.request.options[number - 1].id)] + typeIfDirect()
         case (.permission(let prompt, let resume), .answered(let optionID)):
             phase = resume
-            return [.answer(prompt.request, optionID: optionID)]
+            return [.answer(prompt.request, optionID: optionID)] + typeIfDirect()
         case (_, .asked(var prompt)) where isOpen:
             prompt.answerableAt = now + PermissionPrompt.readDelay
             phase = .permission(prompt, resume: phase)
@@ -259,6 +265,13 @@ public struct DraftCard: Equatable, Sendable {
         default:
             return []
         }
+    }
+
+    /// A draft that finished under a question, typed now that the question is answered, when drafts type directly.
+    private mutating func typeIfDirect() -> [Effect] {
+        guard typesDirectly, case .ready(let text) = phase else { return [] }
+        phase = .typed
+        return [.type(text)]
     }
 
     /// The draft a change is being spoken over keeps streaming in underneath it.
