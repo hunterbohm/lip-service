@@ -39,9 +39,9 @@ enum Mode {
                          [--runs N] [--cold] [--speech S] [--answer OPTION] [--supersede S] [--idle-limit S] [--prompt-file PATH]
                    Times Ghostwrite drafts against an agent through the app's agent pool. One JSON line per run.
                    --prompt-file sends the prompt in PATH instead of the sample request.
-               Dictation --hand-off DESTINATION.json [--dry-run] [--no-window-text] WORDS
+               Dictation --hand-off DESTINATION.json [--dry-run] [--window-text] WORDS
                    Sends WORDS through one Hand off destination, as the app does. --dry-run builds it and sends nothing.
-                   --no-window-text sends it as with Include window text off.
+                   --window-text includes the sample window text, as with Send the window's text with hand-offs on.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
                Dictation setup show
@@ -144,7 +144,7 @@ enum Mode {
                 while let argument = rest.popFirst() {
                     switch argument {
                     case "--dry-run": options.dryRun = true
-                    case "--no-window-text": options.includeWindowText = false
+                    case "--window-text": options.includeWindowText = true
                     default: options.words.append(argument)
                     }
                 }

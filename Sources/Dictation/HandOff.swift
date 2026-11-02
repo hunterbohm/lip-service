@@ -266,7 +266,7 @@ enum HandOffTest {
     struct Options {
         var destination: URL
         var dryRun = false
-        var includeWindowText = true
+        var includeWindowText = false
         var words: [String] = []
     }
 

@@ -286,6 +286,12 @@ private struct Rig {
         #expect(payload["type"] == "handoff" && payload["source"] == "lip-service" && payload["text"] == "Look into this crash")
         #expect(payload["context"]?["app"] == "Xcode")
     }
+
+    @Test func handOffsLeaveOutTheWindowTextUntilTheUserTurnsItOn() throws {
+        #expect(AgentSettings().includeWindowText == false)
+        #expect(try JSONDecoder().decode(AgentSettings.self, from: Data("{}".utf8)).includeWindowText == false)
+        #expect(try JSONDecoder().decode(AgentSettings.self, from: Data(#"{"includeWindowText":true}"#.utf8)).includeWindowText)
+    }
 }
 
 @Suite("Draft card") struct DraftCardTests {
