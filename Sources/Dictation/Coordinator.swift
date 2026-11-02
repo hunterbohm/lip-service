@@ -59,7 +59,7 @@ import os
         keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(level: { [microphone] in microphone.level })
-        menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter)
+        menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter, updates: updates)
         ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,
                                   usageCount: usageCount,
                                   anchor: { [bar] in bar.anchor() })

@@ -55,19 +55,28 @@ struct DictationPage: View {
                              isOn: preferences.binding(\.showMenuBarIcon))
                 }
                 .padding(.bottom, 24)
-                VStack(alignment: .leading, spacing: 4) {
-                    CheckRow(title: "Send an anonymous daily usage count", isOn: preferences.binding(\.sendUsageCount))
-                    Text("Once a day, when you first use Lip Service, it sends a hashed random ID, the app and macOS versions, the date, and whether you used dictation, Ghostwrite or Hand off. Never your voice, your words, your apps or your agent.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.secondary)
-                        .padding(.leading, 36)
-                        .frame(maxWidth: 680, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 20) {
+                    explained("Send an anonymous daily usage count", isOn: preferences.binding(\.sendUsageCount),
+                              "Once a day, when you first use Lip Service, it sends a hashed random ID, the app and macOS versions, the date, and whether you used dictation, Ghostwrite or Hand off. Never your voice, your words, your apps or your agent.")
+                    explained("Check for updates", isOn: preferences.binding(\.checkForUpdates),
+                              "Once a day, asks GitHub which version is newest and tells you here and in the menu bar when yours is older. It sends nothing about you or your Mac, and it installs nothing.")
                 }
             }
             .page()
         }
         .onDisappear(perform: stop)
+    }
+
+    private func explained(_ title: String, isOn: Binding<Bool>, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            CheckRow(title: title, isOn: isOn)
+            Text(detail)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.secondary)
+                .padding(.leading, 36)
+                .frame(maxWidth: 680, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder private var note: some View {

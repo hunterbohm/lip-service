@@ -55,7 +55,7 @@ private final class RenderWindow: NSWindow {
         defer { AppInstalled.override = nil }
         let services = WindowServices(preferences: preferences, history: history, setup: setup, willow: willow,
                                       loginItem: LoginItem(), inputs: inputs, level: InputLevel(fixed: 0.42),
-                                      shortcuts: .unavailable, copy: { _ in }, agents: agentServices, timing: timing, openSetup: { _ in })
+                                      shortcuts: .unavailable, copy: { _ in }, agents: agentServices, timing: timing, updates: .sample, openSetup: { _ in })
         let window = RenderWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
         MainWindow.configure(window, services: services, state: state)
         window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
@@ -179,7 +179,7 @@ private final class RenderWindow: NSWindow {
         let services = WindowServices(preferences: preferences, history: history, setup: SetupStatus { checks },
                                       willow: WillowImporter(folder: scratch.appending(path: "willow"), defaults: defaults, history: history, preferences: preferences),
                                       loginItem: LoginItem(), inputs: Inputs { ([], nil) }, level: InputLevel(fixed: 0), shortcuts: .unavailable,
-                                      copy: { _ in }, agents: agentServices, timing: timing, openSetup: { _ in })
+                                      copy: { _ in }, agents: agentServices, timing: timing, updates: .sample, openSetup: { _ in })
         let model = OnboardingModel()
         let window = RenderWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
         OnboardingWindow.configure(window, services: services, model: model)
@@ -418,4 +418,17 @@ private final class RenderWindow: NSWindow {
 
 private extension ClosedRange where Bound == Int {
     func clamped(_ fraction: Double) -> Int { lowerBound + Int(Double(upperBound - lowerBound) * fraction * fraction.squareRoot()) }
+}
+
+private final class SampleUpdateStore: UpdateCheckStore {
+    var values = [UpdateChecker.versionKey: "1.0.9", UpdateChecker.pageKey: "https://github.com/hunterbohm/lip-service/releases/tag/v1.0.9"]
+    func string(forKey key: String) -> String? { values[key] }
+    func set(_ value: String, forKey key: String) { values[key] = value }
+}
+
+extension UpdateNotice {
+    /// A release newer than the app that is running, for the window render.
+    @MainActor static var sample: UpdateNotice {
+        UpdateNotice(UpdateChecker(store: SampleUpdateStore(), isEnabled: { true }, running: Version("1.0.7"), fetch: { nil }))
+    }
 }
