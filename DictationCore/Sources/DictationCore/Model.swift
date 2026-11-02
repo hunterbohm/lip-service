@@ -189,6 +189,8 @@ public struct Settings: Equatable, Codable, Sendable {
     /// Held, what you say goes to the agent's own app as a task. Nil turns Hand off off.
     public var handOffKey: Shortcut? = Shortcut(key: 63, modifiers: [.option])
     public var agents = AgentSettings()
+    /// Sends one anonymous report a day, the first time you use the app. See the README's Privacy section.
+    public var sendUsageCount = true
 
     public init() {}
 
@@ -231,11 +233,13 @@ public struct Settings: Equatable, Codable, Sendable {
         handOffKey = (container.contains(.handOffKey) ? value(.handOffKey, Shortcut?.none) : defaults.handOffKey)
             .flatMap { hotkeys.contains($0) ? nil : $0 }
         agents = value(.agents, defaults.agents)
+        sendUsageCount = value(.sendUsageCount, defaults.sendUsageCount)
     }
 
     private enum CodingKeys: String, CodingKey {
         case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
         case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, ghostwriteKey, handOffKey, agents
+        case sendUsageCount
     }
 
     /// Written out by hand so a paste shortcut turned off is stored as null. The synthesized encoder leaves a nil out,
@@ -260,6 +264,7 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(ghostwriteKey, forKey: .ghostwriteKey)
         try container.encode(handOffKey, forKey: .handOffKey)
         try container.encode(agents, forKey: .agents)
+        try container.encode(sendUsageCount, forKey: .sendUsageCount)
     }
 
     /// Adds a dictation key, or puts it in place of `replacing`. Why it can't, or nil when it did.

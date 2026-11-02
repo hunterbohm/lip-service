@@ -12,6 +12,7 @@ import os
 
     let preferences = Preferences()
     let history = HistoryStore()
+    private let usageCount: UsageReporter
     private let microphone = Microphone()
     let inserter: Inserter
     private let sounds = Sounds()
@@ -52,11 +53,13 @@ import os
 
     init() {
         inserter = Inserter(preferences: preferences)
+        usageCount = UsageCount.reporter(preferences: preferences)
         keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(level: { [microphone] in microphone.level })
         menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter)
         ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,
+                                  usageCount: usageCount,
                                   anchor: { [bar] in bar.anchor() })
     }
 
@@ -280,6 +283,7 @@ import os
             rescore \(dictation.rescore, format: .fixed(precision: 3)), screen names \(dictation.screenTerms))
             """)
         guard !dictation.text.isEmpty else { return }
+        usageCount.used(.dictation)
         let insertion = Insertion.make(dictation.text, app: target.app?.bundleID, configuration: preferences.current)
         last = insertion
         menu.remember(insertion.text)

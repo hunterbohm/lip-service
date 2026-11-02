@@ -1,0 +1,14 @@
+name = "lipservice-usage"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
+
+# Off, so Cloudflare keeps no request log that could hold an IP address.
+[observability]
+enabled = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lipservice-usage"
+database_id = "ad12526f-ea8d-474a-9de5-6e5f63374665"
