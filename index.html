@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lip Service · Free dictation that runs on your Mac</title>
+<meta name="description" content="Free, open-source dictation for Mac. Hold fn, talk, and let go. Your words land in any app 0.21 s after you let go, and your voice never leaves your Mac.">
+<link rel="canonical" href="https://uselipservice.com/">
+<meta name="theme-color" content="#08090B">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lip Service">
+<meta property="og:url" content="https://uselipservice.com/">
+<meta property="og:title" content="Lip Service · Free dictation that runs on your Mac">
+<meta property="og:description" content="Hold fn and talk. Let go, and your words land in any app 0.21 s later. Free, open source, and your voice never leaves your Mac.">
+<meta property="og:image" content="https://uselipservice.com/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Lip Service: free dictation that runs on your Mac. The recording bar prints the words as you talk.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:creator" content="@TheHunterBohm">
+<meta name="twitter:title" content="Lip Service · Free dictation that runs on your Mac">
+<meta name="twitter:description" content="Hold fn and talk. Let go, and your words land in any app 0.21 s later. Free, open source, and your voice never leaves your Mac.">
+<meta name="twitter:image" content="https://uselipservice.com/assets/og.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Lip Service","description":"Free dictation that runs on your Mac.","url":"https://uselipservice.com/","downloadUrl":"https://github.com/hunterbohm/lip-service/releases/latest","operatingSystem":"macOS 26 or later, Apple silicon","applicationCategory":"UtilitiesApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"license":"https://github.com/hunterbohm/lip-service/blob/main/LICENSE","author":{"@type":"Person","name":"Hunter Bohm","url":"https://x.com/TheHunterBohm"}}</script>
+<link rel="stylesheet" href="assets/bar.css">
+<style>
+@font-face { font-family: "Inter LS"; src: url(assets/inter-latin.woff2) format("woff2"); font-weight: 100 900; font-display: swap; }
+:root {
+  --bg: #08090B; --card: #121316; --text: #F5F5F7; --grey: #8D8F96; --dim: #6F7277; --accent: #5A8BFF; --fill: #3E6AE1;
+  --line: rgba(255,255,255,.09); --o3: cubic-bezier(.215,.61,.355,1); --ob: cubic-bezier(.34,1.56,.64,1);
+  --gap-section: clamp(150px, 22vh, 240px);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); -webkit-text-size-adjust: 100%; }
+body { background: var(--bg); color: var(--text); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter LS", system-ui, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+a { color: inherit; text-decoration: none; }
+img, svg { display: block; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#field { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.page { position: relative; z-index: 1; overflow-x: hidden; overflow-x: clip; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+.nav { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 17px; letter-spacing: -.01em; }
+.brand img { width: 34px; height: 34px; margin: -3px; }
+.navr { display: flex; align-items: center; gap: 22px; }
+.navlink { color: var(--grey); font-size: 15px; transition: color .2s; }
+.navlink:hover { color: var(--text); }
+
+.pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 26px; border-radius: 26px; background: var(--fill); color: #fff; font-weight: 600; font-size: 16.5px; letter-spacing: -.005em; white-space: nowrap; box-shadow: 0 10px 34px rgba(62,106,225,.3); transition: background .2s, transform .15s; }
+.pill:hover { background: #4C78EE; }
+.pill:active { transform: scale(.97); }
+.pill svg { width: 18px; height: 18px; flex: none; }
+.pill.ghost { background: rgba(18,19,22,.86); color: var(--text); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+.pill.ghost:hover { background: rgba(32,33,37,.92); }
+.pill.small { height: 36px; padding: 0 16px; border-radius: 18px; font-size: 14.5px; box-shadow: none; }
+.pill.big { height: 72px; padding: 0 42px; border-radius: 36px; font-size: 21px; gap: 12px; }
+.pill.big svg { width: 22px; height: 22px; }
+
+.cap { font-weight: 600; letter-spacing: -.028em; line-height: 1.08; text-align: center; text-wrap: balance; }
+.cap .a { color: var(--accent); }
+.cap .w { display: inline-block; }
+.js .cap .w { opacity: 0; filter: blur(16px); transform: translateY(18px); transition: opacity .45s var(--o3), filter .45s var(--o3), transform .45s var(--o3); transition-delay: calc(var(--d, 0s) + var(--i) * 90ms); }
+.js .cap.in .w, .js .after.in .cap .w { opacity: 1; filter: none; transform: none; }
+h1.cap { font-size: clamp(38px, 5.4vw, 78px); letter-spacing: -.034em; line-height: 1.04; }
+h2.cap { font-size: clamp(34px, 4.6vw, 60px); }
+.cap.mid { font-size: clamp(24px, 2.8vw, 34px); letter-spacing: -.022em; }
+.cap.huge { font-size: clamp(66px, 12.5vw, 176px); letter-spacing: -.045em; line-height: 1; }
+
+.js .pop { opacity: 0; transform: translateY(24px) scale(.96); filter: blur(8px); transition: opacity .55s var(--o3), transform .55s var(--o3), filter .55s var(--o3); transition-delay: var(--d, 0s); }
+.js .pop.in, .js .in .pop { opacity: 1; transform: none; filter: none; }
+
+.card { background: var(--card); border-radius: 22px; box-shadow: inset 0 0 0 1px var(--line), 0 30px 80px rgba(0,0,0,.55); }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 20px; font-size: 15px; font-weight: 600; white-space: nowrap; background: rgba(18,19,22,.92); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+.chip.blue { background: rgba(62,106,225,.16); box-shadow: inset 0 0 0 1px rgba(90,139,255,.45); color: #DCE6FF; }
+.sub { max-width: 560px; margin: 20px auto 0; color: var(--grey); text-align: center; text-wrap: pretty; }
+.note { color: #75777F; font-size: 14px; line-height: 1.6; text-align: center; text-wrap: pretty; }
+.note a { color: var(--accent); }
+.note a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.particles { position: absolute; inset: 0; pointer-events: none; }
+.particles i { position: absolute; left: 0; top: 0; display: block; opacity: 0; }
+.kc { position: absolute; width: 30px; height: 30px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.6)); }
+.kc svg { width: 100%; height: 100%; }
+
+.key { position: relative; flex: none; width: 96px; height: 96px; border: 0; border-radius: 18px; background: linear-gradient(#2C2E33, #1E2024); box-shadow: inset 0 0 0 1px #3A3D43, 0 6px 0 #050506, 0 16px 30px rgba(0,0,0,.5); color: #E8E8EC; transition: transform .08s, box-shadow .12s; }
+.key .g { position: absolute; left: 15px; bottom: 14px; width: 22px; height: 22px; }
+.key .t { position: absolute; right: 15px; top: 9px; font-size: 24px; font-weight: 500; line-height: 1.3; }
+.key .b { position: absolute; left: 15px; bottom: 11px; font-size: 15px; font-weight: 500; color: #C9CBD1; }
+.key.down { transform: translateY(4px); box-shadow: inset 0 0 0 1.5px var(--accent), 0 1px 0 #050506, 0 0 0 6px rgba(62,106,225,.28), 0 8px 22px rgba(0,0,0,.5); }
+button.key { cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+
+.hero { text-align: center; padding-top: clamp(28px, 5vh, 72px); }
+.hero .l1, .hero .l2 { transition: opacity .5s var(--o3); }
+.js .hero h1.listen .l2, .js .hero h1.typed .l1 { opacity: .36; }
+.lede { max-width: 720px; margin: 24px auto 0; color: var(--grey); font-size: clamp(17px, 1.3vw, 19px); text-wrap: pretty; }
+.lede b { color: var(--text); font-weight: 600; }
+.ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
+.req { margin-top: 18px; color: var(--dim); font-size: 14px; text-wrap: balance; }
+.demo { position: relative; max-width: 700px; margin: clamp(40px, 6vh, 72px) auto 0; display: flex; flex-direction: column; align-items: center; }
+.msg { width: 100%; text-align: left; }
+.msg .to { display: flex; align-items: baseline; gap: 6px; padding: 15px 24px 13px; font-size: 15.5px; color: var(--grey); border-bottom: 1px solid rgba(255,255,255,.07); }
+.msg .to b { color: var(--text); font-weight: 500; }
+.msg .body { padding: 22px 24px 26px; font-size: clamp(19px, 2.1vw, 25px); line-height: 1.38; min-height: calc(1.38em + 48px); }
+.typed { border-radius: 6px; }
+.caret { display: inline-block; width: 2.5px; height: 1.1em; vertical-align: -.18em; margin-left: 2px; border-radius: 2px; background: var(--accent); }
+.slot { position: relative; width: 100%; height: 96px; display: flex; align-items: center; justify-content: center; }
+.took { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.js .took { opacity: 0; }
+.hint { margin-top: 20px; font-size: 13.5px; color: var(--dim); }
+
+.speed { padding-top: var(--gap-section); }
+.bench { --name: 210px; --val: 100px; max-width: 880px; margin: 52px auto 0; padding: 26px 34px 30px; border-radius: 26px; }
+.bench .k { font-size: 15px; font-weight: 600; color: #7E8088; }
+.bench .rows { position: relative; margin-top: 12px; }
+.bench .axis { position: absolute; left: var(--name); top: 8px; bottom: 8px; width: 1px; background: rgba(255,255,255,.12); }
+.bench .r { position: relative; height: 68px; }
+.bench .n { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 21px; font-weight: 600; color: #9A9CA3; white-space: nowrap; }
+.bench .me .n { display: flex; align-items: center; gap: 7px; height: 48px; padding: 0 18px 0 7px; border-radius: 24px; background: #F5F5F7; color: #0B0C0E; font-size: 18.5px; z-index: 2; }
+.bench .me .n img { width: 36px; height: 36px; }
+.bench .me .kc { right: -18px; bottom: -22px; }
+.bench .b { position: absolute; left: var(--name); top: 50%; height: 24px; margin-top: -12px; border-radius: 0 5px 5px 0; background: #4A4D55; width: calc((100% - var(--name) - var(--val)) * var(--p)); }
+.bench .me .b { background: var(--accent); }
+.bench .v { position: absolute; top: 50%; transform: translateY(-50%); left: calc(var(--name) + (100% - var(--name) - var(--val)) * var(--p) + 14px); font-size: 25px; font-weight: 500; color: #9A9CA3; font-variant-numeric: tabular-nums; white-space: nowrap; transform-origin: 0 50%; }
+.bench .me .v { color: var(--text); }
+.after { display: flex; flex-direction: column; align-items: center; gap: 20px; margin-top: 46px; text-align: center; }
+.after .note { max-width: 620px; }
+
+.apps { padding-top: var(--gap-section); --ic: 72px; --gap: 18px; --dur: 64s; }
+.apps .rows { position: relative; height: calc(3 * var(--ic) + 2 * var(--gap)); margin-top: 56px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%); }
+.apps .row { position: absolute; left: 0; display: flex; gap: var(--gap); width: max-content; animation: slide var(--dur) linear infinite; }
+.apps .row:nth-child(2) { top: calc(var(--ic) + var(--gap)); animation-direction: reverse; }
+.apps .row:nth-child(3) { top: calc(2 * (var(--ic) + var(--gap))); }
+.apps:not(.live) .row { animation-play-state: paused; }
+.apps .row img { width: var(--ic); height: var(--ic); }
+.js .apps .row img { opacity: 0; transform: scale(.5); transition: opacity .35s var(--o3), transform .5s var(--ob); transition-delay: var(--d, 0s); }
+.js .apps.in .row img { opacity: 1; transform: none; }
+@keyframes slide { to { transform: translateX(calc(-50% - var(--gap) / 2)); } }
+
+.agents { padding-top: var(--gap-section); }
+.stage { position: relative; max-width: 760px; height: 566px; margin: 52px auto 0; }
+.doc { position: absolute; left: 0; right: 0; top: 0; height: 226px; }
+.doc > .card { position: absolute; left: 0; right: 0; top: 0; transition: opacity .4s var(--o3), transform .4s var(--o3), filter .4s var(--o3); }
+.stage[data-mode=ghost] .chat, .stage[data-mode=hand] .mail { opacity: 0; transform: translateY(12px) scale(.98); filter: blur(6px); }
+.mail .subj { margin-left: auto; padding-left: 16px; font-size: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mail .body { min-height: 0; padding: 18px 24px 22px; font-size: 21px; }
+.mail .quote { margin-top: 14px; padding-left: 14px; border-left: 2px solid rgba(255,255,255,.16); font-size: 15px; line-height: 1.45; color: var(--grey); }
+.av { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--fill); color: #fff; font-size: 13px; font-weight: 700; }
+.chat .hd { display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-bottom: 1px solid rgba(255,255,255,.07); }
+.chat .hd b { font-size: 16px; font-weight: 600; }
+.chat .svc { margin-left: auto; font-size: 13px; color: var(--dim); }
+.chat .msgs { position: relative; height: 172px; }
+.bub { position: absolute; max-width: 78%; padding: 10px 16px; border-radius: 20px; font-size: 17px; line-height: 1.3; }
+.bub.me { right: 18px; top: 16px; background: #1F7BFF; color: #fff; border-bottom-right-radius: 6px; transform-origin: 100% 100%; }
+.chat .meta { position: absolute; right: 24px; top: 66px; font-size: 12px; color: var(--dim); }
+.bub.them { left: 18px; top: 92px; background: #2A2C31; color: #F4F4F5; border-bottom-left-radius: 6px; transform-origin: 0 100%; }
+.bub.dots { display: flex; gap: 6px; padding: 14px 16px; }
+.bub.dots i { display: block; width: 9px; height: 9px; border-radius: 50%; background: #8D8F96; }
+.act { position: absolute; left: 0; right: 0; top: 256px; height: 206px; }
+.keys { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); display: flex; justify-content: center; align-items: center; gap: 18px; }
+.keys .plus { font-size: 34px; font-weight: 500; color: #7E8088; }
+.keys .key { width: 84px; height: 84px; border-radius: 16px; }
+.agcard { position: absolute; left: 0; right: 0; top: 0; width: min(620px, 100%); margin: 0 auto; border-radius: 24px; background: rgba(20,21,24,.98); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 30px 80px rgba(0,0,0,.55); }
+.js .stage .keys, .js .stage .agcard, .js .chat .bub, .js .chat .meta { opacity: 0; }
+.agcard .hd { display: flex; align-items: center; gap: 10px; padding: 16px 20px 0; font-size: 14.5px; color: #A2A4A9; white-space: nowrap; overflow: hidden; }
+.agcard .hd span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.agcard .bd { padding: 12px 22px 2px; font-size: 21px; line-height: 1.35; min-height: 44px; }
+.agcard .bd .w { display: inline-block; }
+.agcard .cd { padding: 6px 22px 0; }
+.agcard .ct { font-size: 14px; color: var(--dim); }
+.agcard .cb { margin-top: 10px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+.agcard .cb i { display: block; height: 100%; width: 100%; border-radius: 3px; background: var(--fill); }
+.agcard .ft { display: flex; align-items: center; gap: 8px; padding: 14px 14px 16px; }
+.agcard .btn { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 12px; font-size: 14.5px; color: #D6D7DA; white-space: nowrap; }
+.agcard .btn.main { background: var(--fill); color: #fff; }
+.agcard .kbd { padding: 2px 7px; border-radius: 6px; background: rgba(255,255,255,.12); font-size: 12.5px; }
+.agcard .sp { flex: 1; }
+.barslot { position: absolute; left: 0; right: 0; top: 478px; height: 56px; display: flex; align-items: center; justify-content: center; }
+.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 760px; margin: 24px auto 0; }
+.mode { display: block; border: 0; border-radius: 20px; padding: 22px 22px 24px; text-align: left; cursor: pointer; transition: box-shadow .35s var(--o3), background .35s var(--o3); }
+.mode[aria-pressed=true] { background: #131620; box-shadow: inset 0 0 0 1.5px rgba(90,139,255,.7), 0 0 44px rgba(62,106,225,.2), 0 30px 80px rgba(0,0,0,.55); }
+.keyrow { display: flex; align-items: center; gap: 6px; color: var(--grey); font-size: 13px; }
+kbd { font: inherit; font-size: 12.5px; color: var(--text); padding: 3px 8px; border-radius: 6px; background: #1C1D21; box-shadow: inset 0 -1px 0 rgba(255,255,255,.06), inset 0 0 0 1px rgba(255,255,255,.08); }
+.mode .h { display: block; margin-top: 12px; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.mode .p { display: block; margin-top: 6px; font-size: 15px; line-height: 1.5; color: var(--grey); }
+.agentchips { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; max-width: 760px; margin: 40px auto 0; }
+.agentchips .lbl { width: 100%; margin-bottom: 4px; text-align: center; font-size: 14px; color: var(--dim); }
+.agentchips .chip { height: 46px; padding: 0 18px 0 8px; gap: 10px; font-weight: 500; }
+.agentchips .chip img { width: 30px; height: 30px; border-radius: 7px; }
+.agentchips .chip.plain { padding: 0 18px; color: var(--grey); }
+
+.private { padding-top: var(--gap-section); }
+.pic { max-width: 660px; margin: 44px auto 0; }
+.pic svg { width: 100%; height: auto; overflow: visible; }
+.pic .x { transform-box: fill-box; transform-origin: center; }
+.js .pic .laptop { opacity: 0; transform: translateY(14px); transition: opacity .45s var(--o3), transform .45s var(--o3); }
+.js .pic .path { opacity: 0; transition: opacity .45s var(--o3) .25s; }
+.js .pic .cloud { opacity: 0; }
+.js .pic .x { opacity: 0; transform: scale(1.6); transition: opacity .25s var(--o3) 1.2s, transform .25s var(--o3) 1.2s; }
+.js .pic.in .laptop, .js .pic.in .path, .js .pic.in .x { opacity: 1; transform: none; }
+.js .pic.in .cloud { animation: cloud 1.8s var(--o3) forwards; }
+@keyframes cloud { 0% { opacity: 0; } 25%, 70% { opacity: 1; } 100% { opacity: .3; } }
+.pic .cloud { opacity: .3; }
+.grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 44px; max-width: 880px; margin: 60px auto 0; }
+.item { display: flex; gap: 14px; align-items: flex-start; }
+.tick { flex: none; display: grid; place-items: center; width: 24px; height: 24px; margin-top: 2px; border-radius: 7px; background: rgba(90,139,255,.14); }
+.tick svg { width: 14px; height: 14px; }
+.item b { display: block; font-size: 16.5px; font-weight: 600; }
+.item span { display: block; margin-top: 2px; font-size: 15.5px; color: var(--grey); }
+
+.install { padding-top: var(--gap-section); }
+.steps { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 1000px; margin: 52px auto 0; }
+.steps li { padding: 26px 26px 28px; border-radius: 22px; }
+.steps .num { display: block; font-size: 60px; font-weight: 400; line-height: 1; letter-spacing: -.03em; color: var(--accent); }
+.steps p { margin-top: 20px; font-size: 15.5px; color: var(--grey); }
+.steps b { color: var(--text); font-weight: 600; }
+.install .note { margin-top: 28px; }
+
+.end { position: relative; text-align: center; padding: var(--gap-section) 24px clamp(110px, 16vh, 170px); }
+.glow { position: absolute; left: 50%; top: 52%; width: 1000px; height: 1000px; margin: -500px 0 0 -500px; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(62,106,225,.30) 0%, rgba(62,106,225,.09) 35%, rgba(62,106,225,0) 68%); }
+.lock { position: relative; display: inline-flex; align-items: center; gap: 14px; font-size: clamp(28px, 3.2vw, 42px); font-weight: 700; letter-spacing: -.03em; }
+.lock img { width: clamp(64px, 6.4vw, 88px); height: auto; margin: -6px; }
+.end .cap.huge { position: relative; margin-top: 30px; }
+.end .pill.big { position: relative; margin-top: 48px; }
+.end .req { position: relative; margin-top: 22px; }
+.end .req a { color: var(--grey); text-decoration: underline; text-decoration-color: rgba(255,255,255,.22); text-underline-offset: 3px; }
+.end .req a:hover { color: var(--text); }
+.footbar { position: relative; background: linear-gradient(rgba(8,9,11,0), rgba(8,9,11,.88) 45%); }
+.foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 24px; padding-bottom: 36px; border-top: 1px solid rgba(255,255,255,.07); font-size: 14px; color: var(--dim); }
+.foot .links { display: flex; gap: 20px; }
+.foot a:hover { color: var(--text); }
+
+@media (max-width: 699px) {
+  body { font-size: 16px; }
+  .wrap { padding-left: 16px; padding-right: 16px; }
+  .nav { height: 64px; }
+  .navr { gap: 16px; }
+  .pill.big { height: 62px; padding: 0 32px; font-size: 19px; }
+  .lede { font-size: 16.5px; }
+  .msg .body { min-height: calc(2.76em + 48px); }
+  .slot { height: 92px; }
+  .key { width: 84px; height: 84px; border-radius: 16px; }
+  .bench { --name: 122px; --val: 64px; padding: 20px 16px 22px; border-radius: 22px; }
+  .bench .r { height: 54px; }
+  .bench .n { font-size: 16px; }
+  .bench .me .n { height: 38px; gap: 5px; padding: 0 12px 0 5px; font-size: 14.5px; }
+  .bench .me .n img { width: 28px; height: 28px; }
+  .bench .b { height: 18px; margin-top: -9px; }
+  .bench .v { font-size: 18px; left: calc(var(--name) + (100% - var(--name) - var(--val)) * var(--p) + 8px); }
+  .apps { --ic: 54px; --gap: 14px; --dur: 50s; }
+  .apps .rows { -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%); }
+  .stage { height: 552px; }
+  .doc { height: 232px; }
+  .mail .body { font-size: 18px; padding: 16px 18px 20px; }
+  .msg .to { padding: 13px 18px 11px; font-size: 14.5px; }
+  .act { top: 250px; height: 216px; }
+  .keys .key { width: 76px; height: 76px; }
+  .agcard .bd { font-size: 18px; padding: 10px 18px 2px; }
+  .agcard .hd { padding: 14px 16px 0; }
+  .agcard .cd { padding: 6px 18px 0; }
+  .agcard .btn.alt { display: none; }
+  .barslot { top: 476px; }
+  .bub { font-size: 16px; }
+  .modes, .grid4, .steps { grid-template-columns: 1fr; }
+  .grid4 { gap: 22px; }
+  .steps li { display: grid; grid-template-columns: 52px 1fr; gap: 14px; align-items: baseline; padding: 22px 20px; }
+  .steps .num { font-size: 44px; }
+  .steps p { margin-top: 0; }
+  .glow { width: 640px; height: 640px; margin: -320px 0 0 -320px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .js .cap .w, .js .pop, .js .apps .row img, .js .pic .laptop, .js .pic .path, .js .pic .x { opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important; }
+  .js .pic.in .cloud, .js .pic .cloud { animation: none; opacity: .3; }
+  .apps .row { animation: none; }
+  .js .hero h1 .l1, .js .hero h1 .l2 { opacity: 1; }
+  .hint { display: none; }
+}
+</style>
+<script>document.documentElement.classList.add("js")</script>
+<script src="assets/bar.js" defer></script>
+<script type="module" src="assets/site.js"></script>
+</head>
+<body>
+<canvas id="field" aria-hidden="true"></canvas>
+<div class="page">
+<nav class="wrap nav" aria-label="Main">
+  <a class="brand" href="/"><img src="assets/icon-256.webp" alt="" width="34" height="34">Lip Service</a>
+  <div class="navr">
+    <a class="navlink" href="https://github.com/hunterbohm/lip-service">GitHub</a>
+    <a class="pill small" href="https://github.com/hunterbohm/lip-service/releases/latest">Download</a>
+  </div>
+</nav>
+
+<main>
+<header class="hero wrap" id="hero" data-reveal>
+  <h1 class="cap" id="headline"><span class="l1">Hold <span class="a">fn</span> and talk.</span><br><span class="l2">Let go. <span class="a">It's typed.</span></span></h1>
+  <p class="lede pop" style="--d:.45s">Free dictation that runs on your Mac. Your words land at the cursor in any app <b>0.21&nbsp;s</b> after you let go, and your voice never leaves your Mac.</p>
+  <div class="ctas pop" style="--d:.6s">
+    <a class="pill" href="https://github.com/hunterbohm/lip-service/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Download for Mac</a>
+    <a class="pill ghost" href="https://github.com/hunterbohm/lip-service"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2a9.9 9.9 0 0 0-3.13 19.29c.5.09.68-.21.68-.48v-1.7c-2.77.6-3.35-1.18-3.35-1.18-.45-1.15-1.11-1.46-1.11-1.46-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.21-.25-4.54-1.1-4.54-4.93 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.56 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A9.9 9.9 0 0 0 12 2.2z"/></svg>View the code</a>
+  </div>
+  <p class="req pop" style="--d:.7s">Free and open source · Apple silicon · macOS 26 or later</p>
+
+  <div class="demo pop" id="demo" style="--d:.85s">
+    <div class="msg card"><div class="to">To:<b>Sam</b></div><div class="body"><span class="typed"></span><span class="caret"></span></div></div>
+    <div class="slot"><div class="barhost"></div><div class="chip blue took">0.21 s after you let go</div></div>
+    <button class="key" type="button" aria-label="Hold to try a sample dictation"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="#C9CBD1" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><ellipse cx="12" cy="12" rx="4.2" ry="9.5"/><path d="M2.5 12h19M4.5 7h15M4.5 17h15"/></svg><span class="t">fn</span></button>
+    <p class="hint">Hold the key to try it</p>
+    <div class="particles" aria-hidden="true"></div>
+  </div>
+</header>
+
+<section class="speed wrap" id="speed">
+  <h2 class="cap">Faster than the <span class="a">paid apps.</span></h2>
+  <div class="bench card pop" id="bench" data-reveal>
+    <div class="k">Time from letting go to text</div>
+    <div class="rows">
+      <div class="axis"></div>
+      <div class="r me" data-s="0.212" style="--p:.546"><div class="n"><img src="assets/icon-256.webp" alt="" width="36" height="36">Lip Service<span class="kc" aria-hidden="true"></span></div><i class="b"></i><span class="v">0.21 s</span></div>
+      <div class="r" data-s="0.370" style="--p:.954"><div class="n">Willow</div><i class="b"></i><span class="v">0.37 s</span></div>
+      <div class="r" data-s="0.388" style="--p:1"><div class="n">Wispr Flow</div><i class="b"></i><span class="v">0.39 s</span></div>
+    </div>
+  </div>
+  <div class="after">
+    <p class="cap mid" style="--d:2.35s"><span class="a">Same accuracy.</span> Just faster.</p>
+    <div class="chip blue pop" style="--d:2.75s">About 98% of words right in all three</div>
+    <p class="note pop" style="--d:2.95s">Median of 75 dictations each, on one M4 Mac mini. Willow on Pro, Wispr Flow on its free plan. <a href="https://github.com/hunterbohm/lip-service/tree/main/bench/rivals/results/2026-10-27">See the test and raw results</a></p>
+  </div>
+</section>
+
+<section class="apps" id="apps" data-reveal>
+  <h2 class="cap wrap">Works in <span class="a">any app</span> you type in.</h2>
+  <div class="rows" aria-hidden="true"></div>
+</section>
+
+<section class="agents wrap" id="agents">
+  <h2 class="cap">Or let your agent <span class="a">write it.</span></h2>
+  <p class="sub pop" data-reveal>Two more keys hand your words to the AI agent you already use.</p>
+  <div class="stage pop" id="stage" data-reveal data-mode="ghost" aria-hidden="true">
+    <div class="doc">
+      <div class="msg card mail"><div class="to">To:<b>Dana Park</b><span class="subj">Re: Launch video review</span></div><div class="body"><span class="typed"></span><span class="caret"></span><div class="quote">Are you free Thursday or Friday to go over the cut?</div></div></div>
+      <div class="chat card"><div class="hd"><span class="av">H</span><b>Hermes</b><span class="svc">iMessage</span></div><div class="msgs"><div class="bub me">Book a table for four Friday at 7.</div><div class="meta">Delivered</div><div class="bub them dots"><i></i><i></i><i></i></div><div class="bub them re">On it. Table for four, Friday at 7. I'll text you when it's booked.</div></div></div>
+    </div>
+    <div class="act">
+      <div class="keys ghost"><div class="key"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="#C9CBD1" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><ellipse cx="12" cy="12" rx="4.2" ry="9.5"/><path d="M2.5 12h19M4.5 7h15M4.5 17h15"/></svg><span class="t">fn</span></div><span class="plus">+</span><div class="key"><span class="t">⌃</span><span class="b">control</span></div></div>
+      <div class="keys hand"><div class="key"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="#C9CBD1" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><ellipse cx="12" cy="12" rx="4.2" ry="9.5"/><path d="M2.5 12h19M4.5 7h15M4.5 17h15"/></svg><span class="t">fn</span></div><span class="plus">+</span><div class="key"><span class="t">⌥</span><span class="b">option</span></div></div>
+      <div class="agcard ghost"><div class="hd"><span class="av">H</span><span>Hermes · draft for Re: Launch video review</span></div><div class="bd">Thursday works. Anytime after 3 is good.</div><div class="ft"><span class="btn main"><span class="kbd">⏎</span>Type it</span><span class="btn alt"><span class="kbd">hold ⌃ fn</span>Change it</span><span class="sp"></span><span class="btn"><span class="kbd">esc</span>Discard</span></div></div>
+      <div class="agcard hand"><div class="hd"><span class="av">H</span><span>Hermes</span></div><div class="bd">Book a table for four Friday at 7.</div><div class="cd"><div class="ct">Sending to Hermes in iMessage</div><div class="cb"><i></i></div></div><div class="ft"><span class="btn main"><span class="kbd">⏎</span>Send now</span><span class="sp"></span><span class="btn"><span class="kbd">esc</span>Cancel</span></div></div>
+    </div>
+    <div class="barslot"></div>
+  </div>
+  <div class="modes pop" data-reveal>
+    <button class="mode card" type="button" data-mode="ghost" aria-pressed="true"><span class="keyrow"><kbd>fn</kbd>+<kbd>control</kbd></span><span class="h">Ghostwrite</span><span class="p">Say what you want, like “reply that Thursday works.” Your agent writes it in your voice from what's on screen, and Return types it in.</span></button>
+    <button class="mode card" type="button" data-mode="hand" aria-pressed="false"><span class="keyrow"><kbd>fn</kbd>+<kbd>option</kbd></span><span class="h">Hand off</span><span class="p">Say a task, and it goes to your agent in its own app: iMessage, T3 Code, Telegram, Slack, Discord, or a web address.</span></button>
+  </div>
+  <div class="agentchips pop" data-reveal>
+    <span class="lbl">Works with</span>
+    <span class="chip"><img src="assets/agents/claude-code.webp" alt="" width="30" height="30" loading="lazy">Claude Code</span>
+    <span class="chip"><img src="assets/agents/codex.webp" alt="" width="30" height="30" loading="lazy">Codex</span>
+    <span class="chip"><img src="assets/agents/hermes.webp" alt="" width="30" height="30" loading="lazy">Hermes</span>
+    <span class="chip"><img src="assets/agents/opencode.webp" alt="" width="30" height="30" loading="lazy">OpenCode</span>
+    <span class="chip plain">Any ACP agent</span>
+  </div>
+</section>
+
+<section class="private wrap" id="private">
+  <h2 class="cap">Your voice never leaves <span class="a">your Mac.</span></h2>
+  <div class="pic" id="pic" data-reveal aria-hidden="true">
+    <svg viewBox="560 270 1260 420">
+      <svg class="laptop" x="600" y="300" width="530" height="379" viewBox="0 0 420 300">
+        <rect x="40" y="10" width="340" height="226" rx="18" fill="#101114" stroke="#E8E8EC" stroke-width="7"/>
+        <path d="M6 252 H414 L398 280 Q394 288 384 288 H36 Q26 288 22 280 Z" fill="#101114" stroke="#E8E8EC" stroke-width="7" stroke-linejoin="round"/>
+        <g class="lw" fill="#fff"><rect x="116" y="109" width="12" height="28" rx="6"/><rect x="138" y="99" width="12" height="48" rx="6"/><rect x="160" y="84" width="12" height="78" rx="6"/><rect x="182" y="72" width="12" height="102" rx="6"/><rect x="204" y="64" width="12" height="118" rx="6"/><rect x="226" y="72" width="12" height="102" rx="6"/><rect x="248" y="84" width="12" height="78" rx="6"/><rect x="270" y="99" width="12" height="48" rx="6"/><rect x="292" y="109" width="12" height="28" rx="6"/></g>
+      </svg>
+      <path class="path" d="M 1160 470 Q 1330 360 1500 470" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="5" stroke-dasharray="2 18" stroke-linecap="round"/>
+      <path class="x" d="M 1302 382 L 1358 438 M 1358 382 L 1302 438" stroke="#FF6B5E" stroke-width="9" stroke-linecap="round" fill="none"/>
+      <svg class="cloud" x="1470" y="340" width="310" height="224" viewBox="0 0 360 260"><path d="M95 205 H270 A62 62 0 0 0 275 82 A88 88 0 0 0 108 70 A68 68 0 0 0 95 205 Z" fill="none" stroke="#E8E8EC" stroke-width="9" stroke-linejoin="round"/></svg>
+    </svg>
+  </div>
+  <div class="grid4 pop" data-reveal>
+    <div class="item"><div class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#5A8BFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Your audio stays on your Mac</b><span>Speech becomes text on your Mac's chip. Nothing is recorded to disk or sent anywhere.</span></div></div>
+    <div class="item"><div class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#5A8BFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Works offline, no account</b><span>One model download on first launch, then dictation needs no internet.</span></div></div>
+    <div class="item"><div class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#5A8BFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Drafts are cut off from tools</b><span>Claude Code and Codex draft with their tools off, and any agent is stopped the moment it starts one.</span></div></div>
+    <div class="item"><div class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="#5A8BFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><div><b>Open source, MIT</b><span>One anonymous count a day and an update check, both easy to turn off. Read every line on GitHub.</span></div></div>
+  </div>
+</section>
+
+<section class="install wrap" id="install">
+  <h2 class="cap">Install in a <span class="a">minute.</span></h2>
+  <ol class="steps" data-reveal>
+    <li class="card pop"><span class="num">1</span><p><b>Download</b> the zip and drag Lip Service into Applications.</p></li>
+    <li class="card pop" style="--d:.12s"><span class="num">2</span><p><b>Open it.</b> macOS blocks it once, because it isn't notarized yet. Go to System Settings › Privacy &amp; Security and click Open Anyway.</p></li>
+    <li class="card pop" style="--d:.24s"><span class="num">3</span><p><b>Allow</b> the microphone and Accessibility, then hold fn and talk.</p></li>
+  </ol>
+  <p class="note pop" data-reveal>Or paste the <a href="https://github.com/hunterbohm/lip-service#install-with-an-ai-agent">install prompt</a> into Claude Code or Codex, and it checks the app's signature before installing.</p>
+</section>
+
+<section class="end" id="end" data-reveal>
+  <div class="glow" aria-hidden="true"></div>
+  <div class="lock pop"><img src="assets/icon-256.webp" alt="" width="88" height="88">Lip Service</div>
+  <h2 class="cap huge" style="--d:.2s"><span class="a">Free</span> and <span class="a">local.</span></h2>
+  <div><a class="pill big pop" style="--d:.85s" href="https://github.com/hunterbohm/lip-service/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>Download for Mac</a></div>
+  <p class="req pop" style="--d:1.05s">Apple silicon · macOS 26 or later · <a href="https://github.com/hunterbohm/lip-service">View the code</a></p>
+  <div class="particles" aria-hidden="true"></div>
+</section>
+</main>
+
+<footer class="footbar"><div class="wrap foot">
+  <span>Made by Hunter Bohm</span>
+  <span class="links"><a href="https://x.com/TheHunterBohm">X</a><a href="https://github.com/hunterbohm/lip-service">GitHub</a><a href="https://github.com/hunterbohm/lip-service/blob/main/LICENSE">MIT License</a></span>
+</div></footer>
+</div>
+</body>
+</html>

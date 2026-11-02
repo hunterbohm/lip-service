@@ -1,0 +1,14 @@
+.lsbar { --s: 1; position: relative; display: inline-flex; vertical-align: top; height: calc(40px * var(--s)); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter LS", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.lsbar .halo { position: absolute; left: calc(-28px * var(--s)); top: calc(-28px * var(--s)); pointer-events: none; }
+.lsbar .capsule { position: relative; display: inline-flex; align-items: center; height: calc(40px * var(--s)); padding: 0 calc(18px * var(--s)); border-radius: calc(20px * var(--s));
+  background: rgba(23, 24, 26, 0.96); box-shadow: inset 0 0 0 calc(1px * var(--s)) rgba(255, 255, 255, 0.07), 0 calc(2px * var(--s)) calc(10px * var(--s)) rgba(0, 0, 0, 0.28); overflow: hidden; }
+.lsbar .agent { display: flex; align-items: center; gap: calc(8px * var(--s)); margin-right: calc(13px * var(--s)); flex: none; }
+.lsbar .av { width: calc(22px * var(--s)); height: calc(22px * var(--s)); border-radius: 50%; background: #3E6AE1; color: #fff; font-size: calc(11.44px * var(--s)); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.lsbar .nm { font-size: calc(13px * var(--s)); font-weight: 600; color: #fff; white-space: nowrap; }
+.lsbar .glyph { display: block; width: calc(45px * var(--s)); height: calc(21px * var(--s)); flex: none; overflow: visible; }
+.lsbar .words { margin-left: calc(13px * var(--s)); overflow: hidden; white-space: nowrap; display: flex; justify-content: flex-start; flex: none; }
+.lsbar .words.over { justify-content: flex-end; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%); }
+.lsbar .words .track { font-size: calc(15px * var(--s)); color: #fff; letter-spacing: 0; white-space: pre; }
+.lsbar .words .w { display: inline-block; }
+.lsbar .words .w.printing { -webkit-mask-image: radial-gradient(circle, #000 var(--dot), transparent calc(var(--dot) + 0.6px * var(--s))); -webkit-mask-size: calc(3px * var(--s)) calc(3px * var(--s)); }
+.lsbar .status { margin-left: calc(13px * var(--s)); font-size: calc(13px * var(--s)); font-weight: 500; color: #A2A4A9; white-space: nowrap; overflow: hidden; flex: none; }
