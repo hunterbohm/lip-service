@@ -24,4 +24,6 @@ cmp -s "$guard/DownloadGuard.swift" "$download/DownloadGuard.swift" || fail "the
 [[ "$(grep -c 'DownloadGuard.vet(' "$download/ModelHub.swift")" == 2 ]] || fail "ModelHub should vet the listing in both downloads"
 [[ "$(grep -c 'DownloadGuard.destination(of:' "$download/ModelHub.swift")" == 2 ]] || fail "ModelHub should check the destination in both downloads"
 ! grep -nE 'appendingPathComponent\((localPath|file\.path)\)' "$download/ModelHub.swift" || fail "ModelHub still joins a server path without the guard"
+! grep -nE 'environment\["(HF_TOKEN|HUGGING_FACE_HUB_TOKEN|HUGGINGFACEHUB_API_TOKEN)"\]' "$download/HFClient.swift" || fail "HFClient still reads a token from the environment"
+! grep -nE 'environment\["(MODEL_)?REGISTRY_URL"\]' "$download/../../ModelRegistry.swift" || fail "ModelRegistry still reads a registry from the environment"
 echo "pass  the vendored FluidAudio is wired to the guard"

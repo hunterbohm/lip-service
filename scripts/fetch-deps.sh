@@ -12,7 +12,8 @@
 # from writing where a server says. ModelHub.allowedFiles, set by the app, names the files it reads in each
 # repository, and the download fetches only those. Whatever it fetches goes through DownloadGuard, which refuses a
 # path that is absolute, has an empty, . or .. component, or lands outside the model folder, before anything is
-# written. Safe to rerun.
+# written. The download also stops using a token or a registry address from the environment, so a request goes to
+# huggingface.co with no credentials. Safe to rerun.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tag=v0.17.7
@@ -305,6 +306,38 @@ patch(f"{download}/ModelHub.swift", [
 """, 1),
 ("""        let destPath = repoDirectory.appendingPathComponent(file.path)
 """, """        let destPath = try DownloadGuard.destination(of: file.path, under: repoDirectory)
+""", 1),
+])
+
+patch(f"{download}/HFClient.swift", [
+("""    /// HuggingFace token from the environment, if available. Supports the env
+    /// vars used by the official CLI (`HF_TOKEN`), the Python `huggingface_hub`
+    /// library (`HUGGING_FACE_HUB_TOKEN`), and LangChain/older integrations
+    /// (`HUGGINGFACEHUB_API_TOKEN`).
+    static var huggingFaceToken: String? {
+        ProcessInfo.processInfo.environment["HF_TOKEN"]
+            ?? ProcessInfo.processInfo.environment["HUGGING_FACE_HUB_TOKEN"]
+            ?? ProcessInfo.processInfo.environment["HUGGINGFACEHUB_API_TOKEN"]
+    }
+""", """    /// Always nil. The models are public, and a token from the environment would go to any host a listing points at.
+    static var huggingFaceToken: String? { nil }
+""", 1),
+])
+
+patch(f"{package}/Sources/FluidAudio/ModelRegistry.swift", [
+("""    /// Priority: programmatic override → REGISTRY_URL env var → MODEL_REGISTRY_URL env var → default
+    public static var baseURL: String {
+        get {
+            _customBaseURL
+                ?? ProcessInfo.processInfo.environment["REGISTRY_URL"]
+                ?? ProcessInfo.processInfo.environment["MODEL_REGISTRY_URL"]
+                ?? "https://huggingface.co"
+        }
+""", """    /// The REGISTRY_URL environment variables are not read, so the environment cannot send a download elsewhere.
+    public static var baseURL: String {
+        get {
+            _customBaseURL ?? "https://huggingface.co"
+        }
 """, 1),
 ])
 PATCH
