@@ -77,6 +77,28 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
     public var isRemote: Bool { hostName != nil }
 
     /// The ssh host with its spaces trimmed, or nil to run on this Mac.
+    /// A plain next step for an error this agent gave, when the error is one people commonly hit while setting up.
+    public func hint(forTrouble reason: String) -> String? {
+        let said = reason.lowercased()
+        if ["authentication required", "not logged in", "please run /login", "please log in"].contains(where: said.contains) {
+            return "Sign in to \(name) first: run it once in Terminal and log in."
+        }
+        guard let host = hostName else { return nil }
+        if said.contains("could not resolve hostname") {
+            return "This Mac can't find \(host). Use the name from ~/.ssh/config, or the Mac's address."
+        }
+        if said.contains("permission denied (publickey") || said.contains("host key verification failed") {
+            return "This Mac has to sign in to \(host) without a password. Run ssh \(host) once in Terminal to set that up."
+        }
+        if ["timed out", "no route to host", "connection refused"].contains(where: said.contains) {
+            return "Check that \(host) is awake and Remote Login is on, in System Settings > General > Sharing."
+        }
+        if said.contains("command not found") {
+            return "\(name) isn't installed on \(host), or isn't on its login PATH."
+        }
+        return nil
+    }
+
     public var hostName: String? {
         guard let host = remoteHost?.trimmingCharacters(in: .whitespaces), !host.isEmpty else { return nil }
         return host

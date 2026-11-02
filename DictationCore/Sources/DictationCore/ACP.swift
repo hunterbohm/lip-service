@@ -259,6 +259,9 @@ public struct PermissionRequest: Equatable, Sendable {
     /// What the tool does, as the agent says: read, edit, delete, move, search, execute, think, fetch or other.
     public var toolKind: String?
 
+    /// The same question from the agent, even when the card has reordered its options.
+    public func isSameQuestion(as other: PermissionRequest) -> Bool { rpcID == other.rpcID && session == other.session }
+
     public init(rpcID: JSONValue, session: String, title: String, options: [Option], toolKind: String? = nil) {
         (self.rpcID, self.session, self.title, self.options, self.toolKind) = (rpcID, session, title, options, toolKind)
     }

@@ -408,6 +408,30 @@ private struct Rig {
                                                    .send(words: "shorter", isChange: true)])
     }
 
+    @Test func anAnswerFindsItsQuestionAfterTheCardReordersTheOptions() {
+        let request = PermissionRequest(rpcID: 8, session: "s", title: "Edit a file", options: [
+            .init(id: "once", name: "Allow once", kind: "allow_once"), .init(id: "always", name: "Always", kind: "allow_always"),
+            .init(id: "no", name: "Reject", kind: "reject_once"),
+        ])
+        let shown = PermissionPrompt(request).request
+        #expect(shown != request, "the card moves the standing approval last")
+        #expect(shown.isSameQuestion(as: request))
+        #expect(!PermissionRequest(rpcID: 9, session: "s", title: "Edit a file", options: request.options).isSameQuestion(as: request))
+    }
+
+    @Test func commonSetupErrorsGetAPlainNextStep() {
+        var hermes = AgentPreset.with(id: "hermes")!.connection()
+        hermes.remoteHost = "mini"
+        #expect(hermes.hint(forTrouble: "ssh: connect to host mini port 22: Operation timed out")?.contains("Remote Login") == true)
+        #expect(hermes.hint(forTrouble: "ssh: Could not resolve hostname mni: nodename nor servname provided")?.contains("can't find mini") == true)
+        #expect(hermes.hint(forTrouble: "arcassistant@mini: Permission denied (publickey).")?.contains("ssh mini") == true)
+        #expect(hermes.hint(forTrouble: "zsh:1: command not found: hermes")?.contains("isn't installed on mini") == true)
+        let claude = AgentPreset.with(id: "claude")!.connection()
+        #expect(claude.hint(forTrouble: "Claude Code didn't answer: Authentication required")?.hasPrefix("Sign in to") == true)
+        #expect(claude.hint(forTrouble: "ssh: connect to host mini port 22: Operation timed out") == nil, "no ssh advice for an agent on this Mac")
+        #expect(claude.hint(forTrouble: "model overloaded") == nil)
+    }
+
     @Test func anUnreachableAgentKeepsTheWordsForCopyAndRetry() {
         var card = DraftCard(typesDirectly: false)
         _ = card.handle(.released)

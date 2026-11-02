@@ -187,6 +187,9 @@ struct AgentStatusLine: View {
             VStack(alignment: .leading, spacing: 2) {
                 StatusLine(color: Theme.amber, text: showsPlace ? "Can't reach · \(place)" : "Can't reach")
                 Text(reason).font(.system(size: 12)).foregroundStyle(Theme.tertiary).lineLimit(2).padding(.leading, 13)
+                if let hint = agent.hint(forTrouble: reason) {
+                    Text(hint).font(.system(size: 12)).foregroundStyle(Theme.secondary).lineLimit(2).padding(.leading, 13)
+                }
             }
         }
     }

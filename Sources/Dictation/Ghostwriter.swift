@@ -35,7 +35,7 @@ import os
         var permissions: [(request: PermissionRequest, answer: CheckedContinuation<String?, Never>)] = []
 
         func answer(_ request: PermissionRequest, with optionID: String?) {
-            guard let index = permissions.firstIndex(where: { $0.request == request }) else { return }
+            guard let index = permissions.firstIndex(where: { $0.request.isSameQuestion(as: request) }) else { return }
             permissions.remove(at: index).answer.resume(returning: optionID)
         }
 
@@ -162,7 +162,14 @@ import os
             do {
                 words = try await engine.dictate(recording).text
             } catch {
-                return fail("Transcription failed: \(error.localizedDescription)", in: run)
+                let reason = "Transcription failed: \(error.localizedDescription)"
+                // A change that couldn't be transcribed is dropped, and the draft it was said over stays usable.
+                if changing, run.draft != nil, self.run === run {
+                    event(.cancelled, in: run)
+                    onNotice?(.failed(reason))
+                    return
+                }
+                return fail(reason, in: run)
             }
             guard self.run === run else { return }
             var said = words

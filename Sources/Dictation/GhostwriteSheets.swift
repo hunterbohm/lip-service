@@ -333,7 +333,7 @@ struct DestinationFields: View {
             }
             switch agent.destination {
             case .iMessage(let handle):
-                LabeledField(title: "Its iMessage", text: Binding(get: { handle }, set: { value in update { $0.destination = .iMessage(handle: value) } }),
+                LabeledField(title: "iMessage to", text: Binding(get: { handle }, set: { value in update { $0.destination = .iMessage(handle: value) } }),
                              prompt: "+1 555 123 4567", help: "Sent from your own Messages, so it lands in the chat where \(agent.name) always answers you.")
             case .t3Code:
                 t3Fields

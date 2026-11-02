@@ -509,6 +509,9 @@ private struct CheckStep: View {
     private func problem(_ reason: String, _ agent: AgentConnection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(reason).font(.system(size: 13)).foregroundStyle(Theme.amber).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            if let hint = agent.hint(forTrouble: reason) {
+                Text(hint).font(.system(size: 13)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 8) {
                 Button("Try again") { services.agents.test(agent) }.buttonStyle(DarkButtonStyle())
                 Button("Back") { model.go(.ghostwrite) }.buttonStyle(DarkButtonStyle())
