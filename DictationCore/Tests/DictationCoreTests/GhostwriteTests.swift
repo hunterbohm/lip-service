@@ -286,6 +286,12 @@ private struct Rig {
         #expect(payload["type"] == "handoff" && payload["source"] == "lip-service" && payload["text"] == "Look into this crash")
         #expect(payload["context"]?["app"] == "Xcode")
     }
+
+    @Test func handOffsLeaveOutTheWindowTextUntilTheUserTurnsItOn() throws {
+        #expect(AgentSettings().includeWindowText == false)
+        #expect(try JSONDecoder().decode(AgentSettings.self, from: Data("{}".utf8)).includeWindowText == false)
+        #expect(try JSONDecoder().decode(AgentSettings.self, from: Data(#"{"includeWindowText":true}"#.utf8)).includeWindowText)
+    }
 }
 
 @Suite("Draft card") struct DraftCardTests {
@@ -339,48 +345,6 @@ private struct Rig {
         #expect(!card.isOpen)
     }
 
-    @Test func aQuestionFromTheAgentIsAnsweredByNumberAndTheDraftGoesOn() {
-        let request = PermissionRequest(rpcID: 4, session: "s", title: "Read a file", options: [
-            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        let asked = Instant(seconds: 50), read = asked + PermissionPrompt.readDelay
-        var card = DraftCard(typesDirectly: false)
-        _ = card.handle(.released)
-        _ = card.handle(.heard("reply"))
-        _ = card.handle(.asked(PermissionPrompt(request)), at: asked)
-        #expect(card.showsCard)
-        #expect(card.handle(.key(.number(3)), at: read).isEmpty)
-        #expect(card.handle(.key(.number(2)), at: read) == [.answer(request, optionID: "no")])
-        #expect(card.phase == .thinking(draft: nil))
-        _ = card.handle(.asked(PermissionPrompt(request)), at: asked)
-        #expect(card.handle(.key(.escape), at: asked) == [.answer(request, optionID: "no"), .cancel])
-    }
-
-    @Test func aQuestionAskedWhileAChangeIsSaidWaitsUnderItAndTheChangeDeclinesIt() {
-        let request = PermissionRequest(rpcID: 5, session: "s", title: "Read a file", options: [
-            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        var card = DraftCard(typesDirectly: false)
-        _ = card.handle(.released)
-        _ = card.handle(.heard("reply yes"))
-        _ = card.handle(DraftCard.Event.chunk("Yes."))
-        _ = card.handle(.listen)
-        _ = card.handle(.asked(PermissionPrompt(request)))
-        _ = card.handle(.released)
-        #expect(card.handle(.heard("make it longer")) == [.answer(request, optionID: "no"), .send(words: "make it longer", isChange: true)])
-        #expect(card.phase == .thinking(draft: "Yes."))
-
-        var cancelled = DraftCard(typesDirectly: false)
-        _ = cancelled.handle(.released)
-        _ = cancelled.handle(.heard("reply yes"))
-        _ = cancelled.handle(DraftCard.Event.chunk("Yes."))
-        _ = cancelled.handle(.listen)
-        _ = cancelled.handle(.asked(PermissionPrompt(request)))
-        _ = cancelled.handle(.cancelled)
-        guard case .permission(let prompt, .streaming("Yes.")) = cancelled.phase else { Issue.record("question lost"); return }
-        #expect(prompt.request == request)
-    }
-
     @Test func aFailureWhileAChangeIsSaidKeepsTheChangeAndRetriesWithIt() {
         var card = DraftCard(typesDirectly: false)
         _ = card.handle(.released)
@@ -400,25 +364,6 @@ private struct Rig {
         #expect(cancelled.phase == .failed("Hermes stopped"))
     }
 
-    @Test func aChangeDeclinesEveryQuestionWaitingUnderIt() {
-        let first = PermissionRequest(rpcID: 6, session: "s", title: "Read a file", options: [
-            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        let second = PermissionRequest(rpcID: 7, session: "s", title: "Run a command", options: [
-            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        var card = DraftCard(typesDirectly: false)
-        _ = card.handle(.released)
-        _ = card.handle(.heard("reply yes"))
-        _ = card.handle(DraftCard.Event.chunk("Yes."))
-        _ = card.handle(.listen)
-        _ = card.handle(.asked(PermissionPrompt(first)))
-        _ = card.handle(.asked(PermissionPrompt(second)))
-        _ = card.handle(.released)
-        #expect(card.handle(.heard("shorter")) == [.answer(second, optionID: "no"), .answer(first, optionID: "no"),
-                                                   .send(words: "shorter", isChange: true)])
-    }
-
     @Test func everyHandOffDestinationGetsTheSameCappedWindowText() {
         let long = String(repeating: "x", count: HandOffRequest.windowTextCap + 500)
         let request = HandOffRequest(words: "remind me", context: WindowContext(app: HistoryApp(name: "Mail", bundleID: nil), nearby: [long]))
@@ -427,17 +372,6 @@ private struct Rig {
         #expect(request.message(includeWindowText: true).hasSuffix(request.windowText))
         let secret = HandOffRequest(words: "note", context: WindowContext(app: nil, nearby: ["hidden"], withheld: true))
         #expect(secret.windowText.isEmpty)
-    }
-
-    @Test func anAnswerFindsItsQuestionAfterTheCardReordersTheOptions() {
-        let request = PermissionRequest(rpcID: 8, session: "s", title: "Edit a file", options: [
-            .init(id: "once", name: "Allow once", kind: "allow_once"), .init(id: "always", name: "Always", kind: "allow_always"),
-            .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        let shown = PermissionPrompt(request).request
-        #expect(shown != request, "the card moves the standing approval last")
-        #expect(shown.isSameQuestion(as: request))
-        #expect(!PermissionRequest(rpcID: 9, session: "s", title: "Edit a file", options: request.options).isSameQuestion(as: request))
     }
 
     @Test func aTypedCommandSplitsLikeAShellAndJoinsBack() {
@@ -459,36 +393,6 @@ private struct Rig {
         #expect(claude.hint(forTrouble: "Claude Code didn't answer: Authentication required")?.hasPrefix("Sign in to") == true)
         #expect(claude.hint(forTrouble: "ssh: connect to host mini port 22: Operation timed out") == nil, "no ssh advice for an agent on this Mac")
         #expect(claude.hint(forTrouble: "model overloaded") == nil)
-    }
-
-    @Test func textStreamedWhileTheAgentAsksGoesIntoTheDraft() {
-        let request = PermissionRequest(rpcID: 10, session: "s", title: "Read a file", options: [
-            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        var card = DraftCard(typesDirectly: false)
-        _ = card.handle(.released)
-        _ = card.handle(.heard("say hello"))
-        _ = card.handle(DraftCard.Event.chunk("Hello"))
-        _ = card.handle(.asked(PermissionPrompt(request)))
-        _ = card.handle(DraftCard.Event.chunk(" world"))
-        _ = card.handle(.answered("allow"))
-        _ = card.handle(.finished)
-        #expect(card.phase == .ready("Hello world"))
-    }
-
-    @Test func aDirectDraftThatFinishesWhileTheAgentAsksIsTypedOnceAnswered() {
-        let request = PermissionRequest(rpcID: 11, session: "s", title: "Read a file", options: [
-            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
-        ])
-        var card = DraftCard(typesDirectly: true)
-        _ = card.handle(.released)
-        _ = card.handle(.heard("say hi"))
-        _ = card.handle(DraftCard.Event.chunk("Hi"))
-        _ = card.handle(.asked(PermissionPrompt(request)))
-        _ = card.handle(DraftCard.Event.chunk(" there"))
-        #expect(card.handle(.finished).isEmpty, "nothing is typed while the question is open")
-        #expect(card.handle(.answered("allow")) == [.answer(request, optionID: "allow"), .type("Hi there")])
-        #expect(card.phase == .typed)
     }
 
     @Test func anUnreachableAgentKeepsTheWordsForCopyAndRetry() {
@@ -618,17 +522,11 @@ private struct Rig {
 
 private let pid: Int32 = 501
 
-private func draft(_ events: [DraftCard.Event], typesDirectly: Bool = false,
-                   at now: Instant = Instant(seconds: 0)) -> DraftCard {
+private func draft(_ events: [DraftCard.Event], typesDirectly: Bool = false) -> DraftCard {
     var card = DraftCard(typesDirectly: typesDirectly)
-    for event in events { _ = card.handle(event, at: now) }
+    for event in events { _ = card.handle(event) }
     return card
 }
-
-private let alwaysFirst = PermissionRequest(rpcID: 1, session: "s", title: "Run a command", options: [
-    .init(id: "always", name: "Always allow", kind: "allow_always"), .init(id: "once", name: "Allow", kind: "allow_once"),
-    .init(id: "no", name: "Reject", kind: "reject_once"),
-])
 
 private enum Drafts {
     static let listening = draft([])
@@ -637,8 +535,7 @@ private enum Drafts {
     static let streaming = draft([.released, .heard("reply"), .chunk("Hi ")])
     static let ready = draft([.released, .heard("reply"), .chunk("Hi"), .finished])
     static let failed = draft([.released, .heard("reply"), .failed("Hermes stopped.")])
-    static let permission = draft([.released, .heard("reply"), .asked(PermissionPrompt(alwaysFirst))])
-    static let all = [listening, transcribing, thinking, streaming, ready, failed, permission,
+    static let all = [listening, transcribing, thinking, streaming, ready, failed,
                       draft([.released, .heard("reply"), .chunk("Hi")], typesDirectly: true)]
 }
 
@@ -646,7 +543,7 @@ private enum Drafts {
     @Test func onlyADraftShowingItsTextTakesAHeldKeyAsAChangeAndOnlyWithItsAppInFront() {
         #expect(Drafts.ready.takesChange(frontmost: pid, target: pid))
         #expect(Drafts.streaming.takesChange(frontmost: pid, target: pid))
-        for card in [Drafts.listening, Drafts.transcribing, Drafts.thinking, Drafts.failed, Drafts.permission, Drafts.all.last!] {
+        for card in [Drafts.listening, Drafts.transcribing, Drafts.thinking, Drafts.failed, Drafts.all.last!] {
             #expect(!card.takesChange(frontmost: pid, target: pid), "\(card.phase)")
         }
         #expect(!Drafts.ready.takesChange(frontmost: 777, target: pid))
@@ -679,29 +576,17 @@ private enum Drafts {
     }
 
     @Test func everyKeyTheCardTakesDoesSomethingAndReturnIsTakenOnlyWhereItActs() {
-        let later = Instant(seconds: 10)
         let keys: [CardKey] = [.returnKey, .escape, .number(1), .number(2), .number(4), .up, .down, .delete, .character("a")]
         for card in Drafts.all {
             for key in keys {
                 var copy = card
-                let effects = copy.handle(.key(key), at: later)
-                #expect(card.takes(key, at: later) == (copy != card || !effects.isEmpty), "\(key) in \(card.phase)")
+                let effects = copy.handle(.key(key))
+                #expect(card.takes(key) == (copy != card || !effects.isEmpty), "\(key) in \(card.phase)")
             }
         }
-        #expect(!Drafts.thinking.takes(.returnKey, at: later) && Drafts.thinking.takes(.escape, at: later))
-        #expect(Drafts.ready.takes(.returnKey, at: later) && Drafts.failed.takes(.returnKey, at: later))
-        #expect(!Drafts.ready.takes(.character("a"), at: later))
-    }
-
-    @Test func aQuestionIsAnsweredByNumberOnlyOnceItHasBeenUpLongEnoughAndAlwaysIsNeverFirst() {
-        let asked = Instant(seconds: 50)
-        var card = Drafts.thinking
-        _ = card.handle(.asked(PermissionPrompt(alwaysFirst)), at: asked)
-        guard case .permission(let prompt, _) = card.phase else { Issue.record("no question"); return }
-        #expect(prompt.request.options.map(\.id) == ["once", "no", "always"])
-        #expect(!card.takes(.number(1), at: asked + 0.3))
-        #expect(card.handle(.key(.number(1)), at: asked + 0.3).isEmpty)
-        #expect(card.handle(.key(.number(1)), at: asked + PermissionPrompt.readDelay) == [.answer(prompt.request, optionID: "once")])
+        #expect(!Drafts.thinking.takes(.returnKey) && Drafts.thinking.takes(.escape))
+        #expect(Drafts.ready.takes(.returnKey) && Drafts.failed.takes(.returnKey))
+        #expect(!Drafts.ready.takes(.character("a")))
     }
 
     @Test func typedKeysBecomeCardKeysOnlyWhenPlainAndPrintable() {

@@ -35,13 +35,16 @@ enum Mode {
                    Writes a PNG of every bar state into DIR. Needs a logged-in GUI session.
                Dictation --render-window DIR
                    Draws each page of the window, light and dark, with sample data to PNG files in DIR.
-               Dictation --agent-bench --command 'hermes acp' [--host HOST] [--option ID=VALUE]... [--model ID]
-                         [--runs N] [--cold] [--speech S] [--answer OPTION] [--supersede S] [--idle-limit S] [--prompt-file PATH]
+               Dictation --agent-bench --command 'hermes acp' [--host HOST] [--preset ID] [--option ID=VALUE]...
+                         [--model ID] [--runs N] [--cold] [--speech S] [--supersede S] [--idle-limit S] [--prompt-file PATH]
                    Times Ghostwrite drafts against an agent through the app's agent pool. One JSON line per run.
+                   --preset applies the tool-free draft settings of that preset (hermes, claude, codex, opencode, gemini,
+                   custom). Every permission is refused and a run stops at the agent's first tool, as in Ghostwrite;
+                   "tools" counts the tool updates.
                    --prompt-file sends the prompt in PATH instead of the sample request.
-               Dictation --hand-off DESTINATION.json [--dry-run] [--no-window-text] WORDS
+               Dictation --hand-off DESTINATION.json [--dry-run] [--window-text] WORDS
                    Sends WORDS through one Hand off destination, as the app does. --dry-run builds it and sends nothing.
-                   --no-window-text sends it as with Include window text off.
+                   --window-text includes the sample window text, as with Send the window's text with hand-offs on.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
                Dictation setup show
@@ -106,6 +109,9 @@ enum Mode {
                     case "--command": options.command = try Self.value(of: argument, from: &rest).split(separator: " ").map(String.init)
                     case "--host": options.remoteHost = try Self.value(of: argument, from: &rest)
                     case "--name": options.name = try Self.value(of: argument, from: &rest)
+                    case "--preset":
+                        options.preset = try Self.value(of: argument, from: &rest)
+                        guard AgentPreset.with(id: options.preset) != nil else { throw DictationError("--preset is one of \(AgentPreset.all.map(\.id).joined(separator: ", "))") }
                     case "--option":
                         let pair = try Self.value(of: argument, from: &rest).split(separator: "=", maxSplits: 1).map(String.init)
                         guard pair.count == 2 else { throw DictationError("--option takes ID=VALUE") }
@@ -114,7 +120,6 @@ enum Mode {
                     case "--runs": options.runs = try Self.number(of: argument, from: &rest, Int.init, in: 1...200)
                     case "--speech": options.speech = try Self.number(of: argument, from: &rest, Double.init, in: 0...30)
                     case "--cold": options.cold = true
-                    case "--answer": options.answer = try Self.value(of: argument, from: &rest)
                     case "--supersede": options.supersede = try Self.number(of: argument, from: &rest, Double.init, in: 0...30)
                     case "--idle-limit": options.idleLimit = try Self.number(of: argument, from: &rest, Double.init, in: 0.2...86_400)
                     case "--prompt-file": options.prompt = try String(contentsOfFile: try Self.value(of: argument, from: &rest), encoding: .utf8)
@@ -144,7 +149,7 @@ enum Mode {
                 while let argument = rest.popFirst() {
                     switch argument {
                     case "--dry-run": options.dryRun = true
-                    case "--no-window-text": options.includeWindowText = false
+                    case "--window-text": options.includeWindowText = true
                     default: options.words.append(argument)
                     }
                 }

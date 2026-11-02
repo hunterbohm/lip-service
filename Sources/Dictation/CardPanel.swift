@@ -117,8 +117,6 @@ private struct CardView: View {
 
     @ViewBuilder private func draft(_ card: DraftCard) -> some View {
         switch card.phase {
-        case .permission(let prompt, _):
-            question(prompt.request)
         case .failed(let reason):
             failure(reason, words: card.words, retry: true)
         case .ready(let text):
@@ -205,29 +203,6 @@ private struct CardView: View {
     private func note(_ text: String) -> some View {
         Text(text).font(.system(size: 12)).foregroundStyle(Theme.tertiary)
             .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)
-    }
-
-    private func question(_ request: PermissionRequest) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(request.title).font(.system(size: 14)).padding(.bottom, 4)
-            ForEach(Array(request.options.enumerated()), id: \.offset) { index, option in
-                Button { onAction(.key(.number(index + 1))) } label: {
-                    HStack(spacing: 10) {
-                        Text("\(index + 1)").font(.system(size: 11, weight: .semibold)).frame(width: 20, height: 18)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.12)))
-                        Text(option.name).font(.system(size: 13))
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(option.kind.hasPrefix("allow") ? Theme.tile : Color.white.opacity(0.03)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
     }
 
     private func failure(_ reason: String, words: String, retry: Bool) -> some View {

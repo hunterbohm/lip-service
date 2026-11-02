@@ -33,11 +33,6 @@ import DictationCore
         CardModel(agent: hermes, heading: heading, content: content, changeKey: "⌃ fn", keysLive: true)
     }
 
-    private static let permission = PermissionRequest(rpcID: 1, session: "s", title: "Read ~/Documents/launch-notes.md", options: [
-        .init(id: "allow", name: "Allow once", kind: "allow_once"), .init(id: "always", name: "Always allow", kind: "allow_always"),
-        .init(id: "reject", name: "Reject", kind: "reject_once"),
-    ])
-
     private static func handOff(_ events: [HandOffCard.Event], picks: Bool = false, destination: String = "Hermes in iMessage") -> HandOffCard {
         var card = HandOffCard(words: "remind me to call Theo at five", destination: destination, picksProject: picks, now: .now + 1.3)
         for event in events { _ = card.handle(event) }
@@ -62,8 +57,6 @@ import DictationCore
                   card: cardModel(.draft(draft([.chunk(draftText), .finished])))),
             Scene(name: "34-card-change", state: BarState(body: .listening(words: "make it a bit warmer", handsFree: false), agent: hermes),
                   card: cardModel(.draft(draft([.chunk(draftText), .finished, .listen])))),
-            Scene(name: "35-card-permission", state: BarState(body: .working(status: "Hermes is asking", busy: false), agent: hermes),
-                  card: cardModel(.draft(draft([.asked(PermissionPrompt(permission))])), heading: "Hermes asks")),
             Scene(name: "36-card-failed", state: BarState(body: .working(status: "Didn't finish", busy: false), agent: hermes),
                   card: cardModel(.draft(draft([.failed("Hermes couldn't be reached: ssh: connect to host mini port 22: Operation timed out")])),
                                   heading: "Hermes")),

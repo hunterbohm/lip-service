@@ -46,7 +46,7 @@ private let hermesInput: JSONValue = [
 
     @Test func aFieldLeftOutStaysAsItIs() throws {
         var start = try applied(hermesInput).settings
-        start.agents.includeWindowText = false
+        start.agents.includeWindowText = true
         let result = try applied(["reviewFirst": false], from: start)
         #expect(result.changes == ["Drafts are typed straight away"])
         var expected = start

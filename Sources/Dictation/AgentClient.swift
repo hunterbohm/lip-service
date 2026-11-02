@@ -119,8 +119,8 @@ actor ACPClient {
         _ = try await request("initialize", ACP.initialize(version: Self.version), timeout: 45)
     }
 
-    func newSession(cwd: String) async throws -> SessionInfo {
-        let result = try await request("session/new", ACP.newSession(cwd: cwd), timeout: 45)
+    func newSession(cwd: String, meta: JSONValue? = nil) async throws -> SessionInfo {
+        let result = try await request("session/new", ACP.newSession(cwd: cwd, meta: meta), timeout: 45)
         guard let info = SessionInfo.parse(result) else { throw AgentError("\(name) didn't open a session.") }
         return info
     }
@@ -152,7 +152,9 @@ actor ACPClient {
     }
 
     /// Asks the agent to stop the prompt running in the session, if one is, and gives it 3 s to answer that prompt.
-    func cancel(session: String) async {
+    /// `retiring` also keeps the session from taking another prompt, for one that must not be trusted again.
+    func cancel(session: String, retiring: Bool = false) async {
+        if retiring { retired.insert(session) }
         guard let running = prompting[session] else { return }
         notify("session/cancel", ACP.cancel(session: session))
         for _ in 0..<150 where prompting[session] == running { try? await Task.sleep(for: .milliseconds(20)) }
@@ -236,6 +238,7 @@ actor ACPClient {
         var spare: Task<String, any Error>?
         var command: String
         var draftOptions: [ConfigChoice]
+        var toolFree: ToolFreeDraft
     }
 
     /// The agent's own settings and models as its last session reported them, for the settings page's menus.
@@ -289,10 +292,11 @@ actor ACPClient {
     private func spareSession(_ agent: AgentConnection, refill: Bool) async throws -> (ACPClient, String) {
         let client = try await client(for: agent)
         guard var entry = warm[agent.id] else { throw AgentError("\(agent.name) stopped.") }
-        if entry.draftOptions != agent.draftOptions {
+        if entry.draftOptions != agent.draftOptions || entry.toolFree != agent.toolFreeDraft {
             entry.spare?.cancel()
             entry.spare = nil
             entry.draftOptions = agent.draftOptions
+            entry.toolFree = agent.toolFreeDraft
         }
         let spare = entry.spare ?? openSpare(agent, client: client)
         entry.spare = refill ? nil : spare
@@ -301,7 +305,8 @@ actor ACPClient {
             let session = try await spare.value
             // Refilled only while this client and these options are still current: a late answer for a draft made
             // before a model change must not put back a spare with the old model.
-            if refill, let now = warm[agent.id], now.client === client, now.draftOptions == agent.draftOptions, now.spare == nil {
+            if refill, let now = warm[agent.id], now.client === client, now.draftOptions == agent.draftOptions, now.toolFree == agent.toolFreeDraft,
+               now.spare == nil {
                 warm[agent.id]?.spare = openSpare(agent, client: client)
             }
             return (client, session)
@@ -313,10 +318,17 @@ actor ACPClient {
 
     private func openSpare(_ agent: AgentConnection, client: ACPClient) -> Task<String, any Error> {
         let cwd = agent.sessionDirectory(local: workingDirectory.path), options = agent.draftOptions, id = agent.id
+        let toolFree = agent.toolFreeDraft, log = log
         return Task { [weak self] in
-            let info = try await client.newSession(cwd: cwd)
+            let info = try await client.newSession(cwd: cwd, meta: toolFree.sessionMeta)
             await self?.remember(info, for: id)
             for choice in options { try await client.set(choice, session: info.id) }
+            // An older adapter may not know the setting. The draft goes on, since it stops at the first tool anyway.
+            for choice in toolFree.choices {
+                do { try await client.set(choice, session: info.id) } catch {
+                    log.info("\(client.name, privacy: .public) kept its tools: \(error.localizedDescription, privacy: .public)")
+                }
+            }
             return info.id
         }
     }
@@ -357,7 +369,8 @@ actor ACPClient {
                 throw AgentError("\(agent.name) was stopped while it started.")
             }
             log.info("\(agent.name, privacy: .public) started in \(Instant.now - started, format: .fixed(precision: 2)) s")
-            warm[agent.id] = Warm(client: client, spare: nil, command: command, draftOptions: agent.draftOptions)
+            warm[agent.id] = Warm(client: client, spare: nil, command: command, draftOptions: agent.draftOptions,
+                                   toolFree: agent.toolFreeDraft)
             scheduleReaper()
             return client
         }
