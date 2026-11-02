@@ -19,9 +19,19 @@ check "the warm path skips start and session" 'rows[1]["session_wait_s"]<0.05 an
     --command "$fake --mode draft --delay 0.1 --start-delay 1" --runs 2
 check "a request made while the agent is still starting waits for it" 'all(r.get("text","").startswith("Tuesday") for r in rows)' \
     --command "$fake --mode draft --start-delay 1.5" --runs 2 --cold
-check "a permission answer reaches the agent" 'rows[0]["asked"]=="Read ~/Documents/notes.txt" and rows[0]["text"].startswith("Permission answer: always.")' \
-    --command "$fake --mode permission" --answer always --runs 1
-check "no answer refuses" 'rows[0]["text"].startswith("Permission answer: reject.")' --command "$fake --mode permission" --runs 1
+check "every permission request is refused" 'rows[0]["asked"]=="Read ~/Documents/notes.txt" and rows[0]["text"].startswith("Permission answer: reject.")' \
+    --command "$fake --mode permission" --runs 1
+check "a draft that starts a tool is stopped at the first one" \
+    'rows[0]["tools"]==1 and "tried to use a tool" in rows[0].get("error","") and "text" not in rows[0]' --command "$fake --mode tool" --runs 1
+check "a draft with no tool reports none" 'rows[0]["tools"]==0 and "error" not in rows[0]' --command "$fake --mode draft" --runs 1
+check "Claude Code drafts start with no tools" \
+    'json.loads(rows[0]["text"])["meta"]=={"claudeCode":{"options":{"tools":[],"strictMcpConfig":True}}}' \
+    --command "$fake --mode report" --preset claude --runs 1
+check "Codex drafts start read-only, after the draft options" \
+    'json.loads(rows[0]["text"])["options"]==[["model","fast-model"],["mode","read-only"]]' \
+    --command "$fake --mode report" --preset codex --option model=fast-model --runs 1
+check "an agent with no tool switch is sent nothing extra" \
+    'json.loads(rows[0]["text"])=={"meta":None,"options":[]}' --command "$fake --mode report" --preset hermes --runs 1
 check "an agent error is shown" '"model overloaded" in rows[0].get("error","")' --command "$fake --mode error" --runs 1
 check "a dead agent says why, and the next request starts it again" \
     '"crashed on purpose" in rows[0].get("error","") and rows[1].get("text","").startswith("Tuesday")' \

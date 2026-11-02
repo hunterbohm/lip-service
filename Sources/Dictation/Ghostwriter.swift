@@ -266,7 +266,7 @@ import os
             let (client, sessionID) = (session.client, session.id)
             _ = try await client.prompt(text, session: sessionID, timeout: 120, onUpdate: { [weak self] update in
                 if tools.withLock({ $0.see(update) }) {
-                    Task { @MainActor in self?.stopForTool(of: client, session: sessionID, turn: turn, in: run) }
+                    Task { @MainActor in self?.stopForTool(of: client, session: sessionID, in: run) }
                 }
                 guard case .message(let chunk) = update, !tools.withLock({ $0.stopped }) else { return }
                 Task { @MainActor in
@@ -291,12 +291,13 @@ import os
     }
 
     /// A draft needs no tools. The turn is cancelled and its session never reused, since a tool call can come from
-    /// instructions hidden in the window's text.
-    private func stopForTool(of client: ACPClient, session: String, turn: Int, in run: Run) {
-        guard self.run === run, run.turn == turn else { return }
+    /// instructions hidden in the window's text. A tool in a turn a change replaced counts too: it is the same session.
+    private func stopForTool(of client: ACPClient, session: String, in run: Run) {
+        guard self.run === run else { return }
+        Task { await client.cancel(session: session, retiring: true) }
+        guard run.session?.id == session else { return }
         run.turn += 1
         run.session = nil
-        Task { await client.cancel(session: session, retiring: true) }
         log.info("ghostwrite stopped at a tool call from \(run.agent.name, privacy: .public)")
         fail(ToolStop.message(agent: run.agent.name), in: run)
     }

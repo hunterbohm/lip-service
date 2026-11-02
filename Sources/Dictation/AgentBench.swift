@@ -3,17 +3,19 @@ import Foundation
 
 /// `--agent-bench`: times drafts through the app's own AgentPool against a real agent, warm the way Ghostwrite runs it
 /// (the agent started and a spare session ready at key-down) or cold (a new process for every run). One JSON line per run.
+/// A run is set up and ended as Ghostwrite sets up and ends one: the preset's tool-free settings, every permission
+/// refused, and a stop at the first tool.
 @MainActor enum AgentBench {
     struct Options {
         var command: [String] = []
         var remoteHost: String?
         var name = "Agent"
+        /// The preset whose tool-free draft settings apply, as for an agent set up from it.
+        var preset = "custom"
         var draftOptions: [ConfigChoice] = []
         var runs = 10
         var cold = false
         var speech = 2.0
-        /// The option id to pick when the agent asks permission. Nil refuses.
-        var answer: String?
         /// Speak a change this many seconds into the draft, in the same session, as holding the key over a streaming draft does.
         var supersede: Double?
         var idleLimit = 30.0 * 60
@@ -25,6 +27,7 @@ import Foundation
     static func run(_ options: Options) async -> Int32 {
         var agent = AgentPreset.with(id: "custom")!.connection()
         agent.name = options.name
+        agent.presetID = options.preset
         agent.command = options.command
         agent.remoteHost = options.remoteHost
         agent.draftOptions = options.draftOptions
@@ -37,22 +40,26 @@ import Foundation
             try? await Task.sleep(for: .seconds(options.speech))
             let released = Instant.now
             var row: [String: JSONValue] = ["run": .number(Double(run)), "cold": .bool(options.cold || run == 1), "speech_s": .number(options.speech)]
+            let first = Clock()
             do {
                 let (client, session) = try await pool.draftSession(agent)
                 let prompted = Instant.now
-                let first = Clock()
+                func onUpdate(keepingText: Bool) -> ACPClient.UpdateHandler {
+                    { update in
+                        if first.see(update, keepingText: keepingText) { Task { await client.cancel(session: session, retiring: true) } }
+                    }
+                }
+                let onPermission: ACPClient.PermissionHandler = { request in
+                    first.asked(request.title)
+                    return request.rejection?.id
+                }
                 var superseded: Task<String, any Error>?
                 if let after = options.supersede {
-                    superseded = Task { try await client.prompt(options.prompt, session: session, timeout: 60, onUpdate: { _ in }, onPermission: { $0.rejection?.id }) }
+                    superseded = Task { try await client.prompt(options.prompt, session: session, timeout: 60, onUpdate: onUpdate(keepingText: false), onPermission: onPermission) }
                     try? await Task.sleep(for: .seconds(after))
                 }
                 let text = superseded == nil ? options.prompt : GhostwriteRequest.change("make it shorter")
-                let stop = try await client.prompt(text, session: session, timeout: 60, onUpdate: { update in
-                    if case .message(let chunk) = update { first.mark(chunk) }
-                }, onPermission: { [answer = options.answer] request in
-                    first.asked(request.title)
-                    return answer ?? request.rejection?.id
-                })
+                let stop = try await client.prompt(text, session: session, timeout: 60, onUpdate: onUpdate(keepingText: true), onPermission: onPermission)
                 let done = Instant.now
                 try? await Task.sleep(for: .milliseconds(20))
                 row["session_wait_s"] = .number(prompted - released)
@@ -64,11 +71,15 @@ import Foundation
                 if let superseded { row["first_stop"] = .string((try? await superseded.value) ?? "failed") }
                 row["text"] = .string(ReplyCleanup.clean(first.text))
                 if let question = first.question { row["asked"] = .string(question) }
-                if first.at == nil { failures += 1 }
             } catch {
-                failures += 1
                 row["error"] = .string(error.localizedDescription)
             }
+            row["tools"] = .number(Double(first.tools))
+            if first.tools > 0 {
+                row["error"] = .string(ToolStop.message(agent: agent.name))
+                row["text"] = nil
+            }
+            if row["error"] != nil || first.at == nil { failures += 1 }
             print(String(decoding: JSONValue.object(row).data(), as: UTF8.self))
             fflush(stdout)
         }
@@ -82,12 +93,18 @@ import Foundation
         private let lock = NSLock()
         private var first: Instant?
         private var chunks = ""
-        func mark(_ chunk: String) {
+        private var stop = ToolStop()
+        /// Takes in an update. True for the first tool, where the run ends. Text after it is dropped, as Ghostwrite drops it.
+        func see(_ update: SessionUpdate, keepingText: Bool) -> Bool {
             lock.withLock {
-                if first == nil { first = .now }
-                chunks += chunk
+                if keepingText, case .message(let chunk) = update, !stop.stopped {
+                    if first == nil { first = .now }
+                    chunks += chunk
+                }
+                return stop.see(update)
             }
         }
+        var tools: Int { lock.withLock { stop.tools } }
         private var asked: String?
         func asked(_ title: String) { lock.withLock { asked = title } }
         var question: String? { lock.withLock { asked } }
