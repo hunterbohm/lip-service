@@ -107,7 +107,9 @@ struct FocusTarget {
 
     /// `pasted` is set only for a dictation that Learn from your fixes may watch: pasted, seen in its field, and not
     /// sent with Return.
-    func insert(_ insertion: Insertion, target: FocusTarget, releasedAt: Instant) async -> (outcome: InsertOutcome, pasted: Pasted?) {
+    /// `onPaste` gets the moment the paste keystroke went out, before the clipboard settle, for timing.
+    func insert(_ insertion: Insertion, target: FocusTarget, releasedAt: Instant,
+                onPaste: (Instant) -> Void = { _ in }) async -> (outcome: InsertOutcome, pasted: Pasted?) {
         exposeAccessibility(pid: target.pid)
         let focus = FocusTarget.current()
         let conditions = InsertConditions(trusted: AXIsProcessTrusted(), secureInput: IsSecureEventInputEnabled(),
@@ -118,7 +120,7 @@ struct FocusTarget {
             return (.copied(reason), nil)
         case .paste:
             let configuration = preferences.current
-            let fitted = configuration.settings.smartSpacing && insertion.source != .snippet
+            let fitted = configuration.settings.smartSpacing && insertion.source != .snippet && insertion.source != .agentDraft
                 ? SmartSpacing.adjust(insertion.text, after: focus.textBeforeCursor(),
                                       properNouns: configuration.vocabulary.terms.map(\.text) + Cleanup.calendarNames)
                 : insertion.text
@@ -126,6 +128,7 @@ struct FocusTarget {
             guard let ticket = transaction.paste(fitted, on: pasteboard, post: { Self.post(kVK_ANSI_V, flags: .maskCommand) }) else {
                 return (.copied(.keystrokeFailed), nil)
             }
+            onPaste(Instant.now)
             let field = focus.isReadable ? focus.element.map(Field.init) : nil
             let learns = insertion.source == .dictation && !insertion.pressReturn && configuration.settings.learnFixes
             var landed: Field.Contents?

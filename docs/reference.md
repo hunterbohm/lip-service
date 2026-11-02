@@ -51,12 +51,13 @@ The first launch downloads the speech model, about 460 MB, and prepares it for t
 
 ## The Lip Service window
 
-The window opens on first launch. To open it later, open the app again from Spotlight, Raycast, or the Finder, or choose **Open Lip Service…** in the menu. While the window is open, the app has a Dock icon and menus. When you close the window, the app goes back to the menu bar only. If **Show menu bar icon** is off, a launch other than at login also opens the window, so the app never starts invisibly.
+On first launch the setup window opens instead, described under First run. To open the window later, open the app again from Spotlight, Raycast, or the Finder, or choose **Open Lip Service…** in the menu. While the window is open, the app has a Dock icon and menus. When you close the window, the app goes back to the menu bar only. If **Show menu bar icon** is off, a launch other than at login also opens the window, so the app never starts invisibly.
 
 The window is always dark and follows the Tesla center screen: one dark canvas, flat tiles, blue for a setting that is on, a gray fill for the chosen one of several, and messages in rounded bars with a colored icon. A list of pages runs down the left. A black strip along the bottom shows the microphone dictation would use now, with a green dot, or an amber dot when the chosen one is unplugged; the keys to hold; and **Copy last**, which copies your last dictation.
 
-- **Home** starts with a message for anything setup still needs: microphone access, Accessibility access, and, when fn is a dictation key, Keyboard > **Press fn key to** set to **Do Nothing**. Each has a button to the right System Settings pane, and they update every 2 s. Below them are four numbers: words in the last 7 days, large, then total words, average words per minute (words over the audio minutes of the dictations whose audio length is known), and the streak of days with a dictation, which counts today or, until today has one, yesterday. Then come your dictations, newest first. Each shows the text, the app, and when, such as "Today at 4:12 PM". Click one to see all of its text. Hover over it to copy or delete it. The search field filters them by text and app.
+- **Home** starts with a message for anything setup still needs: microphone access, Accessibility access, and, when fn is a dictation key, Keyboard > **Press fn key to** set to **Do Nothing**. Each has a button to the right System Settings pane, and they update every 2 s. **Set up again…** opens the setup window. Below them are four numbers: words in the last 7 days, large, then total words, average words per minute (words over the audio minutes of the dictations whose audio length is known), and the streak of days with a dictation, which counts today or, until today has one, yesterday. Then come your dictations, newest first. Each shows the text, the app, and when, such as "Today at 4:12 PM". Click one to see all of its text. Hover over it to copy or delete it. The search field filters them by text and app.
 - **Dictation** sets the dictation keys, the bar position, **Sounds**, **Smart spacing**, **Vocabulary boost**, **Hide bar when idle**, **Mute other audio**, **Launch at login**, and **Show menu bar icon**, described in the Settings section below.
+- **Ghostwrite** shows the agent that writes for you and whether it is ready (Ready, Checking, Can't reach with the reason and **Try again**, or Not installed), with **Change**. Below it are the Ghostwrite and Hand off keys, each a tile you click to record a new key; **Show the draft before typing it**, **Learn my voice from my dictations**, and **Send the window's text with hand-offs**; and **Your voice**. **Change** opens **Who writes for you**: the agents you set up, then **Another agent** for the rest. Pick one to make it the default. For the chosen one, **Test** checks that it answers, **Hand off goes to** picks the destination and shows its fields, and **Advanced** holds its name, its command, the Mac it runs on, the names you call it, and **Remove**. With no agent, the page shows **Set up Ghostwrite**, which opens the setup window at its Ghostwrite step.
 - **Profiles** sets how dictations read in each group of apps, described in the Profiles section below.
 - **Microphone** lists System Default and every input. Click one to dictate with it. A chosen microphone that is unplugged stays in the list, marked not connected, under a message naming the one used instead. The input level below moves while you speak. It records only while this page is open, so the menu bar's microphone indicator shows then.
 - **Dictionary** shows your vocabulary terms as tiles with their misheard spellings, or "No words yet" when there are none. **Add Word**, and the pencil and trash that appear when you hover over a tile, change the vocabulary file described below. Double-click a tile to edit it. Below them are **Names from the screen**, **Learn from your fixes**, and your snippets, each described in its own section below.
@@ -90,12 +91,12 @@ For fn to work as a dictation key, set System Settings > Keyboard > **Press fn k
 
 ## Profiles
 
-The app in front when you let go of the dictation key picks a profile group. Each group has a style and a **Press Return after inserting** switch. The rules are fixed text rules that run on your Mac after cleanup, never a rewrite, so they add no time.
+The app in front when you let go of the dictation key picks a profile group. The Profiles page shows one group at a time: pick it in the row of tabs, then click one of three style cards, each with a sample message. A choice saves at once. Below the cards are **Press Return after the text goes in** and the group's apps. Each group has a style and a **Press Return after the text goes in** switch. The rules are fixed text rules that run on your Mac after cleanup, never a rewrite, so they add no time.
 
 - **Formal** keeps the cleaned text as it is.
 - **Casual** leaves off the period at the end of the dictation. A question mark, an exclamation mark, "...", or the period of a final abbreviation such as "U.S.", "e.g.", "i.e.", or "etc." stays.
 - **Very casual** does the same and writes every letter in lowercase, except words spelled exactly as in your dictionary and "I", as in "I'm". "i.e." stays as it is.
-- **Press Return after inserting** presses Return once the pasted text shows in the field, which sends the message in most chat apps. Just before Return, Lip Service checks the focus again and presses it only when the same field still has it, and only when the paste showed up or the field takes typed text: a text field, a text area, a combo box, or editable text in a web page. In an app that shows no focused field, such as some terminals and Electron apps, Return goes only if that app stayed in front and no other app came forward since you let go, 0.2 s after the paste. Return never comes later than 0.6 s after the paste. Past that, or when a check fails, it is skipped. It is off in every group at first. When Lip Service only copies the text, it does not press Return.
+- **Press Return after the text goes in** presses Return once the pasted text shows in the field, which sends the message in most chat apps. Just before Return, Lip Service checks the focus again and presses it only when the same field still has it, and only when the paste showed up or the field takes typed text: a text field, a text area, a combo box, or editable text in a web page. In an app that shows no focused field, such as some terminals and Electron apps, Return goes only if that app stayed in front and no other app came forward since you let go, 0.2 s after the paste. Return never comes later than 0.6 s after the paste. Past that, or when a check fails, it is skipped. It is off in every group at first. When Lip Service only copies the text, it does not press Return.
 
 The groups and the apps they start with:
 
@@ -107,7 +108,7 @@ The groups and the apps they start with:
 | AI and code | Formal | T3 Code, ChatGPT, Claude, Codex, Cursor, Visual Studio Code, Zed, Xcode, Ghostty, Terminal, iTerm2, Warp |
 | Everything else | Formal | Every app not in another group |
 
-**Add App** on a group adds one of the apps that are open, or an app you choose in the Finder. Hover over an app and click × to remove it, which puts it in Everything else. An app sits in one group only, so adding it to a second group moves it. A group can list a bundle ID that ends in `*`, which matches every ID that starts with the rest; T3 Code is listed as `com.t3tools.t3code*`, which covers its nightly and beta builds. History keeps the text as it was inserted.
+The page lists only the group's apps that are installed or that you added. **Edit** opens the full list: **Add App** adds one of the apps that are open, or an app you choose in the Finder, and the × on an app removes it, which puts it in Everything else. An app sits in one group only, so adding it to a second group moves it. A group can list a bundle ID that ends in `*`, which matches every ID that starts with the rest; T3 Code is listed as `com.t3tools.t3code*`, which covers its nightly and beta builds. History keeps the text as it was inserted.
 
 ## Names from the screen
 
@@ -121,13 +122,127 @@ Names from the screen use the boosting model, so they work when **Vocabulary boo
 
 With **Learn from your fixes** on, which it is at first, Lip Service notices when you correct a word it typed. After it pastes into a field that shows its text to Accessibility, it remembers the field's text and where the dictation sits. When you start your next dictation, or a minute after the paste, whichever comes first, it reads the field once more. If the only change is one word of the dictation replaced by another, with a word of the dictation still next to it, it adds your word to the dictionary, and the bar shows **Learned _word_** with an **Undo** button. That notice stays up through the start of the next dictation. A field whose whole text was replaced, such as a sent message followed by a new one, teaches nothing. The dictionary change takes effect once no dictation is in progress.
 
-It learns only when the new word looks or sounds like the old one, has at least three letters, is not a common English word, and is not in the dictionary already. A change of capitals only, a rewrite of several words, or a change outside the dictation teaches nothing. The old word is kept as a misheard spelling only when macOS's spell checker does not know it, so a real word, such as "more" fixed to "Moore", is never replaced in later dictations. A dictation sent with **Press Return after inserting** is not watched, and neither is a snippet. Fields longer than 20,000 characters are not read, and neither are fields in the password apps listed under names from the screen. Nothing leaves your Mac.
+It learns only when the new word looks or sounds like the old one, has at least three letters, is not a common English word, and is not in the dictionary already. A change of capitals only, a rewrite of several words, or a change outside the dictation teaches nothing. The old word is kept as a misheard spelling only when macOS's spell checker does not know it, so a real word, such as "more" fixed to "Moore", is never replaced in later dictations. A dictation sent with **Press Return after the text goes in** is not watched, and neither is a snippet. Fields longer than 20,000 characters are not read, and neither are fields in the password apps listed under names from the screen. Nothing leaves your Mac.
 
 ## Snippets
 
-A snippet is saved text that a spoken cue stands for, such as "my address" for your full address. When the whole dictation is a cue, Lip Service inserts the snippet's text instead, exactly as you saved it, line breaks included. Case, punctuation, apostrophes, and the spaces around the words don't matter, so "My address." and "my address" both match, but "send my address to Sam" does not. A snippet gets no cleanup, no profile style, and no smart spacing. The profile's **Press Return after inserting** still applies. **Paste last dictation** inserts a snippet exactly as saved too.
+A snippet is saved text that a spoken cue stands for, such as "my address" for your full address. When the whole dictation is a cue, Lip Service inserts the snippet's text instead, exactly as you saved it, line breaks included. Case, punctuation, apostrophes, and the spaces around the words don't matter, so "My address." and "my address" both match, but "send my address to Sam" does not. A snippet gets no cleanup, no profile style, and no smart spacing. The profile's **Press Return after the text goes in** still applies. **Paste last dictation** inserts a snippet exactly as saved too.
 
 **Add Snippet** on the Dictionary page adds one. The cue is one line, and the text can be several. Hover over a snippet to edit or delete it, or double-click it to edit it. Two snippets can't share a cue. Snippets are stored with the other settings, under `settings` in the `com.hunterbohm.dictation` defaults domain. A stored snippet, dictation key, profile app, or group rule that can't be read is dropped on its own, and the rest still load.
+
+## First run
+
+On first launch, Lip Service opens a setup window instead of its main window. It offers two ways in.
+
+**Set it up** goes through these steps, with **Back** on each and **Skip** where nothing breaks without it:
+
+1. **Permissions**: Microphone, Accessibility, and Keyboard > **Press fn key to** set to **Do Nothing**. Each has a button to the right System Settings pane, and each row turns to Done once it's granted. **Continue** waits for all three.
+2. **Try it**: click the box, hold fn, and talk. It shows the time from letting go to the paste.
+3. **How you write**: a style for each group of apps, the same as on the Profiles page.
+4. **Ghostwrite**: pick the agent that writes for you. The agents found on this Mac come first, and Hermes is always offered, on this Mac or on another one by its ssh name. The step says what Ghostwrite sends.
+5. **Check**: Lip Service asks the agent for one word and shows how long it took, or why it failed, with **Try again**. Below that is where hand-offs go, filled in for the agent you picked.
+6. **You're set**: the three keys and what each does.
+
+**Let my agent set it up** shows a prompt to copy into the agent you use. It is described under Set up with your agent. When the agent applies its setup, the window lists what changed, with **Undo**, and goes on to Permissions, which only you can grant.
+
+**Set up again…** on the Home page and in the menu opens the window again.
+
+## Ghostwrite
+
+Hold the Ghostwrite key, ⌃fn at first, and say what you want written, such as "tell her Thursday works, after 3". You can also hold fn and press Control right after. When you let go:
+
+1. Lip Service turns your words into text on your Mac, as for a dictation.
+2. It sends the request to your agent. A request holds:
+   - your words;
+   - the app you're in;
+   - what Lip Service can read of the window: its title, the field with the cursor marked, and the text nearest it;
+   - up to 8 of your recent dictations from apps in the same profile group, as examples, while **Learn my voice from my dictations** is on;
+   - your voice notes.
+
+   It asks for only the text to insert, keeping every detail you asked for, such as times, days, names, and numbers. Each request starts a new conversation with the agent.
+3. The bar shows the agent's initial and what it is doing. The draft streams into a card above the bar.
+
+In the card:
+
+- **Return** types the draft into the field you started in.
+- Holding the Ghostwrite key again and saying a change, such as "shorter", sends it in the same conversation, and the new draft streams in.
+- **Escape** throws the draft away.
+
+The card takes these keys only while the app you started in is in front. Every other key reaches that app as usual. A quick tap of fn over a draft keeps the draft.
+
+- **Questions.** When the agent asks permission for something, the card shows its question with numbered answers. Press a number or click one. Numbers wait 0.8 s after the question appears, so a digit you were typing still reaches your app. An "always" answer is listed last. The agent's own permission rules decide what it asks; Lip Service never answers for you.
+- **Failures.** If the agent fails or isn't installed, the card says why, keeps your words, and offers **Retry** and **Copy words**.
+- **No text field.** In a window without one, the button reads **Copy it**, and Return copies the draft.
+- **No card.** With **Show the draft before typing it** off, the finished draft is pasted as soon as it is done, with no card.
+- **Naming an agent.** Start a request with an agent's name, as in "Claude, reply that I'm in", and it goes to that agent instead of the default.
+
+Drafts use the agent's fast model where Lip Service knows it:
+
+| Agent | Draft model |
+| --- | --- |
+| Hermes | Claude Haiku, low reasoning |
+| Claude Code | Haiku, low effort |
+| Codex | GPT Luna, low |
+| OpenCode | GPT Luna |
+
+Hand-offs and voice notes use the agent's own default model. In testing, Hermes on Claude Haiku showed the first words about 1.4 s after the words were sent; Codex and OpenCode took 5 to 16 s.
+
+**Your voice** on the Ghostwrite page holds a few lines on how you write, sent with every draft. Write them yourself, or click **Build with** your agent to have it write them once from your recent dictations, with its full model. While it does, it may only read, search, and think.
+
+## Hand off
+
+Hold the Hand off key, ⌥fn at first, and say a task. The card shows what was heard and where it is going, with a 5 s countdown: **Send now** or Return sends at once, and Escape or **Cancel** stops it. The message is your words. While **Send the window's text with hand-offs** is on, the window's text follows as one block, up to 4,000 characters. Afterwards the bar says the task left without typing anything.
+
+Where it goes, set per agent under **Hand off goes to**:
+
+- **iMessage** sends from your own Messages to the handle you enter, such as the number where Hermes answers you. The first time, macOS asks you to let Lip Service control Messages.
+- **T3 Code** opens a project picker instead of the countdown. Type to filter, and pick a project to send. A new thread starts there with your words, and T3 Code opens on it. Connect it once on the Ghostwrite page: make a pairing code in T3 Code (Settings, Connections), paste it, and click **Connect T3 Code**.
+- **Telegram** opens the chat with your bot with the text typed in, for you to send.
+- **Slack** posts a direct message to the bot as you, with your Slack user token.
+- **Discord** posts through a channel webhook and mentions the bot. Discord caps a message at 2,000 characters.
+- **Web address** posts JSON. With a secret, it is signed the way GitHub and Hermes's webhook check:
+  - `X-Hub-Signature-256`, an HMAC-SHA256 of the body;
+  - `X-Webhook-Signature-V2`, an HMAC of `timestamp.body`, with `X-Webhook-Timestamp`;
+  - and `X-Request-ID`.
+- **Command** runs a program you choose, without a shell. It gets the JSON on stdin and `LS_TEXT`, `LS_APP`, `LS_TIMESTAMP`, and, when the window text is sent, `LS_CONTEXT_FILE` in its environment.
+- **Reply in the card** has the agent do the task itself, and its reply shows in the card.
+
+Tokens and secrets live in the Keychain under the service `com.hunterbohm.dictation.agents`. The app is signed with its own certificate, so after each update macOS asks for your Mac password the first time it reads one.
+
+## Agents
+
+Lip Service talks to agents over the Agent Client Protocol (ACP), the same way code editors do, so it uses the agent and plan you already have. Built in:
+
+| Agent | Command |
+| --- | --- |
+| Hermes | `hermes acp` |
+| Claude Code | `npx -y @agentclientprotocol/claude-agent-acp` |
+| Codex | `npx -y @agentclientprotocol/codex-acp` |
+| OpenCode | `opencode acp` |
+| Gemini | `gemini --acp` |
+
+**Custom** takes any command.
+
+- The command runs through your login shell, so it finds the same programs your terminal does.
+- **Runs on** takes another Mac's ssh name, such as `mini`. The agent then runs there through `ssh -T -o BatchMode=yes`, so the ssh key must work without a prompt. Over Tailscale that is fast.
+- One agent is the default. **Change** on the Ghostwrite page picks it.
+- Lip Service starts the agent while you are still talking, then keeps it running with a session ready, so the next request skips the start-up.
+
+## Set up with your agent
+
+The app has a `setup` command that an agent can run:
+
+```sh
+"/Applications/Lip Service.app/Contents/MacOS/Dictation" setup show
+"/Applications/Lip Service.app/Contents/MacOS/Dictation" setup apply --by "Claude Code" < setup.json
+"/Applications/Lip Service.app/Contents/MacOS/Dictation" setup test [AGENT_ID]
+```
+
+- `setup show` prints the setup as JSON: the agents and the default one, the three Ghostwrite switches, your voice notes, the style and Return switch of each profile group, and the keys. It also prints `found`, the agents installed on this Mac, and `help`, which describes every field.
+- `setup apply` reads the same shape on stdin. Every field is optional, and a field left out stays as it is. It checks everything first. If anything is wrong, it changes nothing, lists the problems, and exits with status 1. Otherwise it keeps your previous settings for Undo and writes the new ones. The running app then shows "*name* set up Lip Service" with the list of changes, **Undo**, and **Got it**. If the app isn't running, the changes take effect when it starts.
+- `setup test` asks an agent for one word and prints how long it took.
+
+The command never reads or writes the tokens for Slack, Discord, web addresses, or T3 Code; set those up in the app. It can't grant permissions either. **Copy setup prompt** copies instructions for your agent that use these commands with the app's real path.
 
 ## Vocabulary file
 
@@ -178,7 +293,7 @@ The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio 
 
 To make a release zip, name it after the version in `Info.plist`:
 
-	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.5.zip
+	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.6.zip
 
 ## Speech models
 

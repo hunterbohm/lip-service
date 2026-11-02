@@ -48,9 +48,14 @@ private final class RenderWindow: NSWindow {
         let builtIn = AudioDevices.Input(uid: "BuiltInMicrophoneDevice", name: "MacBook Pro Microphone", deviceID: 91)
         let phone = AudioDevices.Input(uid: "C63FE4BD-iPhone", name: "iPhone Microphone", deviceID: 92)
         let inputs = Inputs { ([builtIn, phone], builtIn) }
+        let agentServices = AgentServices(pool: AgentPool(), preferences: preferences, history: history)
+        agentServices.isStatic = true
+        let timing = DictationTiming()
+        AppInstalled.override = { sampleInstalled.contains($0) }
+        defer { AppInstalled.override = nil }
         let services = WindowServices(preferences: preferences, history: history, setup: setup, willow: willow,
                                       loginItem: LoginItem(), inputs: inputs, level: InputLevel(fixed: 0.42),
-                                      shortcuts: .unavailable, copy: { _ in })
+                                      shortcuts: .unavailable, copy: { _ in }, agents: agentServices, timing: timing, openSetup: { _ in })
         let window = RenderWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
         MainWindow.configure(window, services: services, state: state)
         window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
@@ -62,12 +67,43 @@ private final class RenderWindow: NSWindow {
             ("home", { checks = SetupChecks(microphone: true, accessibility: true, fnKey: .ready); willow.dismissCard() }),
             ("home-search", { state.search = "profit" }),
             ("dictation", { state.search = ""; state.page = .dictation; window.setContentSize(NSSize(width: 1000, height: 860)) }),
-            ("profiles", {
+            ("ghostwrite-empty", { state.page = .ghostwrite; window.setContentSize(NSSize(width: 1000, height: 640)) }),
+            ("ghostwrite", {
+                preferences.change { settings in
+                    var hermes = AgentPreset.with(id: "hermes")!.connection()
+                    hermes.remoteHost = "mini"
+                    hermes.destination = .iMessage(handle: "+1 415 555 0182")
+                    let claude = AgentPreset.with(id: "claude")!.connection()
+                    settings.agents.agents = [hermes, claude]
+                    settings.agents.defaultAgent = "hermes"
+                    settings.agents.voiceNotes = "Short and direct. Lowercase in chats, full sentences in email. Signs emails \u{201C}Hunter\u{201D}. No exclamation marks."
+                }
+                agentServices.show(installed: ["claude", "codex"])
+                agentServices.show(status: .ready(seconds: 1.4, model: "claude-haiku-5-5"), for: "hermes")
+                agentServices.show(status: .ready(seconds: 2.1, model: "haiku"), for: "claude")
+                window.setContentSize(NSSize(width: 1000, height: 680))
+            }),
+            ("ghostwrite-unreachable", {
+                agentServices.show(status: .failed("ssh: connect to host mini port 22: Operation timed out"), for: "hermes")
+            }),
+            ("ghostwrite-change", {
+                agentServices.show(status: .ready(seconds: 1.4, model: "claude-haiku-5-5"), for: "hermes")
+                state.sheet = .agents
+                window.setContentSize(NSSize(width: 1000, height: 820))
+            }),
+            ("ghostwrite-change-another", { state.sheetAdding = true; window.setContentSize(NSSize(width: 1000, height: 960)) }),
+            ("ghostwrite-change-advanced", { state.sheetAdding = false; state.sheetAdvanced = true; window.setContentSize(NSSize(width: 1000, height: 1180)) }),
+            ("ghostwrite-voice", { state.sheetAdvanced = false; state.sheet = .voice; window.setContentSize(NSSize(width: 1000, height: 680)) }),
+            ("profiles-messages", {
+                state.sheet = nil
                 preferences.change { $0.profiles.set(ProfileRules(style: .veryCasual, pressReturn: true), for: .messages) }
                 state.page = .profiles
-                window.setContentSize(NSSize(width: 1000, height: 1500))
+                window.setContentSize(NSSize(width: 1000, height: 640))
             }),
-            ("microphone", { window.setContentSize(NSSize(width: 1000, height: 640)); state.page = .microphone }),
+            ("profiles-ai-and-code", { state.profileGroup = .aiAndCode }),
+            ("profiles-everything-else", { state.profileGroup = .everythingElse }),
+            ("profiles-edit-apps", { state.profileGroup = .aiAndCode; state.sheet = .apps }),
+            ("microphone", { state.sheet = nil; window.setContentSize(NSSize(width: 1000, height: 640)); state.page = .microphone }),
             ("dictionary", {
                 preferences.change { $0.snippets = sampleSnippets }
                 state.page = .dictionary
@@ -126,8 +162,135 @@ private final class RenderWindow: NSWindow {
                 FileHandle.standardError.write(Data("\(url.path): \(error.localizedDescription)\n".utf8))
             }
         }
+        failures += renderFirstRun(to: directory, scratch: scratch)
         return failures
     }
+
+    /// Every step of the first run in its own 640 by 520 window, on settings of a fresh install.
+    private static func renderFirstRun(to directory: URL, scratch: URL) -> Int {
+        guard let defaults = UserDefaults(suiteName: scratch.appending(path: "first-run-defaults").path) else { return 1 }
+        let preferences = Preferences(defaults: defaults, vocabularyURL: scratch.appending(path: "first-run-vocabulary.txt"))
+        let history = HistoryStore(url: scratch.appending(path: "first-run-history.jsonl"))
+        var checks = SetupChecks(microphone: true, accessibility: false, fnKey: .needsSetting)
+        let agentServices = AgentServices(pool: AgentPool(), preferences: preferences, history: history)
+        agentServices.isStatic = true
+        agentServices.show(installed: ["claude", "codex"])
+        let timing = DictationTiming()
+        let services = WindowServices(preferences: preferences, history: history, setup: SetupStatus { checks },
+                                      willow: WillowImporter(folder: scratch.appending(path: "willow"), defaults: defaults, history: history, preferences: preferences),
+                                      loginItem: LoginItem(), inputs: Inputs { ([], nil) }, level: InputLevel(fixed: 0), shortcuts: .unavailable,
+                                      copy: { _ in }, agents: agentServices, timing: timing, openSetup: { _ in })
+        let model = OnboardingModel()
+        let window = RenderWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
+        OnboardingWindow.configure(window, services: services, model: model)
+        window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
+        window.orderFrontRegardless()
+        defer { window.close() }
+
+        func hermes(handle: String) {
+            preferences.change { settings in
+                var agent = AgentPreset.with(id: "hermes")!.connection()
+                agent.remoteHost = "mini"
+                agent.destination = .iMessage(handle: handle)
+                settings.agents.agents = [agent]
+                settings.agents.defaultAgent = "hermes"
+            }
+        }
+        func claude() {
+            preferences.change { settings in
+                settings.agents.agents = [AgentPreset.with(id: "claude")!.connection()]
+                settings.agents.defaultAgent = "claude"
+            }
+        }
+        let shots: [(name: String, prepare: () -> Void)] = [
+            ("first-run-1-welcome", {}),
+            ("first-run-1b-agent-prompt", { model.agentPath = true; model.agentPathStarted = .now }),
+            ("first-run-1c-agent-applied", {
+                let before = preferences.current.settings
+                var applied = before
+                var agent = AgentPreset.with(id: "hermes")!.connection()
+                agent.remoteHost = "mini"
+                agent.destination = .iMessage(handle: "+1 415 555 0182")
+                applied.agents.agents = [agent]
+                applied.agents.defaultAgent = "hermes"
+                applied.agents.voiceNotes = "Short and direct. Lowercase in chats, full sentences in email."
+                applied.profiles.set(ProfileRules(style: .veryCasual, pressReturn: true), for: .messages)
+                applied.profiles.set(ProfileRules(style: .casual), for: .workChat)
+                let changes = SetupSpec.changes(from: before.setupFields, to: applied.setupFields)
+                preferences.adopt(settings: applied, record: SetupRecord(by: "Claude Code", changes: changes, previous: before.setupFields, date: .now + 1))
+            }),
+            ("first-run-2-permissions", {
+                preferences.undoSetup()
+                model.agentPath = false
+                model.step = .permissions
+            }),
+            ("first-run-2b-permissions-done", { checks = SetupChecks(microphone: true, accessibility: true, fnKey: .ready) }),
+            ("first-run-3-try-it", { model.step = .tryIt }),
+            ("first-run-3b-try-it-done", {
+                timing.record(0.2)
+                model.tryText = "Testing one two three. This is already faster than typing."
+                model.tried = true
+            }),
+            ("first-run-4-how-you-write", {
+                preferences.change {
+                    $0.profiles.set(ProfileRules(style: .veryCasual, pressReturn: true), for: .messages)
+                    $0.profiles.set(ProfileRules(style: .casual), for: .workChat)
+                    $0.profiles.set(ProfileRules(style: .formal), for: .email)
+                }
+                model.step = .style
+            }),
+            ("first-run-5-ghostwrite", { model.choice = "claude"; model.step = .ghostwrite }),
+            ("first-run-5b-ghostwrite-another-mac", { model.choice = "hermes"; model.hermesHost = "mini" }),
+            ("first-run-6-check-checking-hermes", {
+                hermes(handle: "")
+                agentServices.show(status: .testing, for: "hermes")
+                model.step = .check
+            }),
+            ("first-run-6b-check-ready-hermes", {
+                hermes(handle: "+1 415 555 0182")
+                agentServices.show(status: .ready(seconds: 1.4, model: "claude-haiku-5-5"), for: "hermes")
+            }),
+            ("first-run-6c-check-failed", {
+                agentServices.show(status: .failed("ssh: connect to host mini port 22: Operation timed out"), for: "hermes")
+            }),
+            ("first-run-6d-check-ready-claude", {
+                claude()
+                agentServices.show(status: .ready(seconds: 2.1, model: "haiku"), for: "claude")
+                agentServices.show(t3: .notConnected, for: "claude")
+            }),
+            ("first-run-7-done", { model.step = .done }),
+            ("first-run-7b-done-skipped", { preferences.change { $0.agents.agents = []; $0.agents.defaultAgent = nil }; model.skippedGhostwrite = true }),
+        ]
+        var failures = 0
+        for shot in shots {
+            shot.prepare()
+            services.setup.refresh()
+            settle()
+            guard let view = window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                failures += 1
+                continue
+            }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let url = directory.appending(path: "\(shot.name).png")
+            do {
+                guard let png = rep.representation(using: .png, properties: [:]) else { throw DictationError("PNG encoding failed") }
+                try png.write(to: url)
+                print(url.path)
+            } catch {
+                failures += 1
+                FileHandle.standardError.write(Data("\(url.path): \(error.localizedDescription)\n".utf8))
+            }
+        }
+        return failures
+    }
+
+    /// The apps the render pretends are installed, so Profiles shows the same chips on any Mac.
+    static let sampleInstalled: Set<String> = [
+        "com.apple.MobileSMS", "net.whatsapp.WhatsApp", "ru.keepcoder.Telegram", "org.whispersystems.signal-desktop", "com.hnc.Discord",
+        "com.tinyspeck.slackmacgap", "com.microsoft.teams2", "com.apple.mail", "com.superhuman.electron",
+        "com.t3tools.t3code*", "com.openai.chat", "com.anthropic.claudefordesktop", "com.openai.codex", "com.microsoft.VSCode",
+        "com.mitchellh.ghostty", "com.apple.Terminal",
+    ]
 
     private static func settle() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))

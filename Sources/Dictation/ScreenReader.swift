@@ -9,6 +9,9 @@ enum ScreenReader {
     static let budget = 0.05
     static let maxDepth = 40
     static let maxNodes = 600
+    /// Ghostwrite reads more of the window: it waits on the agent anyway, and the text is the reply's context.
+    static let agentBudget = 0.15
+    static let agentNodes = 1_500
     /// Characters kept from one element, and from the focused field on each side of the cursor.
     static let maxText = 600
     static let fieldBefore = 2_000
@@ -20,7 +23,7 @@ enum ScreenReader {
     private static let readRoles: Set<String> = [kAXStaticTextRole as String, kAXTextFieldRole as String, kAXTextAreaRole as String]
 
     /// Blocks on the other app, so callers run it off the main thread.
-    static func read(pid: pid_t) -> [ScreenText] {
+    static func read(pid: pid_t, budget: Double = budget, maxNodes: Int = maxNodes) -> [ScreenText] {
         let deadline = Date().addingTimeInterval(budget)
         func remaining() -> Float { Float(max(0.001, deadline.timeIntervalSinceNow)) }
         func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
@@ -79,6 +82,23 @@ enum ScreenReader {
             }
         }
         return texts
+    }
+
+    /// The focused field's selected text, unless it is a password field.
+    static func selectedText(pid: pid_t) -> String? {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.05)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value) == .success, let value,
+              let focused = element(value) else { return nil }
+        AXUIElementSetMessagingTimeout(focused, 0.05)
+        var role: CFTypeRef?, subrole: CFTypeRef?, selected: CFTypeRef?
+        AXUIElementCopyAttributeValue(focused, kAXRoleAttribute as CFString, &role)
+        AXUIElementCopyAttributeValue(focused, kAXSubroleAttribute as CFString, &subrole)
+        guard role as? String != secure, subrole as? String != secure,
+              AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString, &selected) == .success,
+              let text = selected as? String, !text.isEmpty else { return nil }
+        return String(text.prefix(fieldBefore))
     }
 
     private static func element(_ value: CFTypeRef) -> AXUIElement? {

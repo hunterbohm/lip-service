@@ -7,6 +7,19 @@ public struct HistoryApp: Equatable, Hashable, Codable, Sendable {
     public init(name: String, bundleID: String?) { (self.name, self.bundleID) = (name, bundleID) }
 }
 
+/// A Ghostwrite draft or a Hand off task, kept in history beside dictations but left out of their stats.
+public enum HistoryKind: Equatable, Codable, Sendable {
+    case ghostwrite(agent: String)
+    case handOff(agent: String, destination: String)
+
+    public var label: String {
+        switch self {
+        case .ghostwrite(let agent): "Ghostwrite · \(agent)"
+        case .handOff(let agent, let destination): "Hand off · \(agent) · \(destination)"
+        }
+    }
+}
+
 public struct HistoryEntry: Equatable, Identifiable, Codable, Sendable {
     /// A UUID for the app's own dictations, `willow:` plus Willow's id for imported ones, so a re-import finds
     /// what it already added.
@@ -16,12 +29,16 @@ public struct HistoryEntry: Equatable, Identifiable, Codable, Sendable {
     public var audioSeconds: Double?
     public var words: Int
     public var app: HistoryApp?
+    /// Nil for a dictation.
+    public var kind: HistoryKind?
 
     public init(id: String = UUID().uuidString, date: Date = Date(), text: String, audioSeconds: Double?,
-                app: HistoryApp?) {
-        (self.id, self.date, self.text, self.audioSeconds, self.app) = (id, date, text, audioSeconds, app)
+                app: HistoryApp?, kind: HistoryKind? = nil) {
+        (self.id, self.date, self.text, self.audioSeconds, self.app, self.kind) = (id, date, text, audioSeconds, app, kind)
         words = Self.wordCount(text)
     }
+
+    public var isDictation: Bool { kind == nil }
 
     /// A lone dash is not a word.
     public static func wordCount(_ text: String) -> Int {
@@ -40,6 +57,7 @@ public struct HistoryStats: Equatable, Sendable {
     public var streakDays: Int
 
     public init(_ entries: [HistoryEntry], now: Date, calendar: Calendar) {
+        let entries = entries.filter(\.isDictation)
         totalWords = entries.reduce(0) { $0 + $1.words }
         dictations = entries.count
         let today = calendar.startOfDay(for: now)

@@ -53,7 +53,7 @@ public struct ClipboardTransaction: Sendable {
     }
 }
 
-public enum CopyReason: Equatable, Sendable { case notTrusted, secureInput, focusMoved, waitedTooLong, keystrokeFailed }
+public enum CopyReason: Equatable, Sendable { case notTrusted, secureInput, focusMoved, waitedTooLong, keystrokeFailed, noTextField }
 public enum InsertOutcome: Equatable, Sendable { case pasted, copied(CopyReason) }
 
 public struct InsertConditions: Equatable, Sendable {

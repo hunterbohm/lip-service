@@ -11,5 +11,6 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>LSUIElement</key><true/>
+<key>NSAppleEventsUsageDescription</key><string>Hand off sends your task to your agent from your own Messages, when you choose iMessage for it.</string>
 <key>NSMicrophoneUsageDescription</key><string>Lip Service listens while you hold the hotkey and turns your speech into text. Audio stays in memory on this Mac.</string>
 </dict></plist>

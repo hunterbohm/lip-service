@@ -1,3 +1,4 @@
+import AppKit
 import DictationCore
 import FluidAudio
 import Foundation
@@ -11,6 +12,10 @@ enum Mode {
     case renderBar(URL)
     case renderWindow(URL)
     case importWillowDryRun(URL)
+    case agentBench(AgentBench.Options)
+    case handOffTest(HandOffTest.Options)
+    case t3Connect(home: String?, code: String)
+    case setup(Headless.SetupCommand)
     case usage(String)
 
     static let usage = """
@@ -30,6 +35,24 @@ enum Mode {
                    Writes a PNG of every bar state into DIR. Needs a logged-in GUI session.
                Dictation --render-window DIR
                    Draws each page of the window, light and dark, with sample data to PNG files in DIR.
+               Dictation --agent-bench --command 'hermes acp' [--host HOST] [--option ID=VALUE]... [--model ID]
+                         [--runs N] [--cold] [--speech S] [--answer OPTION] [--supersede S] [--idle-limit S] [--prompt-file PATH]
+                   Times Ghostwrite drafts against an agent through the app's agent pool. One JSON line per run.
+                   --prompt-file sends the prompt in PATH instead of the sample request.
+               Dictation --hand-off DESTINATION.json [--dry-run] [--no-window-text] WORDS
+                   Sends WORDS through one Hand off destination, as the app does. --dry-run builds it and sends nothing.
+                   --no-window-text sends it as with Include window text off.
+               Dictation --t3-connect PAIRING_CODE [T3_HOME]
+                   Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
+               Dictation setup show
+                   Prints the setup as JSON: agents, drafts, voice notes, profiles and keys, with `found` (agents installed
+                   on this Mac) and `help`. Prints no secret.
+               Dictation setup apply [--by NAME]
+                   Reads the same JSON on stdin. A field left out stays as it is. Checks everything first and, if anything is
+                   wrong, changes nothing, prints why and exits 1. Otherwise saves the old setup for Undo and tells a running
+                   Lip Service, which shows "NAME set up Lip Service" with the changes.
+               Dictation setup test [AGENT_ID]
+                   Asks the agent (the default one unless given) to answer, and prints how long it took or why it did not.
                Dictation --import-willow-dry-run WILLOW_FOLDER
                    Prints what Import from Willow would add and change. Writes nothing.
         """
@@ -76,6 +99,56 @@ enum Mode {
                 self = .renderWindow(URL(fileURLWithPath: try Self.value(of: "--render-window", from: &rest)))
             case "--import-willow-dry-run":
                 self = .importWillowDryRun(URL(fileURLWithPath: try Self.value(of: "--import-willow-dry-run", from: &rest)))
+            case "--agent-bench":
+                var options = AgentBench.Options()
+                while let argument = rest.popFirst() {
+                    switch argument {
+                    case "--command": options.command = try Self.value(of: argument, from: &rest).split(separator: " ").map(String.init)
+                    case "--host": options.remoteHost = try Self.value(of: argument, from: &rest)
+                    case "--name": options.name = try Self.value(of: argument, from: &rest)
+                    case "--option":
+                        let pair = try Self.value(of: argument, from: &rest).split(separator: "=", maxSplits: 1).map(String.init)
+                        guard pair.count == 2 else { throw DictationError("--option takes ID=VALUE") }
+                        options.draftOptions.append(.option(id: pair[0], value: pair[1]))
+                    case "--model": options.draftOptions.append(.model(try Self.value(of: argument, from: &rest)))
+                    case "--runs": options.runs = try Self.number(of: argument, from: &rest, Int.init, in: 1...200)
+                    case "--speech": options.speech = try Self.number(of: argument, from: &rest, Double.init, in: 0...30)
+                    case "--cold": options.cold = true
+                    case "--answer": options.answer = try Self.value(of: argument, from: &rest)
+                    case "--supersede": options.supersede = try Self.number(of: argument, from: &rest, Double.init, in: 0...30)
+                    case "--idle-limit": options.idleLimit = try Self.number(of: argument, from: &rest, Double.init, in: 0.2...86_400)
+                    case "--prompt-file": options.prompt = try String(contentsOfFile: try Self.value(of: argument, from: &rest), encoding: .utf8)
+                    default: throw DictationError("unknown option \(argument)")
+                    }
+                }
+                if options.command.isEmpty { throw DictationError("--agent-bench needs --command") }
+                self = .agentBench(options)
+            case "--t3-connect":
+                let code = try Self.value(of: "--t3-connect", from: &rest)
+                self = .t3Connect(home: rest.popFirst(), code: code)
+            case "setup":
+                switch rest.popFirst() {
+                case "show": self = .setup(.show)
+                case "apply":
+                    var by: String?
+                    while let argument = rest.popFirst() {
+                        guard argument == "--by" else { throw DictationError("unknown option \(argument)") }
+                        by = try Self.value(of: argument, from: &rest)
+                    }
+                    self = .setup(.apply(by: by))
+                case "test": self = .setup(.test(agentID: rest.popFirst()))
+                default: throw DictationError("setup takes show, apply or test")
+                }
+            case "--hand-off":
+                var options = HandOffTest.Options(destination: URL(fileURLWithPath: try Self.value(of: "--hand-off", from: &rest)))
+                while let argument = rest.popFirst() {
+                    switch argument {
+                    case "--dry-run": options.dryRun = true
+                    case "--no-window-text": options.includeWindowText = false
+                    default: options.words.append(argument)
+                    }
+                }
+                self = .handOffTest(options)
             case "--help", "-h":
                 self = .usage(Self.usage)
             default:
@@ -111,6 +184,12 @@ enum Mode {
 /// Non-GUI modes. Both build the app's SpeechEngine and call the same prepare() and dictate() that the hotkey
 /// does. There is no other path from audio to text.
 enum Headless {
+    enum SetupCommand {
+        case show
+        case apply(by: String?)
+        case test(agentID: String?)
+    }
+
     struct SelfTestOptions {
         var clip: URL?
         var models: URL?
@@ -338,4 +417,85 @@ private final class ClipPlayback: LiveAudio {
     func samples(_ range: Range<Int>) -> [Float] { Array(clip[range.clamped(to: 0..<count)]) }
 
     func release() { released.store(true, ordering: .relaxed) }
+}
+
+/// `Dictation setup show|apply|test`: how a user's own agent sets Lip Service up. The window never runs this; it reads and
+/// writes the same settings through the same DictationCore code.
+extension Headless {
+    static func setup(_ command: SetupCommand) async -> Int32 {
+        let defaults = SettingsStore.defaults
+        switch command {
+        case .show:
+            let settings = SettingsStore.read(defaults) ?? Settings()
+            let found = AgentPreset.all.map(\.id).filter { AgentDetection.found().contains($0) }
+            print(String(decoding: SetupSpec.show(settings, found: found).prettyData(), as: UTF8.self))
+            return 0
+        case .apply(let by):
+            return apply(by: by, defaults: defaults)
+        case .test(let agentID):
+            return await test(agentID: agentID, defaults: defaults)
+        }
+    }
+
+    private static func apply(by: String?, defaults: UserDefaults) -> Int32 {
+        let existing = SettingsStore.read(defaults)
+        let settings = existing ?? Settings()
+        switch SetupSpec.plan(FileHandle.standardInput.readDataToEndOfFile(), from: settings) {
+        case .failure(let invalid):
+            FileHandle.standardError.write(Data(("Nothing was changed. Fix these and run it again:\n"
+                + invalid.problems.map { "- \($0)" }.joined(separator: "\n") + "\n").utf8))
+            return 1
+        case .success(let plan):
+            guard !plan.changes.isEmpty else {
+                print("Nothing to change. Lip Service already matches.")
+                return 0
+            }
+            let record = SetupRecord(by: by, changes: plan.changes, previous: settings.setupFields)
+            if existing == nil { defaults.set(true, forKey: SettingsStore.onboardingKey) }
+            SettingsStore.write(record, to: defaults)
+            SettingsStore.write(plan.settings, to: defaults)
+            defaults.synchronize()
+            var running = false
+            if SettingsStore.isReal {
+                running = !NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+                    .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }.isEmpty
+                if running, let settings = try? JSONEncoder().encode(plan.settings), let record = try? JSONEncoder().encode(record) {
+                    DistributedNotificationCenter.default().postNotificationName(
+                        SettingsStore.appliedNotification, object: nil,
+                        userInfo: ["settings": String(decoding: settings, as: UTF8.self), "record": String(decoding: record, as: UTF8.self)],
+                        deliverImmediately: true)
+                }
+            }
+            print("\(record.title). \(plan.changes.count) \(plan.changes.count == 1 ? "change" : "changes"):")
+            for line in plan.changes { print("- \(line)") }
+            print(running ? "Lip Service is running and shows these changes, with Undo."
+                          : "Lip Service isn't running. These apply when it starts.")
+            print("Microphone, Accessibility and the fn key setting still need the user. Lip Service asks for them on first run.")
+            return 0
+        }
+    }
+
+    @MainActor private static func test(agentID: String?, defaults: UserDefaults) async -> Int32 {
+        let settings = SettingsStore.read(defaults) ?? Settings()
+        guard let agent = agentID.map({ settings.agents.agent(id: $0) }) ?? settings.agents.current else {
+            let known = settings.agents.agents.map(\.id)
+            FileHandle.standardError.write(Data((agentID.map { "No agent \"\($0)\". " + (known.isEmpty ? "None is set up." : "The agents are \(known.joined(separator: ", ")).") }
+                ?? "No agent is set up yet. Run setup apply first.").appending("\n").utf8))
+            return 1
+        }
+        if let problem = await AgentBench.checkDestination(agent) {
+            FileHandle.standardError.write(Data("\(problem)\n".utf8))
+            return 1
+        }
+        let pool = AgentPool()
+        defer { pool.stopAll() }
+        switch await AgentBench.check(agent, pool: pool) {
+        case .success(let check):
+            print("\(agent.name) answered in \(String(format: "%.1f", check.seconds)) s" + (check.model.map { " (\($0))" } ?? ""))
+            return 0
+        case .failure(let error):
+            FileHandle.standardError.write(Data("\(agent.name) didn't answer: \(error.localizedDescription)\n".utf8))
+            return 1
+        }
+    }
 }

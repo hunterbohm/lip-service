@@ -178,8 +178,19 @@ public struct Settings: Equatable, Codable, Sendable {
     public var screenNames = true
     /// Adds a word to the dictionary when the user corrects one word of a dictation.
     public var learnFixes = true
+    /// Held, the agent writes a draft from what you say. Nil turns Ghostwrite off.
+    public var ghostwriteKey: Shortcut? = Shortcut(key: 63, modifiers: [.control])
+    /// Held, what you say goes to the agent's own app as a task. Nil turns Hand off off.
+    public var handOffKey: Shortcut? = Shortcut(key: 63, modifiers: [.option])
+    public var agents = AgentSettings()
 
     public init() {}
+
+    /// The Ghostwrite and Hand off keys do nothing until an agent is set up, so they stay ordinary keys until then.
+    public var captureKeys: CaptureKeys {
+        let live = !agents.agents.isEmpty
+        return CaptureKeys(dictation: hotkeys, ghostwrite: live ? ghostwriteKey : nil, handOff: live ? handOffKey : nil)
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -208,11 +219,17 @@ public struct Settings: Equatable, Codable, Sendable {
         muteWhileDictating = value(.muteWhileDictating, defaults.muteWhileDictating)
         screenNames = value(.screenNames, defaults.screenNames)
         learnFixes = value(.learnFixes, defaults.learnFixes)
+        // A dictation key saved before the agent keys existed may be one of their defaults. It stays a dictation key.
+        ghostwriteKey = (container.contains(.ghostwriteKey) ? value(.ghostwriteKey, Shortcut?.none) : defaults.ghostwriteKey)
+            .flatMap { hotkeys.contains($0) ? nil : $0 }
+        handOffKey = (container.contains(.handOffKey) ? value(.handOffKey, Shortcut?.none) : defaults.handOffKey)
+            .flatMap { hotkeys.contains($0) ? nil : $0 }
+        agents = value(.agents, defaults.agents)
     }
 
     private enum CodingKeys: String, CodingKey {
         case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
-        case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes
+        case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, ghostwriteKey, handOffKey, agents
     }
 
     /// Written out by hand so a paste shortcut turned off is stored as null. The synthesized encoder leaves a nil out,
@@ -234,6 +251,9 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(muteWhileDictating, forKey: .muteWhileDictating)
         try container.encode(screenNames, forKey: .screenNames)
         try container.encode(learnFixes, forKey: .learnFixes)
+        try container.encode(ghostwriteKey, forKey: .ghostwriteKey)
+        try container.encode(handOffKey, forKey: .handOffKey)
+        try container.encode(agents, forKey: .agents)
     }
 
     /// Adds a dictation key, or puts it in place of `replacing`. Why it can't, or nil when it did.
@@ -241,7 +261,31 @@ public struct Settings: Equatable, Codable, Sendable {
         if let problem = shortcut.problem { return problem }
         if shortcut == pasteLast { return "\(shortcut.title) already pastes your last dictation." }
         if shortcut != old, hotkeys.contains(shortcut) { return "\(shortcut.title) is already a dictation key." }
+        if let use = agentKeyUse(shortcut) { return "\(shortcut.title) is already \(use)." }
         if let old, let index = hotkeys.firstIndex(of: old) { hotkeys[index] = shortcut } else { hotkeys.append(shortcut) }
+        return nil
+    }
+
+    private func agentKeyUse(_ shortcut: Shortcut) -> String? {
+        if shortcut == ghostwriteKey { return "the Ghostwrite key" }
+        if shortcut == handOffKey { return "the Hand off key" }
+        return nil
+    }
+
+    /// Sets the Ghostwrite or Hand off key. Why it can't, or nil when it did. Nil turns that key off.
+    public mutating func setAgentKey(_ kind: CaptureKind, _ shortcut: Shortcut?) -> String? {
+        if let shortcut {
+            if let problem = shortcut.problem { return problem }
+            if hotkeys.contains(shortcut) { return "\(shortcut.title) is already a dictation key." }
+            if shortcut == pasteLast { return "\(shortcut.title) already pastes your last dictation." }
+            if kind == .ghostwrite, shortcut == handOffKey { return "\(shortcut.title) is already the Hand off key." }
+            if kind == .handOff, shortcut == ghostwriteKey { return "\(shortcut.title) is already the Ghostwrite key." }
+        }
+        switch kind {
+        case .ghostwrite: ghostwriteKey = shortcut
+        case .handOff: handOffKey = shortcut
+        case .dictate: break
+        }
         return nil
     }
 
@@ -292,6 +336,8 @@ public enum BarNotice: Equatable, Sendable {
     case fnKeySetting
     /// A word learned from the user's fix went into the dictionary.
     case learned(String)
+    /// The user's own agent changed the setup through `Dictation setup apply`.
+    case setupApplied(by: String, changes: Int)
 
     public var title: String {
         switch self {
@@ -302,6 +348,7 @@ public enum BarNotice: Equatable, Sendable {
         case .modelFailed: "The speech model didn't load"
         case .fnKeySetting: "macOS also acts on fn"
         case .learned(let word): "Learned \(word)"
+        case .setupApplied(let by, _): "\(by) set up Lip Service"
         }
     }
 
@@ -315,6 +362,7 @@ public enum BarNotice: Equatable, Sendable {
         case .modelFailed(let reason): reason
         case .fnKeySetting: "Set Keyboard > Press fn key to > Do Nothing."
         case .learned: "Added to your dictionary from your fix."
+        case .setupApplied(_, let changes): changes == 1 ? "1 change. Open Lip Service to see it." : "\(changes) changes. Open Lip Service to see them."
         }
     }
 
@@ -326,7 +374,7 @@ public enum BarNotice: Equatable, Sendable {
 
     public var tone: NoticeTone {
         switch self {
-        case .copied, .nothingToPaste, .learned: .info
+        case .copied, .nothingToPaste, .learned, .setupApplied: .info
         case .microphoneMissing, .fnKeySetting: .warning
         case .failed, .modelFailed: .failure
         }
@@ -338,6 +386,7 @@ public enum BarNotice: Equatable, Sendable {
         case .modelFailed: .retryModel
         case .fnKeySetting: .openKeyboardSettings
         case .learned: .undoLearned
+        case .setupApplied: .undoSetup
         default: nil
         }
     }
@@ -354,6 +403,7 @@ extension CopyReason {
         case .focusMoved: "Focus moved before your words were ready."
         case .waitedTooLong: "Your words took more than 10 seconds."
         case .keystrokeFailed: "The paste keystroke didn't go through."
+        case .noTextField: "There was no text box where you started."
         }
     }
 }
@@ -362,12 +412,13 @@ public enum BarToastAction: Equatable, Sendable {
     case retryModel
     case openKeyboardSettings
     case undoLearned
+    case undoSetup
 
     public var title: String {
         switch self {
         case .retryModel: "Retry"
         case .openKeyboardSettings: "Open Settings"
-        case .undoLearned: "Undo"
+        case .undoLearned, .undoSetup: "Undo"
         }
     }
 }
@@ -384,23 +435,33 @@ public struct BarState: Equatable, Sendable {
         /// dictation waits for the model.
         case transcribing(words: String, waitingOn: LoadPhase?)
         case preparing(LoadPhase)
+        /// The agent is on it: "Hermes is writing…", "Ready". `busy` while something is under way rather than waiting
+        /// on the user, and only then does the print move.
+        case working(status: String, busy: Bool)
     }
 
     public var body: Body
     public var toast: BarNotice?
+    /// Who a Ghostwrite or Hand off capture is for, shown on the bar beside the print.
+    public var agent: BarAgent?
 
-    public init(body: Body, toast: BarNotice? = nil) {
+    public init(body: Body, toast: BarNotice? = nil, agent: BarAgent? = nil) {
         self.body = body
         self.toast = toast
+        self.agent = agent
     }
 
     /// Listening wins, then dictations in flight, then model loading, then idle. A dictation stuck behind a
     /// failed model is a toast with Retry, which outranks any other notice.
+    /// `agent` is set while a Ghostwrite or Hand off capture runs, and `working` while the agent is on it.
     public static func derive(hotkey: HotkeyMachine, words: String, pending: Int, engine: EngineStatus,
-                              notice: BarNotice?, showsIdle: Bool) -> BarState {
+                              notice: BarNotice?, showsIdle: Bool, agent: BarAgent? = nil, working: String? = nil,
+                              busy: Bool = false) -> BarState {
         let body: Body
         if hotkey.showsListening {
             body = .listening(words: words, handsFree: hotkey.isHandsFree)
+        } else if let working {
+            body = .working(status: working, busy: busy)
         } else if pending > 0, case .loading(let phase) = engine {
             body = .transcribing(words: words, waitingOn: phase)
         } else if pending > 0, case .ready = engine {
@@ -410,7 +471,14 @@ public struct BarState: Equatable, Sendable {
         } else {
             body = showsIdle ? .idle : .hidden
         }
-        if pending > 0, case .failed(let reason) = engine { return BarState(body: body, toast: .modelFailed(reason)) }
-        return BarState(body: body, toast: notice)
+        if pending > 0, case .failed(let reason) = engine { return BarState(body: body, toast: .modelFailed(reason), agent: agent) }
+        return BarState(body: body, toast: notice, agent: agent)
     }
+}
+
+/// The agent's round mark and name, as the bar and the card show them.
+public struct BarAgent: Equatable, Sendable {
+    public var initial: String
+    public var name: String
+    public init(initial: String, name: String) { (self.initial, self.name) = (initial, name) }
 }

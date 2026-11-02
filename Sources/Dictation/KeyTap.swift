@@ -1,7 +1,9 @@
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import DictationCore
 import Foundation
+import os
 
 /// The single owner of keyboard input and the hotkey phase, through a session CGEventTap on the main run loop.
 /// The tap is active, not listen-only, because that needs Accessibility (which paste needs anyway) instead of
@@ -16,12 +18,18 @@ import Foundation
     /// Runs on a later main-queue turn, never inside the tap callback, as do `onPasteLast` and recording results.
     var onUpdate: (([CaptureCommand], Cue?) -> Void)?
     var onPasteLast: (() -> Void)?
-    var hotkeys: [Shortcut] {
+    /// The open card's keys. Asked only between captures; true takes the key from the focused app.
+    var onCardKey: ((CardKey) -> Bool)?
+    /// Whether a card is open. Until one is, no key is looked at as a card key and no key's characters are read.
+    var takesCardKeys = false
+    var keys: CaptureKeys {
         didSet {
-            guard hotkeys != oldValue else { return }
+            guard keys != oldValue else { return }
             reset()
         }
     }
+    /// What the capture running now is for. A dictation can become a Ghostwrite or a Hand off mid-press.
+    var kind: CaptureKind { active.map(keys.kind(of:)) ?? .dictate }
     var pasteLast: Shortcut?
     var isRunning: Bool { tap != nil }
 
@@ -37,15 +45,16 @@ import Foundation
     private var recorder: ShortcutRecorder?
     private var recorded: ((ShortcutRecorder.Outcome) -> Void)?
 
-    init(hotkeys: [Shortcut], pasteLast: Shortcut?) {
-        self.hotkeys = hotkeys
+    init(keys: CaptureKeys, pasteLast: Shortcut?) {
+        self.keys = keys
         self.pasteLast = pasteLast
     }
 
-    /// Prompts for Accessibility once if untrusted, then retries every 2 s until the tap can be created.
-    func start() {
-        guard tap == nil, !createTap() else { return }
-        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    /// Creates the tap once Accessibility allows it, checking every 2 s. `prompting` shows the system's Accessibility
+    /// prompt now if access is missing. Trying the tap untrusted raises that prompt too, so the tap waits for trust.
+    func start(prompting: Bool) {
+        guard tap == nil else { return }
+        if AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompting] as CFDictionary), createTap() { return }
         trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.retryTap() }
         }
@@ -82,7 +91,7 @@ import Foundation
     }
 
     private func retryTap() {
-        guard createTap() else { return }
+        guard AXIsProcessTrusted(), createTap() else { return }
         trustTimer?.invalidate()
         trustTimer = nil
         onUpdate?([], nil)
@@ -103,15 +112,30 @@ import Foundation
 
     /// One key event. Returns whether to swallow it. The paste shortcut still reaches the machine as a key, so it
     /// cancels a hold the way any chord does.
-    fileprivate func handle(kind: KeyInput.EventKind, keyCode: Int, flags: UInt64, marker: Int64, isRepeat: Bool) -> Bool {
+    fileprivate func handle(kind: KeyInput.EventKind, keyCode: Int, flags: UInt64, marker: Int64, isRepeat: Bool,
+                            characters: () -> String?) -> Bool {
         guard marker != Self.syntheticMarker else { return false }
         if recorder != nil { return record(kind: kind, keyCode: keyCode, flags: flags) }
-        let candidates = machine.expectsKeyDown ? [active ?? hotkeys[0]] : hotkeys
-        let input = KeyInput.classify(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat,
-                                      shortcuts: candidates, at: .now)
-        if case .hotkeyDown = input {
-            active = candidates.first { $0.key == keyCode && $0.matches(flags: flags) }
-            if kind == .keyDown { swallowedKey = keyCode }
+        var input: KeyInput?
+        switch CaptureRouting.route(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat, machine: machine, active: active,
+                                    keys: keys, at: .now) {
+        case .retarget(let shortcut):
+            active = shortcut
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.onUpdate?([], nil) } }
+            return false
+        case .input(let routed, let shortcut):
+            input = routed
+            if case .hotkeyDown = routed {
+                active = shortcut
+                if kind == .keyDown { swallowedKey = keyCode }
+            }
+        case nil:
+            break
+        }
+        if kind == .keyDown, takesCardKeys, !machine.isCapturing, swallowedKey != keyCode, let onCardKey,
+           let key = CardKey(keyCode: keyCode, flags: flags, characters: characters), onCardKey(key) {
+            swallowedKey = keyCode
+            return true
         }
         var swallow = input.map(feed) ?? false
         if kind != .flagsChanged, swallowedKey == keyCode {
@@ -148,7 +172,10 @@ import Foundation
     /// The system disables a tap whose callback was slow.
     fileprivate func reenable() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+        let wasCapturing = machine.expectsKeyDown
         recoverMissedRelease()
+        Logger(subsystem: "com.hunterbohm.dictation", category: "keys")
+            .info("key tap was switched off by the system and is back on; capturing \(wasCapturing) -> \(self.machine.expectsKeyDown)")
     }
 
     private func feed(_ input: KeyInput) -> Bool {
@@ -168,7 +195,7 @@ import Foundation
     /// While the tap was disabled, a release may have gone by unseen. If the key is up now, feed the release.
     private func recoverMissedRelease() {
         guard machine.expectsKeyDown else { return }
-        let shortcut = active ?? hotkeys[0]
+        let shortcut = active ?? keys.all[0]
         let flags = CGEventSource.flagsState(.combinedSessionState).rawValue
         let keyDown = CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(shortcut.key))
         guard !keyDown, shortcut.isDown(flags: flags) != true else { return }
@@ -214,8 +241,10 @@ private func keyTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CG
     let flags = event.flags.rawValue
     let marker = event.getIntegerValueField(.eventSourceUserData)
     let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+    nonisolated(unsafe) let event = event
     let swallow = MainActor.assumeIsolated {
-        keyTap.handle(kind: kind, keyCode: keyCode, flags: flags, marker: marker, isRepeat: isRepeat)
+        keyTap.handle(kind: kind, keyCode: keyCode, flags: flags, marker: marker, isRepeat: isRepeat,
+                      characters: { NSEvent(cgEvent: event)?.charactersIgnoringModifiers })
     }
     return swallow ? nil : Unmanaged.passUnretained(event)
 }

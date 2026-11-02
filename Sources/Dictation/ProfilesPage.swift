@@ -3,113 +3,164 @@ import DictationCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// How your words look in each kind of app: a tab per group, three styles to pick from, and the apps in the group.
 struct ProfilesPage: View {
     let preferences: Preferences
+    @Bindable var state: WindowState
+
+    private static let example = "Sounds good, see you at 5."
 
     var body: some View {
         let profiles = preferences.current.settings.profiles
+        let group = state.profileGroup
+        let rules = profiles.rules[group] ?? ProfileRules(style: .formal)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PageTitle("Profiles")
-                Text("Each group of apps has its own style. The app in front when you let go of the key picks the group.")
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.secondary)
-                    .padding(.top, -10)
-                    .padding(.bottom, 26)
-                ForEach(ProfileGroup.allCases) { group in
-                    GroupSection(group: group, profiles: profiles, change: change)
-                        .padding(.bottom, 32)
+                PageHeader(title: "Profiles", lead: "How your words look in each kind of app.")
+                Segmented(options: ProfileGroup.allCases.map { ($0.title, $0) }, selection: $state.profileGroup, font: 13, horizontal: 16, vertical: 9)
+                HStack(spacing: 10) {
+                    ForEach(WritingStyle.allCases, id: \.self) { style in
+                        StyleCard(style: style, sample: style.apply(Self.example, keeping: []), isOn: rules.style == style) {
+                            change { $0.set(ProfileRules(style: style, pressReturn: rules.pressReturn), for: group) }
+                        }
+                    }
+                }
+                .padding(.vertical, 14)
+                RowList {
+                    if group.listsApps {
+                        ListRow(divider: false) {
+                            Text("Press Return after the text goes in").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
+                            SquareCheck(isOn: Binding(get: { rules.pressReturn },
+                                                      set: { on in change { $0.set(ProfileRules(style: rules.style, pressReturn: on), for: group) } }))
+                        }
+                    }
+                    ListRow(divider: group.listsApps) {
+                        if group.listsApps {
+                            let apps = ProfileApps.shown(in: group, of: profiles)
+                            if apps.isEmpty {
+                                Text("No apps yet").font(.system(size: 13)).foregroundStyle(Theme.tertiary).frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                FlowRow(spacing: 6) { ForEach(apps, id: \.bundleID) { AppChip(app: $0, remove: nil) } }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            Button("Edit") { state.sheet = .apps }.buttonStyle(DarkButtonStyle())
+                        } else {
+                            Text("Every app not in another group").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                 }
             }
             .page()
+            .frame(maxWidth: 780, alignment: .leading)
         }
     }
 
     private func change(_ edit: (inout AppProfiles) -> Void) { preferences.change { edit(&$0.profiles) } }
 }
 
-private struct GroupSection: View {
-    let group: ProfileGroup
-    let profiles: AppProfiles
-    let change: ((inout AppProfiles) -> Void) -> Void
-
-    private static let example = "Sounds good, see you at 5."
-
-    var body: some View {
-        let rules = profiles.rules[group] ?? ProfileRules(style: .formal)
-        VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: group.title, detail: group.listsApps ? nil : "Every app not in a group above.")
-                .padding(.bottom, -12)
-            HStack(spacing: 18) {
-                TileGroup(kind: .choice, items: WritingStyle.allCases.map { style in
-                    .init(title: style.title, help: Self.help(style), isOn: rules.style == style) {
-                        change { $0.set(ProfileRules(style: style, pressReturn: rules.pressReturn), for: group) }
-                    }
-                }, width: 112)
-                Text(rules.style.apply(Self.example, keeping: []))
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.tertiary)
-            }
-            CheckRow(title: "Press Return after inserting", help: "Sends the message in most chat apps.",
-                     isOn: Binding(get: { rules.pressReturn },
-                                   set: { on in change { $0.set(ProfileRules(style: rules.style, pressReturn: on), for: group) } }))
-            if group.listsApps {
-                AppList(group: group, profiles: profiles, change: change)
-            }
-        }
-    }
-
-    private static func help(_ style: WritingStyle) -> String {
-        switch style {
-        case .formal: "Keeps capitals and punctuation."
-        case .casual: "Leaves off the period at the end."
-        case .veryCasual: "Leaves off the period at the end and writes in lowercase, except your dictionary words and I."
-        }
+/// The apps to show for a group: the ones installed on this Mac and the ones the user added. A built-in app that is not
+/// here stays in the group, unseen, so it still works if it is installed later.
+@MainActor enum ProfileApps {
+    static func shown(in group: ProfileGroup, of profiles: AppProfiles) -> [ProfileApp] {
+        let builtIn = Set(AppProfiles.defaults.apps.map { $0.bundleID.lowercased() })
+        return profiles.apps(in: group).filter { !builtIn.contains($0.bundleID.lowercased()) || AppInstalled.check($0.bundleID) }
     }
 }
 
-private struct AppList: View {
-    let group: ProfileGroup
-    let profiles: AppProfiles
-    let change: ((inout AppProfiles) -> Void) -> Void
+private struct StyleCard: View {
+    let style: WritingStyle
+    let sample: String
+    let isOn: Bool
+    let action: () -> Void
 
     var body: some View {
-        let apps = profiles.apps(in: group)
-        FlowRow(spacing: 8) {
-            ForEach(apps, id: \.bundleID) { app in
-                AppChip(app: app) { change { $0.remove(app.bundleID) } }
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(style.title).font(.system(size: 13.5, weight: .semibold))
+                Text(sample)
+                    .font(.system(size: 13)).foregroundStyle(.white)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.blue))
             }
-            AddAppMenu(group: group, profiles: profiles, change: change)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.tile))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(isOn ? Theme.blue : .clear, lineWidth: 1.5))
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: 760, alignment: .leading)
+        .buttonStyle(.plain)
     }
 }
 
-private struct AppChip: View {
+/// The app's own icon, or its first letter on a plain tile when it has none here.
+private struct AppIcon: View {
     let app: ProfileApp
-    let remove: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            AppIcons.image(for: app.bundleID).resizable().frame(width: 18, height: 18)
-            Text(app.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-            if hovering {
-                Button(action: remove) { Image(systemName: "xmark.circle.fill").font(.system(size: 13)) }
+        if let image = AppIcons.installedImage(for: app.bundleID) {
+            image.resizable().frame(width: 16, height: 16)
+        } else {
+            Text(String(app.name.prefix(1))).font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.secondary)
+                .frame(width: 16, height: 16).background(RoundedRectangle(cornerRadius: 4).fill(Theme.chosen.opacity(0.5)))
+        }
+    }
+}
+
+/// An app in a group. With `remove`, a small x takes it out.
+struct AppChip: View {
+    let app: ProfileApp
+    let remove: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 7) {
+            AppIcon(app: app)
+            Text(app.name).font(.system(size: 12.5)).lineLimit(1)
+            if let remove {
+                Button(action: remove) { Image(systemName: "xmark.circle.fill").font(.system(size: 12)) }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Theme.text.opacity(0.7))
+                    .foregroundStyle(Theme.text.opacity(0.6))
                     .help("Remove")
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 32)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? Theme.raised : Theme.tile))
+        .foregroundStyle(Color(hex: 0xD8D8DA))
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.raised))
         .help(app.bundleID)
-        .onHover { hovering = $0 }
     }
 }
 
-private struct AddAppMenu: View {
+/// Add or take out the apps of one group.
+struct AppsSheet: View {
+    let preferences: Preferences
+    let group: ProfileGroup
+    let close: () -> Void
+
+    var body: some View {
+        let profiles = preferences.current.settings.profiles
+        let apps = ProfileApps.shown(in: group, of: profiles)
+        SheetOverlay(width: 480, close: close) {
+            VStack(alignment: .leading, spacing: 14) {
+                SheetTitle(title: "Apps in \(group.title)", done: close)
+                Text("The app in front when you let go of the key picks the group.")
+                    .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                if apps.isEmpty {
+                    Text("No apps yet").font(.system(size: 13)).foregroundStyle(Theme.tertiary)
+                } else {
+                    FlowRow(spacing: 6) {
+                        ForEach(apps, id: \.bundleID) { app in
+                            AppChip(app: app) { preferences.change { $0.profiles.remove(app.bundleID) } }
+                        }
+                    }
+                }
+                AddAppMenu(group: group, profiles: profiles) { edit in preferences.change { edit(&$0.profiles) } }
+            }
+        }
+    }
+}
+
+struct AddAppMenu: View {
     let group: ProfileGroup
     let profiles: AppProfiles
     let change: ((inout AppProfiles) -> Void) -> Void
@@ -171,6 +222,12 @@ private struct AddAppMenu: View {
 /// App icons by bundle ID, looked up once each. A wildcard ID uses the app its prefix names, if one is installed.
 @MainActor enum AppIcons {
     private static var cache: [String: Image] = [:]
+
+    /// Nil when no app with this ID is installed.
+    static func installedImage(for bundleID: String) -> Image? {
+        let id = bundleID.hasSuffix("*") ? String(bundleID.dropLast().trimmingCharacters(in: CharacterSet(charactersIn: "."))) : bundleID
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) != nil ? image(for: bundleID) : nil
+    }
 
     static func image(for bundleID: String) -> Image {
         if let cached = cache[bundleID] { return cached }

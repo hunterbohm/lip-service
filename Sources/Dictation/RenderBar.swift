@@ -13,6 +13,70 @@ import DictationCore
         var quiet = false
         /// How long to let the animations run before the snapshot. Short, and a word is caught mid-print.
         var settle = 1.2
+        var card: CardModel?
+    }
+
+    private static let hermes = BarAgent(initial: "H", name: "Hermes")
+    private static let said = "reply saying Tuesday at 3 works and I'll bring the latest cut"
+    private static let draftText = "Hi Dana,\n\nTuesday at 3 works for me. I'll bring the latest cut so we can go through it together.\n\nHunter"
+
+    /// A draft card driven to a phase by the same events the app sends it.
+    private static func draft(_ events: [DraftCard.Event]) -> DraftCard {
+        var card = DraftCard(typesDirectly: false)
+        for event in [DraftCard.Event.released, .heard(said)] + events { _ = card.handle(event) }
+        return card
+    }
+
+    private static func cardModel(_ content: CardModel.Content, heading: String = "Hermes · draft for Dana Park") -> CardModel {
+        CardModel(agent: hermes, heading: heading, content: content, changeKey: "⌃ fn", keysLive: true)
+    }
+
+    private static let permission = PermissionRequest(rpcID: 1, session: "s", title: "Read ~/Documents/launch-notes.md", options: [
+        .init(id: "allow", name: "Allow once", kind: "allow_once"), .init(id: "always", name: "Always allow", kind: "allow_always"),
+        .init(id: "reject", name: "Reject", kind: "reject_once"),
+    ])
+
+    private static func handOff(_ events: [HandOffCard.Event], picks: Bool = false, destination: String = "Hermes in iMessage") -> HandOffCard {
+        var card = HandOffCard(words: "remind me to call Theo at five", destination: destination, picksProject: picks, now: .now + 1.3)
+        for event in events { _ = card.handle(event) }
+        return card
+    }
+
+    private static let projects = [
+        HandOffCard.Project(id: "1", name: "command-center", environmentName: "Mac mini", updatedAt: .now),
+        HandOffCard.Project(id: "2", name: "dictation", environmentName: "Mac mini", updatedAt: .now - 3600),
+        HandOffCard.Project(id: "3", name: "profitpilot-web", environmentName: "MacBook Pro", updatedAt: .now - 7200),
+        HandOffCard.Project(id: "4", name: "vault", environmentName: "MacBook Pro", updatedAt: .now - 86_400),
+    ]
+
+    private static var agentScenes: [Scene] {
+        let listening = BarState(body: .listening(words: said, handsFree: false), agent: hermes)
+        return [
+            Scene(name: "30-agent-listening", state: listening),
+            Scene(name: "31-agent-writing", state: BarState(body: .working(status: "Hermes is writing…", busy: true), agent: hermes)),
+            Scene(name: "32-card-streaming", state: BarState(body: .working(status: "Writing", busy: true), agent: hermes),
+                  card: cardModel(.draft(draft([.chunk("Hi Dana,\n\nTuesday at 3 works for me. I'll bring")])))),
+            Scene(name: "33-card-ready", state: BarState(body: .working(status: "Ready", busy: false), agent: hermes),
+                  card: cardModel(.draft(draft([.chunk(draftText), .finished])))),
+            Scene(name: "34-card-change", state: BarState(body: .listening(words: "make it a bit warmer", handsFree: false), agent: hermes),
+                  card: cardModel(.draft(draft([.chunk(draftText), .finished, .listen])))),
+            Scene(name: "35-card-permission", state: BarState(body: .working(status: "Hermes is asking", busy: false), agent: hermes),
+                  card: cardModel(.draft(draft([.asked(PermissionPrompt(permission))])), heading: "Hermes asks")),
+            Scene(name: "36-card-failed", state: BarState(body: .working(status: "Didn't finish", busy: false), agent: hermes),
+                  card: cardModel(.draft(draft([.failed("Hermes couldn't be reached: ssh: connect to host mini port 22: Operation timed out")])),
+                                  heading: "Hermes")),
+            Scene(name: "38-handoff-confirming", state: BarState(body: .working(status: "Sending to Hermes…", busy: true), agent: hermes),
+                  card: cardModel(.handOff(handOff([])), heading: "Hermes")),
+            Scene(name: "39-handoff-sent", state: BarState(body: .working(status: "Nothing typed", busy: false), agent: hermes),
+                  card: cardModel(.handOff(handOff([.key(.returnKey), .sent(note: "Hermes keeps going in iMessage, where it always answers you.")])),
+                                  heading: "Hermes")),
+            Scene(name: "40-handoff-picking", state: BarState(body: .working(status: "Sending to Claude Code…", busy: true), agent: BarAgent(initial: "C", name: "Claude Code")),
+                  card: CardModel(agent: BarAgent(initial: "C", name: "Claude Code"), heading: "Claude Code",
+                                  content: .handOff(handOff([.projects(projects), .key(.down)], picks: true, destination: "a new T3 Code thread")),
+                                  changeKey: "⌃ fn", keysLive: true)),
+            Scene(name: "41-handoff-reply", state: BarState(body: .working(status: "Nothing typed", busy: false), agent: hermes),
+                  card: cardModel(.handOff(handOff([.key(.returnKey), .chunk("Done. I'll text you at 4:55 to call Theo.")])), heading: "Hermes")),
+        ]
     }
 
     /// Mid-speech: loud now, with swells before it that the print carries rightward, so the print rises and falls from left to right.
@@ -69,14 +133,18 @@ import DictationCore
             return 1
         }
         let bar = Bar(level: { 0 }, area: { _ in stage })
-        for scene in scenes {
+        let cards = CardPanel()
+        for scene in scenes + agentScenes {
             bar.render(BarState(body: .hidden), edge: scene.edge)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
             bar.meter.freeze(at: frozenAt, profile: scene.quiet ? { _ in 0 } : speaking)
             bar.render(scene.state, edge: scene.edge)
             bar.showOutlines(nearest: scene.dragNearest)
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+            if let card = scene.card { cards.show(card, above: bar.anchor()) } else { cards.hide() }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
-            let panels = bar.visiblePanels.map {
+            let shown = bar.visiblePanels + (cards.isVisible ? [(panel: cards.window, shadow: true)] : [])
+            let panels = shown.map {
                 (frame: $0.panel.frame.offsetBy(dx: -stage.minX, dy: -stage.minY), image: snapshot($0.panel), shadow: $0.shadow)
             }
             let stagePath = directory.appending(path: "\(scene.name).png")

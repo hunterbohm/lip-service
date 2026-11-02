@@ -10,16 +10,11 @@ struct WindowRoot: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Nav(page: $state.page)
-                Group {
-                    switch state.page {
-                    case .home: HomePage(services: services, state: state)
-                    case .stats: StatsPage(services: services, state: state)
-                    case .dictation: DictationPage(services: services)
-                    case .profiles: ProfilesPage(preferences: services.preferences)
-                    case .microphone: MicrophonePage(services: services)
-                    case .dictionary: DictionaryPage(preferences: services.preferences)
-                    case .history: HistoryPage(services: services)
+                VStack(spacing: 0) {
+                    if let record = services.preferences.setupRecord {
+                        AppliedBanner(record: record, preferences: services.preferences).padding(.leading, 26).padding(.trailing, 40).padding(.top, 14)
                     }
+                    page
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // A page's scroll view that reaches the top edge, under the transparent title bar, comes out empty
@@ -28,6 +23,7 @@ struct WindowRoot: View {
             }
             Dock(services: services)
         }
+        .overlay { sheet }
         .frame(minWidth: 880, minHeight: 560)
         .foregroundStyle(Theme.text)
         .tint(Theme.blue)
@@ -38,6 +34,48 @@ struct WindowRoot: View {
                 services.setup.refresh()
                 services.inputs.refresh()
                 try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    @ViewBuilder private var page: some View {
+        Group {
+            switch state.page {
+            case .home: HomePage(services: services, state: state)
+            case .stats: StatsPage(services: services, state: state)
+            case .dictation: DictationPage(services: services)
+            case .ghostwrite: GhostwritePage(services: services, state: state)
+            case .profiles: ProfilesPage(preferences: services.preferences, state: state)
+            case .microphone: MicrophonePage(services: services)
+            case .dictionary: DictionaryPage(preferences: services.preferences)
+            case .history: HistoryPage(services: services)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder private var sheet: some View {
+        switch state.sheet {
+        case .agents: AgentSheet(services: services, adding: state.sheetAdding, advanced: state.sheetAdvanced) { state.sheet = nil }
+            .id("\(state.sheetAdding)\(state.sheetAdvanced)")
+        case .voice: VoiceSheet(services: services) { state.sheet = nil }
+        case .apps: AppsSheet(preferences: services.preferences, group: state.profileGroup) { state.sheet = nil }
+        case nil: EmptyView()
+        }
+    }
+}
+
+/// What the user's own agent just set up, with Undo. It stays until dismissed.
+private struct AppliedBanner: View {
+    let record: SetupRecord
+    let preferences: Preferences
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            AppliedNotice(record: record)
+            HStack(spacing: 8) {
+                Button("Undo") { preferences.undoSetup() }.buttonStyle(DarkButtonStyle())
+                Button("Got it") { preferences.dismissSetup() }.buttonStyle(DarkButtonStyle(kind: .prominent))
             }
         }
     }

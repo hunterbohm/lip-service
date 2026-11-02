@@ -20,6 +20,14 @@ import os
     private let engine: SpeechEngine
     private let bar: Bar
     private let menu: StatusMenu
+    let agents = AgentPool()
+    let timing = DictationTiming()
+    private var setupObserver: (any NSObjectProtocol)?
+    private var ghostwriter: Ghostwriter!
+    /// What the running capture is for, and whether it goes to the agent rather than the cursor: a Ghostwrite or Hand
+    /// off key, or fn held while a draft is open, which speaks a change to it.
+    private var captureKind = CaptureKind.dictate
+    private var toAgent = false
     private var engineStatus = EngineStatus.loading(.compiling)
     private var pending = 0
     private var words = ""
@@ -44,15 +52,20 @@ import os
 
     init() {
         inserter = Inserter(preferences: preferences)
-        keyTap = KeyTap(hotkeys: preferences.current.settings.hotkeys, pasteLast: preferences.current.settings.pasteLast)
+        keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(level: { [microphone] in microphone.level })
         menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter)
+        ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,
+                                  anchor: { [bar] in bar.anchor() })
     }
 
     func start() {
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
         keyTap.onPasteLast = { [unowned self] in pasteLast() }
+        keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
+        ghostwriter.onChange = { [unowned self] in render() }
+        ghostwriter.onNotice = { [unowned self] notice in show(notice) }
         bar.onEvent = { [unowned self] event in
             switch event {
             case .stop: keyTap.click(.stopClicked(.now))
@@ -61,6 +74,10 @@ import os
             case .toastAction(.retryModel): engine.retry()
             case .toastAction(.openKeyboardSettings): StatusMenu.openSettings(StatusMenu.keyboardSettings)
             case .toastAction(.undoLearned): undoLearned()
+            case .toastAction(.undoSetup):
+                preferences.undoSetup()
+                notice = nil
+                render()
             }
         }
         preferences.onChange = { [unowned self] old, new in apply(old, new) }
@@ -79,17 +96,36 @@ import os
                 render()
             }
         }
-        Microphone.requestAccessIfNeeded()
-        keyTap.start()
+        // `Dictation setup apply` runs in another process and tells the running app what it wrote.
+        setupObserver = DistributedNotificationCenter.default().addObserver(
+            forName: SettingsStore.appliedNotification, object: nil, queue: .main) { [weak self] note in
+            let settings = note.userInfo?["settings"] as? String, record = note.userInfo?["record"] as? String
+            MainActor.assumeIsolated { self?.setupApplied(settings: settings, record: record) }
+        }
+        // First-run setup asks for these from its Permissions step, one at a time.
+        if !preferences.needsOnboarding { Microphone.requestAccessIfNeeded() }
+        keyTap.start(prompting: !preferences.needsOnboarding)
         render()
+    }
+
+    private func setupApplied(settings settingsText: String?, record recordText: String?) {
+        guard let settingsText, let recordText,
+              let settings = try? JSONDecoder().decode(Settings.self, from: Data(settingsText.utf8)),
+              let record = try? JSONDecoder().decode(SetupRecord.self, from: Data(recordText.utf8))
+        else { return }
+        preferences.adopt(settings: settings, record: record)
+        show(.setupApplied(by: record.by, changes: record.changes.count))
     }
 
     private func apply(_ old: Configuration, _ new: Configuration) {
         if old.activeVocabulary != new.activeVocabulary { vocabularyToApply = .some(new.activeVocabulary) }
-        if old.settings.hotkeys != new.settings.hotkeys {
+        if old.settings.captureKeys != new.settings.captureKeys {
             stopPreviews()
             microphone.cancel()
-            keyTap.hotkeys = new.settings.hotkeys
+            keyTap.keys = new.settings.captureKeys
+        }
+        for agent in old.settings.agents.agents where new.settings.agents.agent(id: agent.id)?.shellCommand != agent.shellCommand {
+            agents.stop(agent.id)
         }
         keyTap.pasteLast = new.settings.pasteLast
         if !new.settings.muteWhileDictating { muter.stop() }
@@ -104,9 +140,18 @@ import os
     /// Release path, first half, on the main turn after the tap callback. It takes the samples already
     /// converted, notes the focus, and hands off. Nothing here waits on the model or the audio engine.
     private func handle(_ commands: [CaptureCommand], cue: Cue?) {
+        // Only a dictation turns into a Ghostwrite or a Hand off mid-press; nothing turns back.
+        if commands.isEmpty, keyTap.machine.isCapturing, captureKind == .dictate, keyTap.kind != .dictate {
+            captureKind = keyTap.kind
+            toAgent = true
+            ghostwriter.began(captureKind)
+        }
         for command in commands {
             switch command {
             case .start:
+                captureKind = keyTap.kind
+                toAgent = captureKind != .dictate || ghostwriter.takesChange
+                if toAgent { ghostwriter.began(captureKind) }
                 fallback = nil
                 words = ""
                 capture += 1
@@ -119,6 +164,7 @@ import os
                     startPreviews()
                 } catch {
                     keyTap.abort()
+                    endAgentCapture()
                     show(.failed(error.localizedDescription))
                 }
             case .cancel:
@@ -126,10 +172,19 @@ import os
                 capture += 1
                 stopPreviews()
                 microphone.cancel()
+                endAgentCapture()
             case .finish:
                 capture += 1
                 stopPreviews()
-                guard let recording = microphone.stop(releasedAt: .now) else { break }
+                guard let recording = microphone.stop(releasedAt: .now) else {
+                    endAgentCapture()
+                    break
+                }
+                if toAgent {
+                    toAgent = false
+                    ghostwriter.finished(recording)
+                    break
+                }
                 let target = inserter.releaseTarget()
                 pending += 1
                 Task { await deliver(recording, to: target) }
@@ -150,6 +205,12 @@ import os
             break
         }
         render()
+    }
+
+    /// A capture for the agent that ended with no recording still ends the agent's run, so it never waits on words.
+    private func endAgentCapture() {
+        if toAgent { ghostwriter.cancelled() }
+        toAgent = false
     }
 
     /// Once per launch, so a user who keeps the setting is not nagged.
@@ -223,7 +284,9 @@ import os
         last = insertion
         menu.remember(insertion.text)
         if preferences.current.settings.keepHistory { history.add(HistoryEntry(text: insertion.text, audioSeconds: recording.seconds, app: target.app)) }
-        let (outcome, pasted) = await inserter.insert(insertion, target: target, releasedAt: recording.releasedAt)
+        let released = recording.releasedAt
+        let (outcome, pasted) = await inserter.insert(insertion, target: target, releasedAt: released,
+                                                      onPaste: { [timing] at in timing.record(at - released) })
         if let pasted { watch(pasted) }
         if case .copied(let reason) = outcome {
             log.info("copied instead of pasting: \(String(describing: reason), privacy: .public)")
@@ -310,8 +373,11 @@ import os
             vocabularyToApply = nil
             engine.configure(vocabulary: vocabulary)
         }
+        let agent = ghostwriter.bar
+        keyTap.takesCardKeys = ghostwriter.isOpen
         bar.render(BarState.derive(hotkey: keyTap.machine, words: words, pending: pending, engine: engineStatus,
-                                   notice: notice, showsIdle: !settings.hideBarWhenIdle),
+                                   notice: notice, showsIdle: !settings.hideBarWhenIdle, agent: agent?.agent, working: agent?.working,
+                                   busy: agent?.busy ?? false),
                    edge: settings.barEdge)
         menu.show(engine: engineStatus, keyTapRunning: keyTap.isRunning, waiting: pending)
     }

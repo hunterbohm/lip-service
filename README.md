@@ -4,12 +4,17 @@
 
 Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and your words appear at the cursor in any app about 0.21 s later. Speech becomes text on your Mac, so your voice never leaves it.
 
+Hold fn and Control instead and say what you want written, and the AI agent you already use writes it in your voice. Hold fn and Option to hand a task to that agent in its own app.
+
+![Hold fn and Control and say what you want. Hermes writes the reply in a card, and Return types it into the email.](docs/images/ghostwrite.gif)
+
 ## Requirements
 
 - A Mac with Apple silicon. The app is built for arm64 only, so it does not run on Intel Macs.
 - macOS 26 or later.
 - About 460 MB of disk space for the speech model, and about 100 MB more once you add a word to the dictionary.
 - English. The speech model understands English only.
+- For Ghostwrite and Hand off only: an agent that speaks the Agent Client Protocol, such as Claude Code, Codex, Hermes, or OpenCode. Dictation needs none.
 
 ## Install with an AI agent
 
@@ -48,7 +53,7 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.5.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.6.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
@@ -65,9 +70,9 @@ Download `Lip-Service-1.0.5.zip` from the [latest release](https://github.com/hu
 6. Open System Settings > **Keyboard** and set **Press fn key to** to **Do Nothing**. On a keyboard with a globe key, the setting is called **Press 🌐 key to**. If you skip this, macOS also acts on fn.
 7. Wait while the bar at the bottom of the screen downloads the speech model, about 460 MB, and prepares it for your Mac. Preparing takes about a minute. Later launches load the model in about a second.
 
-The Lip Service window opens on the first launch. Its Home page shows each of steps 4 to 6 that still needs doing, with a button that opens the right System Settings pane.
+On the first launch, a setup window walks you through steps 4 to 6, a first dictation, your styles, and, if you want, your agent. Afterwards the Home page shows any of steps 4 to 6 that still needs doing, with a button that opens the right System Settings pane.
 
-To update, quit Lip Service and replace the app in **Applications** with the new one. macOS blocks the new copy once, so allow it again as in step 3. The Microphone and Accessibility permissions stay, because every release is signed with the same certificate.
+To update, quit Lip Service and replace the app in **Applications** with the new one. macOS blocks the new copy once, so allow it again as in step 3. The Microphone permission stays, because every release is signed with the same certificate. If fn does nothing after an update, turn Lip Service off and back on in System Settings > **Privacy & Security** > **Accessibility**.
 
 ## Use it
 
@@ -80,6 +85,9 @@ To update, quit Lip Service and replace the app in **Applications** with the new
 - When you correct one word it typed, Lip Service adds your spelling to the dictionary and says so on the bar, with **Undo**.
 - Names shown in the window you're dictating into, such as the people in a chat, come out spelled the way the screen shows them. Lip Service reads them on your Mac when you start talking and keeps nothing.
 - On the **Profiles** page, pick a style for each group of apps: **Formal**, **Casual** with no period at the end, or **Very casual** in lowercase. Each group can also press Return for you after the text goes in, only into the field you dictated into.
+- **Ghostwrite**: hold fn and Control, say what you want written, such as "reply that Thursday works, after 3", and let go. Your agent reads the window you're in and writes it in your voice. The draft streams into a card: press Return to type it, hold the keys again and say a change, or press Escape to throw it away.
+- **Hand off**: hold fn and Option and say a task. After a 5 s countdown that Escape cancels, it goes to your agent in its own app: Hermes in iMessage, Claude Code or Codex as a new T3 Code thread, or Telegram, Slack, Discord, a web address, or a command.
+- The setup window on first launch walks you through permissions, a first dictation, your styles, and your agent. To have your agent do it instead, click **Let my agent set it up**, or **Copy setup prompt** on the Ghostwrite page, and paste the prompt into your agent. Lip Service lists what it changed, with **Undo**.
 - To insert text you type often, such as your address, add a snippet on the **Dictionary** page. Say its cue on its own and the saved text goes in exactly as written.
 - To stop music and videos playing over you, turn on **Mute other audio** on the **Dictation** page. The sound comes back as soon as you stop talking, and again later if an output was unplugged while muted.
 - To open the Lip Service window, open the app again from Spotlight or the Finder, or choose **Open Lip Service…** from its menu bar icon. The window has your dictation history and the settings for the keys, the microphone, and the bar.
@@ -100,8 +108,9 @@ The [reference](docs/reference.md) describes every feature and setting.
 ## Privacy
 
 - Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
-- Lip Service goes online only to download its models from Hugging Face. It downloads a fixed version of each, and it checks every file against a SHA-256 hash built into the app before it uses it. It has no account and no analytics.
+- Dictation goes online only to download its models from Hugging Face. It downloads a fixed version of each, and it checks every file against a SHA-256 hash built into the app before it uses it. It has no account and no analytics.
 - Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file. The Stats page is counted from this file on your Mac, and its share image holds totals and a calendar, never your words or the apps.
+- Ghostwrite and Hand off send what you said, as text, to the agent you set up. Your audio is never sent. A Ghostwrite request also carries what Lip Service can read of the window you're in: its title, the field around the cursor, and nearby text. With **Learn my voice from my dictations** on, it also carries up to 8 of your recent dictations from the same kind of app, as examples of how you write. A hand-off carries the window's text, up to 4,000 characters, only while **Send the window's text with hand-offs** is on. Password apps and password fields are never read. The agent runs under its own permission rules and may pass all of this to its AI provider, so pick one you trust. Tokens for Slack, Discord, web addresses, and T3 Code stay in your Mac's Keychain.
 - To paste, Lip Service puts the text on the clipboard and presses Command+V for you. Then it puts back what the clipboard held before.
 - To spot your dictation keys, Lip Service sees every key you press, through Accessibility. It does not record, store, or send them.
 - With **Smart spacing** on, it reads the text just before the cursor to decide on a space and a capital letter. It does not keep that text.

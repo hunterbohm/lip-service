@@ -41,6 +41,7 @@ import DictationCore
         menu.removeAllItems()
 
         menu.addItem(NSMenuItem(title: "Open Lip Service…", action: #selector(MainWindow.openWindow(_:)), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Set up again…", action: #selector(MainWindow.openSetup(_:)), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(disabled(statusLine))
         if case .failed = engineStatus { menu.addItem(ActionItem("Retry Loading the Model") { [engine] in engine.retry() }) }
@@ -73,6 +74,16 @@ import DictationCore
         hotkeyMenu.addItem(.separator())
         hotkeyMenu.addItem(NSMenuItem(title: "Change Keys…", action: #selector(MainWindow.openWindow(_:)), keyEquivalent: ""))
         menu.addItem(submenu("Dictation Keys", hotkeyMenu))
+        let agents = configuration.settings.agents
+        if !agents.agents.isEmpty {
+            let agentMenu = NSMenu()
+            for agent in agents.agents {
+                agentMenu.addItem(ActionItem(agent.name, checked: agent.id == agents.current?.id) { [preferences] in
+                    preferences.change { $0.agents.defaultAgent = agent.id }
+                })
+            }
+            menu.addItem(submenu("Agent: \(agents.current?.name ?? "")", agentMenu))
+        }
         menu.addItem(submenu("Microphone", microphoneMenu(chosen: configuration.settings.microphone)))
         menu.addItem(ActionItem("Vocabulary Boosting", checked: configuration.settings.vocabularyEnabled) { [preferences] in
             preferences.change { $0.vocabularyEnabled.toggle() }

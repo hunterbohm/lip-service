@@ -78,14 +78,14 @@ enum BarEvent: Equatable {
 
     /// The body's frame, or nil when hidden.
     private func layoutBody(in area: NSRect, animated: Bool) -> NSRect? {
-        guard let size = BarStyle.size(of: state.body, edge: edge) else {
+        guard let size = BarStyle.size(of: state.body, edge: edge, agent: state.agent) else {
             bodyPanel.orderOut(nil)
             // A panel out of view keeps its views running, and the spinner's timeline would redraw 60 times a second.
             bodyHost.rootView = AnyView(EmptyView())
             hideHalo()
             return nil
         }
-        bodyHost.rootView = AnyView(BodyView(shown: state.body, edge: edge, meter: meter,
+        bodyHost.rootView = AnyView(BodyView(shown: state.body, agent: state.agent, edge: edge, meter: meter,
                                              onEvent: { [weak self] in self?.onEvent?($0) },
                                              onDrag: { [weak self] ended in self?.dragged(ended: ended) }))
         let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area),
@@ -179,6 +179,14 @@ enum BarEvent: Equatable {
         }
         RunLoop.main.add(timer, forMode: .common)
         sampler = timer
+    }
+
+    /// Where the body is on screen, or where it would be, so the agent's card can sit just above it.
+    func anchor() -> (frame: NSRect, edge: BarEdge) {
+        if bodyPanel.isVisible { return (bodyPanel.frame, edge) }
+        let area = currentArea()
+        return (NSRect(edge.place(width: 0, height: BarStyle.height, in: BarRect(area),
+                                  inset: BarStyle.inset(of: .listening(words: "", handsFree: false), edge: edge))), edge)
     }
 
     /// The panels as they are now, bottom first, for --render-bar. `shadow` is whether the system gives the panel one.
@@ -310,12 +318,15 @@ struct VoiceReading {
         return edge.isSide ? 8 : 16
     }
 
-    static func size(of body: BarState.Body, edge: BarEdge) -> CGSize? {
+    static func size(of body: BarState.Body, edge: BarEdge, agent: BarAgent? = nil) -> CGSize? {
         switch body {
         case .hidden: nil
         case .idle: edge.isSide ? CGSize(width: idle.height, height: idle.width) : idle
-        case .listening(let words, let handsFree): CGSize(width: wordsLayout(words, handsFree: handsFree).capsuleWidth, height: height)
-        case .transcribing(let words, nil): CGSize(width: wordsLayout(words, handsFree: false).capsuleWidth, height: height)
+        case .listening(let words, let handsFree):
+            CGSize(width: wordsLayout(words, handsFree: handsFree, agent: agent).capsuleWidth, height: height)
+        case .transcribing(let words, nil): CGSize(width: wordsLayout(words, handsFree: false, agent: agent).capsuleWidth, height: height)
+        case .working(let status, _):
+            CGSize(width: padding + agentWidth(agent) + glyphWidth + glyphGap + measure(status, statusFont) + padding, height: height)
         case .transcribing(_, .some(let phase)), .preparing(let phase):
             CGSize(width: padding + 16 + 10 + measure(Self.describe(phase), statusFont) + padding, height: height)
         }
@@ -330,8 +341,17 @@ struct VoiceReading {
         var capsuleWidth: CGFloat
     }
 
-    static func wordsLayout(_ words: String, handsFree: Bool) -> WordsLayout {
-        let fixed = padding + glyphWidth + (handsFree ? glyphGap + buttonsWidth : 0) + padding
+    /// The agent's mark and name ahead of the print, and the gap after them.
+    static func agentWidth(_ agent: BarAgent?) -> CGFloat {
+        guard let agent else { return 0 }
+        return avatarSize + 8 + measure(agent.name, agentFont) + glyphGap
+    }
+
+    static let avatarSize: CGFloat = 22
+    static let agentFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+
+    static func wordsLayout(_ words: String, handsFree: Bool, agent: BarAgent? = nil) -> WordsLayout {
+        let fixed = padding + agentWidth(agent) + glyphWidth + (handsFree ? glyphGap + buttonsWidth : 0) + padding
         let line = tokens(words).joined(separator: " ")
         guard !line.isEmpty else { return WordsLayout(textWidth: 0, naturalWidth: 0, overflows: false, capsuleWidth: fixed) }
         let natural = measure(line, wordsFont)
@@ -399,6 +419,7 @@ private extension NSRect {
 
 private struct BodyView: View {
     let shown: BarState.Body
+    let agent: BarAgent?
     let edge: BarEdge
     let meter: VoiceMeter
     let onEvent: (BarEvent) -> Void
@@ -414,10 +435,11 @@ private struct BodyView: View {
 
     @ViewBuilder private var content: some View {
         if let bar = shown.wordsBar {
-            capsule(behind: Print(meter: meter, finishing: bar.finishing)) {
+            capsule(behind: Print(meter: meter, finishing: bar.finishing, offset: BarStyle.agentWidth(agent))) {
+                if let agent { AgentChip(agent: agent) }
                 Color.clear.frame(width: BarStyle.glyphWidth)
                 if !bar.words.isEmpty {
-                    Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree), dimmed: bar.finishing)
+                    Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree, agent: agent), dimmed: bar.finishing)
                 }
                 Spacer(minLength: 0)
                 if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
@@ -426,6 +448,18 @@ private struct BodyView: View {
             switch shown {
             case .hidden, .listening, .transcribing(_, nil):
                 EmptyView()
+            case .working(let status, let busy):
+                capsule(behind: Print(meter: meter, finishing: true, resting: !busy, offset: BarStyle.agentWidth(agent))) {
+                    if let agent { AgentChip(agent: agent) }
+                    Color.clear.frame(width: BarStyle.glyphWidth)
+                    Text(status)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.leading, BarStyle.glyphGap)
+                    Spacer(minLength: 0)
+                }
             case .idle:
                 IdlePill(upright: edge.isSide)
             case .transcribing(_, .some(let phase)), .preparing(let phase):
@@ -498,25 +532,31 @@ private struct Ticker<Content: View>: View {
 private struct Print: View {
     let meter: VoiceMeter
     let finishing: Bool
+    /// Waiting on the user: drawn once as the still dim baseline, so a card left open costs no frames.
+    var resting = false
+    /// Room left of the print for the agent's mark.
+    var offset: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var listening = Eased()
     @State private var turning = Eased()
 
     private static let ink = Color(red: 0xF4 / 255, green: 0xF4 / 255, blue: 0xF5 / 255).opacity(0.96)
 
+    private var still: Bool { reduceMotion || resting }
+
     var body: some View {
-        Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
+        Ticker(frozenAt: meter.frozenAt, still: still) { time in
             Canvas { context, size in draw(into: &context, size: size, time: time) }
         }
     }
 
     private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
-        let settled = meter.frozenAt != nil || reduceMotion
+        let settled = meter.frozenAt != nil || still
         let listen = settled ? listening.settle(at: finishing ? 0 : 1) : listening.step(toward: finishing ? 0 : 1, tau: 0.12, at: time)
         let spin = settled ? turning.settle(at: finishing ? 1 : 0) : turning.step(toward: finishing ? 1 : 0, tau: 0.12, at: time)
-        let voice = reduceMotion ? nil : meter.reading(at: time)
-        let light = reduceMotion ? HalftonePrint.Light.still : .running(time: time)
-        let left = BarStyle.padding, centerY = size.height / 2
+        let voice = still ? nil : meter.reading(at: time)
+        let light = still ? HalftonePrint.Light.still : .running(time: time)
+        let left = BarStyle.padding + offset, centerY = size.height / 2
 
         for dot in HalftonePrint.dots {
             let heard = (voice?.level(delay: dot.delay) ?? 0) * listen
@@ -584,6 +624,29 @@ private struct HaloView: View {
             let opacity = (HaloGlow.faintestOpacity + Double(shade) * Self.shadeStep) * light
             context.fill(path, with: .color(Self.blue.opacity(opacity)))
         }
+    }
+}
+
+/// The agent's round mark and its name, as on the card.
+struct AgentChip: View {
+    let agent: BarAgent
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AgentAvatar(initial: agent.initial, size: BarStyle.avatarSize)
+            Text(agent.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).lineLimit(1).fixedSize()
+        }
+        .padding(.trailing, BarStyle.glyphGap)
+    }
+}
+
+struct AgentAvatar: View {
+    let initial: String
+    let size: CGFloat
+
+    var body: some View {
+        Circle().fill(Theme.blue).frame(width: size, height: size)
+            .overlay(Text(initial).font(.system(size: size * 0.52, weight: .bold)).foregroundStyle(.white))
     }
 }
 

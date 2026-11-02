@@ -87,6 +87,7 @@ public struct UsageReport: Equatable, Sendable {
     public let lengthBuckets: [LengthBucket]
 
     public init(entries: [HistoryEntry], period: UsagePeriod, now: Date, calendar: Calendar) {
+        let entries = entries.filter(\.isDictation)
         self.period = period
         self.calendar = calendar
         let today = calendar.startOfDay(for: now)

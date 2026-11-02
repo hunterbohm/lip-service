@@ -15,6 +15,10 @@ import SwiftUI
     let level: InputLevel
     let shortcuts: ShortcutRecording
     let copy: (String) -> Void
+    let agents: AgentServices
+    let timing: DictationTiming
+    /// Opens the first run's window at a step, for "Set up again…" and the Ghostwrite page's empty state.
+    let openSetup: (SetupStep) -> Void
 }
 
 /// Lets the window borrow the keyboard to record a shortcut.
@@ -26,7 +30,7 @@ import SwiftUI
 }
 
 enum Page: String, CaseIterable, Identifiable {
-    case home, stats, dictation, profiles, microphone, dictionary, history
+    case home, stats, dictation, ghostwrite, profiles, microphone, dictionary, history
 
     var id: Self { self }
     var title: String { rawValue.capitalized }
@@ -35,6 +39,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .home: "house"
         case .stats: "chart.bar"
         case .dictation: "keyboard"
+        case .ghostwrite: "wand.and.stars"
         case .profiles: "rectangle.stack"
         case .microphone: "mic"
         case .dictionary: "character.book.closed"
@@ -49,26 +54,38 @@ enum Page: String, CaseIterable, Identifiable {
     var statsView = StatsView.overview
     var statsPeriod = UsagePeriod.all
     var sharingStats = false
+    var sheet: PageSheet?
+    var profileGroup = ProfileGroup.messages
+    /// What the agent sheet starts with open, for the window render.
+    var sheetAdding = false
+    var sheetAdvanced = false
 }
+
+/// A card laid over the window: choosing the agent, writing the voice, or editing a group's apps.
+enum PageSheet: Equatable { case agents, voice, apps }
 
 @MainActor final class MainWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let autosaveName = "Lip Service"
 
     private let services: WindowServices
     private let state = WindowState()
-    private let openOnLaunch: Bool
     private var window: NSWindow?
+    private var onboarding: OnboardingWindow?
 
     init(coordinator: Coordinator) {
         let preferences = coordinator.preferences
+        var openSetup: (SetupStep) -> Void = { _ in }
         services = WindowServices(preferences: preferences, history: coordinator.history,
                                   setup: SetupStatus { SetupChecks.read(preferences) },
                                   willow: WillowImporter(history: coordinator.history, preferences: preferences),
                                   loginItem: LoginItem(), inputs: Inputs(), level: InputLevel(),
                                   shortcuts: ShortcutRecording(start: { [weak coordinator] in coordinator?.recordShortcut($0) },
                                                                stop: { [weak coordinator] in coordinator?.stopRecordingShortcut() }),
-                                  copy: { [inserter = coordinator.inserter] in inserter.copy($0) })
-        openOnLaunch = preferences.isFirstLaunch
+                                  copy: { [inserter = coordinator.inserter] in inserter.copy($0) },
+                                  agents: AgentServices(pool: coordinator.agents, preferences: preferences, history: coordinator.history),
+                                  timing: coordinator.timing, openSetup: { openSetup($0) })
+        super.init()
+        openSetup = { [unowned self] step in showSetup(at: step) }
     }
 
     /// With the menu bar icon hidden, a launch that shows no window would look like nothing happened. Login launches
@@ -76,7 +93,11 @@ enum Page: String, CaseIterable, Identifiable {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.mainMenu()
         let iconHidden = !services.preferences.current.settings.showMenuBarIcon
-        if openOnLaunch || (iconHidden && !Self.launchedAsLoginItem) { openWindow(nil) }
+        if services.preferences.needsOnboarding {
+            showSetup(at: .welcome)
+        } else if iconHidden, !Self.launchedAsLoginItem {
+            openWindow(nil)
+        }
     }
 
     /// Valid only during applicationDidFinishLaunching, while the launch event is current.
@@ -99,6 +120,22 @@ enum Page: String, CaseIterable, Identifiable {
         window.makeKeyAndOrderFront(nil)
     }
 
+    /// The first run, from a menu item.
+    @objc func openSetup(_ sender: Any?) { showSetup(at: .welcome) }
+
+    private func showSetup(at step: SetupStep) {
+        let setup = onboarding ?? makeOnboarding()
+        onboarding = setup
+        setup.open(at: step)
+    }
+
+    private func makeOnboarding() -> OnboardingWindow {
+        let setup = OnboardingWindow(services: services)
+        setup.openMain = { [unowned self] in openWindow(nil) }
+        setup.onClose = { [unowned self] in if window == nil { NSApp.setActivationPolicy(.accessory) } }
+        return setup
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         services.preferences.reloadVocabularyIfChanged()
         services.setup.refresh()
@@ -113,7 +150,7 @@ enum Page: String, CaseIterable, Identifiable {
         services.level.stop()
         services.shortcuts.stop()
         window = nil
-        NSApp.setActivationPolicy(.accessory)
+        if onboarding?.isOpen != true { NSApp.setActivationPolicy(.accessory) }
     }
 
     private func makeWindow() -> NSWindow {

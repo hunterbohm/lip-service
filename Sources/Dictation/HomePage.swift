@@ -23,6 +23,8 @@ struct HomePage: View {
                 HStack {
                     Text("Recent").font(.system(size: 15, weight: .semibold))
                     Spacer()
+                    LinkButton(title: "Set up again…") { services.openSetup(.welcome) }
+                        .font(.system(size: 13)).padding(.trailing, 14)
                     SearchBox(prompt: "Search \(Self.count(entries.count))", text: $state.search)
                 }
                 .padding(.bottom, 4)
@@ -169,9 +171,16 @@ private struct HistoryRow: View {
                     .lineSpacing(2)
                     .lineLimit(expanded ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(entry.app.map { "\($0.name), \(when)" } ?? when)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.tertiary)
+                HStack(spacing: 8) {
+                    if let kind = entry.kind {
+                        Text(kind.label).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Theme.text.opacity(0.85))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.raised))
+                    }
+                    Text(entry.app.map { "\($0.name), \(when)" } ?? when)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.tertiary)
+                }
             }
             .frame(maxWidth: 680, alignment: .leading)
             Spacer(minLength: 0)

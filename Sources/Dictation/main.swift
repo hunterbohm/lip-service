@@ -1,4 +1,8 @@
 import AppKit
+import DictationCore
+
+// A write to a child that already exited fails with EPIPE instead of ending the app.
+signal(SIGPIPE, SIG_IGN)
 
 switch Mode(arguments: Array(CommandLine.arguments.dropFirst())) {
 case .app:
@@ -24,6 +28,28 @@ case .renderBar(let directory):
     MainActor.assumeIsolated { exit(RenderBar.run(into: directory)) }
 case .renderWindow(let directory):
     exit(MainActor.assumeIsolated { WindowRender.run(to: directory) })
+case .agentBench(let options):
+    Task { @MainActor in exit(await AgentBench.run(options)) }
+    dispatchMain()
+case .t3Connect(let home, let code):
+    Task { @MainActor in
+        do {
+            let client = try T3Client(destination: T3Destination(home: home), secrets: Keychain())
+            try await client.signIn(pairingCode: code)
+            print("connected to \(client.origin) until \(client.token?.expires.description ?? "?")")
+            exit(0)
+        } catch {
+            print("failed: \(error.localizedDescription)")
+            exit(1)
+        }
+    }
+    dispatchMain()
+case .setup(let command):
+    Task { @MainActor in exit(await Headless.setup(command)) }
+    dispatchMain()
+case .handOffTest(let options):
+    Task { @MainActor in exit(await HandOffTest.run(options)) }
+    dispatchMain()
 case .importWillowDryRun(let folder):
     exit(WillowImporter.dryRun(folder))
 case .usage(let message):

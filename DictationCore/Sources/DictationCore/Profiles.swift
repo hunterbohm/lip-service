@@ -216,6 +216,8 @@ public struct Insertion: Equatable, Sendable {
         /// Pasted exactly as saved: no smart spacing.
         case snippet
         case pasteLast
+        /// An agent's draft, pasted as it was written.
+        case agentDraft
     }
 
     public var text: String
