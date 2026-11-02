@@ -212,3 +212,19 @@ private let noon = Date(timeIntervalSince1970: 1_793_620_800)
         #expect(rig.checker().available == nil)
     }
 }
+
+@Suite("Check for updates setting") struct CheckForUpdatesSettingTests {
+    @Test func isOnByDefaultAndSurvivesAnOlderSettingsFile() throws {
+        #expect(Settings().checkForUpdates)
+        let old = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        #expect(old.checkForUpdates)
+    }
+
+    @Test func staysOffOnceTurnedOff() throws {
+        var off = Settings()
+        off.checkForUpdates = false
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(off))
+        #expect(!back.checkForUpdates)
+        #expect(back.sendUsageCount)
+    }
+}
