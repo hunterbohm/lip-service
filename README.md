@@ -6,6 +6,8 @@ Lip Service is a free dictation app for the Mac. Hold fn, talk, and let go, and 
 
 Hold fn and Control instead and say what you want written, and the AI agent you already use writes it in your voice. Hold fn and Option to hand a task to that agent in its own app.
 
+Download it at [uselipservice.com](https://uselipservice.com), or [install it with your AI agent](#install-with-an-ai-agent).
+
 ![Hold fn and Control and say what you want. Hermes writes the reply in a card, and Return types it into the email.](docs/images/ghostwrite.gif)
 
 ## Requirements
