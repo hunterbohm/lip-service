@@ -454,6 +454,21 @@ private struct Rig {
         #expect(claude.hint(forTrouble: "model overloaded") == nil)
     }
 
+    @Test func textStreamedWhileTheAgentAsksGoesIntoTheDraft() {
+        let request = PermissionRequest(rpcID: 10, session: "s", title: "Read a file", options: [
+            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
+        ])
+        var card = DraftCard(typesDirectly: false)
+        _ = card.handle(.released)
+        _ = card.handle(.heard("say hello"))
+        _ = card.handle(DraftCard.Event.chunk("Hello"))
+        _ = card.handle(.asked(PermissionPrompt(request)))
+        _ = card.handle(DraftCard.Event.chunk(" world"))
+        _ = card.handle(.answered("allow"))
+        _ = card.handle(.finished)
+        #expect(card.phase == .ready("Hello world"))
+    }
+
     @Test func anUnreachableAgentKeepsTheWordsForCopyAndRetry() {
         var card = DraftCard(typesDirectly: false)
         _ = card.handle(.released)

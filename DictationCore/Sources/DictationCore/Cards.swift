@@ -227,6 +227,10 @@ public struct DraftCard: Equatable, Sendable {
             phase = .typed
             return [.type(cleaned)]
 
+        // An agent can keep streaming while it asks: the text goes into the draft under the question.
+        case (.permission(let prompt, let resume), .chunk), (.permission(let prompt, let resume), .finished):
+            phase = .permission(prompt, resume: continuing(resume, with: event, at: now))
+            return []
         case (.permission(let prompt, let resume), .key(.number(let number))):
             guard prompt.request.options.indices.contains(number - 1) else { return [] }
             phase = resume

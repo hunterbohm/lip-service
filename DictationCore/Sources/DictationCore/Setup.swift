@@ -50,6 +50,14 @@ public struct SetupRecord: Equatable, Codable, Sendable {
     public func undo(_ settings: Settings) -> Settings {
         var restored = settings
         restored.setupFields = previous
+        // A key the setup freed and the user has since given to Paste Last or dictation stays theirs: the agent keys keep
+        // their current values rather than share it.
+        let taken = { (key: Shortcut?) in key.map { $0 == settings.pasteLast || settings.hotkeys.contains($0) } ?? false }
+        if taken(restored.ghostwriteKey) || taken(restored.handOffKey)
+            || (restored.ghostwriteKey != nil && restored.ghostwriteKey == restored.handOffKey) {
+            restored.ghostwriteKey = settings.ghostwriteKey
+            restored.handOffKey = settings.handOffKey
+        }
         return restored
     }
 }

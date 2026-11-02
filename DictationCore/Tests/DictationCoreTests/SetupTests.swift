@@ -194,6 +194,19 @@ private let hermesInput: JSONValue = [
         #expect(restored.agents == start.agents && restored.agents.agents.isEmpty)
     }
 
+    @Test func undoNeverGivesBackAKeyThatPasteLastTookSince() throws {
+        var start = Settings()
+        let freed = Shortcut(key: 5, modifiers: [.control, .command])
+        #expect(start.setAgentKey(.ghostwrite, freed) == nil)
+        var after = start
+        #expect(after.setAgentKey(.ghostwrite, Shortcut(key: 38, modifiers: [.control, .command])) == nil)
+        let record = SetupRecord(by: "Hermes", changes: ["Ghostwrite key"], previous: start.setupFields)
+        #expect(after.setPasteLast(freed) == nil, "the setup freed it")
+        let restored = record.undo(after)
+        #expect(restored.pasteLast == freed)
+        #expect(restored.ghostwriteKey != freed && restored.ghostwriteKey == after.ghostwriteKey)
+    }
+
     @Test func aRecordSurvivesBeingStored() throws {
         let start = Settings()
         let result = try applied(hermesInput, from: start)
