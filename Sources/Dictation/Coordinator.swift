@@ -13,6 +13,7 @@ import os
     let preferences = Preferences()
     let history = HistoryStore()
     private let usageCount: UsageReporter
+    let updates: UpdateNotice
     private let microphone = Microphone()
     let inserter: Inserter
     private let sounds = Sounds()
@@ -54,6 +55,7 @@ import os
     init() {
         inserter = Inserter(preferences: preferences)
         usageCount = UsageCount.reporter(preferences: preferences)
+        updates = UpdateNotice(UpdateCheck.checker(preferences: preferences))
         keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(level: { [microphone] in microphone.level })
@@ -105,6 +107,13 @@ import os
             forName: SettingsStore.appliedNotification, object: nil, queue: .main) { [weak self] note in
             let settings = note.userInfo?["settings"] as? String, record = note.userInfo?["record"] as? String
             MainActor.assumeIsolated { self?.setupApplied(settings: settings, record: record) }
+        }
+        // The checker asks GitHub at most once a day, so an app left open for weeks still hears of a new release.
+        Task { [updates] in
+            while !Task.isCancelled {
+                await updates.check()
+                try? await Task.sleep(for: .seconds(3600))
+            }
         }
         // First-run setup asks for these from its Permissions step, one at a time.
         if !preferences.needsOnboarding { Microphone.requestAccessIfNeeded() }
