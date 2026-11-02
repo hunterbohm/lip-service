@@ -220,15 +220,18 @@ struct VoiceSheet: View {
 /// The command exactly as typed, saved as shell words on every change. The field keeps the typed text, so a space or
 /// an unclosed quote isn't rewritten while typing; it reloads only when the saved command changes from elsewhere.
 private struct CommandField: View {
+    var title = "Command"
     let command: [String]
+    var prompt = ""
+    var help = "Runs through your login shell, so it finds the same programs your terminal does. Quote a path that has spaces."
     let save: ([String]) -> Void
     @State private var text = ""
 
     var body: some View {
-        LabeledField(title: "Command", text: Binding(get: { text }, set: { value in
+        LabeledField(title: title, text: Binding(get: { text }, set: { value in
             text = value
             save(ShellWords.split(value))
-        }), help: "Runs through your login shell, so it finds the same programs your terminal does. Quote a path that has spaces.")
+        }), prompt: prompt, help: help)
         .onAppear { text = ShellWords.join(command) }
         .onChange(of: command) { if ShellWords.split(text) != command { text = ShellWords.join(command) } }
     }
@@ -368,10 +371,11 @@ struct DestinationFields: View {
                              prompt: "https://…", help: "Gets a JSON POST signed with X-Hub-Signature-256.")
                 if let key { secretField("Signing secret", key: key, prompt: "", help: "Kept in the Keychain.") }
             case .command(let executable, let arguments):
-                LabeledField(title: "Program", text: Binding(get: { ([executable] + arguments).joined(separator: " ") }, set: { value in
-                    let words = value.split(separator: " ").map(String.init)
+                CommandField(title: "Program", command: executable.isEmpty && arguments.isEmpty ? [] : [executable] + arguments,
+                             prompt: "/usr/local/bin/my-handler",
+                             help: "Run without a shell. Gets the hand-off as JSON on stdin and in LS_TEXT. Quote a path that has spaces.") { words in
                     update { $0.destination = .command(executable: words.first ?? "", arguments: Array(words.dropFirst())) }
-                }), prompt: "/usr/local/bin/my-handler", help: "Run without a shell. Gets the hand-off as JSON on stdin and in LS_TEXT.")
+                }
             case .agentReply:
                 Text("\(agent.name) does the task and its answer shows in the card.").font(.system(size: 12.5)).foregroundStyle(Theme.tertiary)
             }
