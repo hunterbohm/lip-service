@@ -124,6 +124,8 @@ def handle(m):
         send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": "s-" + uuid.uuid4().hex[:8], "configOptions": options(),
                                                        "models": {"currentModelId": "fast-model", "availableModels": [
                                                            {"modelId": "fast-model", "name": "Fast"}, {"modelId": "full-model", "name": "Full"}]}}})
+    elif method == "session/set_config_option" and args.mode == "no-mode" and params.get("configId") == "mode":
+        send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown config option: mode"}})
     elif method == "session/set_config_option":
         seen["options"].append([params.get("configId"), params.get("value")])
         model["value"] = params.get("value", model["value"])

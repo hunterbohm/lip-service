@@ -30,6 +30,9 @@ check "Claude Code drafts start with no tools" \
 check "Codex drafts start read-only, after the draft options" \
     'json.loads(rows[0]["text"])["options"]==[["model","fast-model"],["mode","read-only"]]' \
     --command "$fake --mode report" --preset codex --option model=fast-model --runs 1
+check "a Codex that can't switch to read-only gets no draft" \
+    '"switch its tools off" in rows[0].get("error","") and "text" not in rows[0]' \
+    --command "$fake --mode no-mode" --preset codex --runs 1
 check "an agent with no tool switch is sent nothing extra" \
     'json.loads(rows[0]["text"])=={"meta":None,"options":[]}' --command "$fake --mode report" --preset hermes --runs 1
 check "an agent error is shown" '"model overloaded" in rows[0].get("error","")' --command "$fake --mode error" --runs 1

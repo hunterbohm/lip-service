@@ -318,15 +318,14 @@ actor ACPClient {
 
     private func openSpare(_ agent: AgentConnection, client: ACPClient) -> Task<String, any Error> {
         let cwd = agent.sessionDirectory(local: workingDirectory.path), options = agent.draftOptions, id = agent.id
-        let toolFree = agent.toolFreeDraft, log = log
+        let toolFree = agent.toolFreeDraft
         return Task { [weak self] in
             let info = try await client.newSession(cwd: cwd, meta: toolFree.sessionMeta)
             await self?.remember(info, for: id)
             for choice in options { try await client.set(choice, session: info.id) }
-            // An older adapter may not know the setting. The draft goes on, since it stops at the first tool anyway.
             for choice in toolFree.choices {
                 do { try await client.set(choice, session: info.id) } catch {
-                    log.info("\(client.name, privacy: .public) kept its tools: \(error.localizedDescription, privacy: .public)")
+                    throw AgentError("\(client.name) couldn't switch its tools off for drafts, so Lip Service didn't send the draft: \(error.localizedDescription)")
                 }
             }
             return info.id
