@@ -122,13 +122,13 @@ The test clips are 15 chat messages, emails, notes, and prompts for AI agents, r
 
 | | Word error rate | Names spelled right | Text after you let go, median |
 | --- | --- | --- | --- |
-| Lip Service 1.0.0 | 0.8% | 20 of 20 | 0.16 s |
+| Lip Service 1.0.6 | 0.3% | 20 of 20 | 0.15 s |
 | Apple DictationTranscriber, with the names as a word list | 2.7% | 19 of 20 | 0.10 s |
 | Apple SpeechTranscriber, with the names as a word list | 5.6% | 11 of 20 | 0.21 s |
 | Parakeet with no name boosting | 4.3% | 12 of 20 | 0.16 s |
 | Whisper large-v3-turbo, through whisper.cpp | 3.2% | 13 of 20 | 1.24 s |
 
-Every row is 5 rounds of the 15 clips. The Lip Service row comes from `scripts/e2e.sh`, which runs the built app on each clip. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
+Every row is 5 rounds of the 15 clips. The Lip Service row comes from `ROUNDS=5 scripts/e2e.sh`, which runs the built app on each clip. 1.0.6 changed how names are matched, and that work was tuned while looking at these clips, so expect more misses on speech it has not seen. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
 
 ### Against Willow and Wispr Flow
 
@@ -138,7 +138,7 @@ Every row is 5 rounds of the 15 clips. The Lip Service row comes from `scripts/e
 | Willow 2.6.9, Pro plan | 0.37 s | 0.53 s | 2.4% | 19 of 20 |
 | Wispr Flow 1.6.1264, Free plan | 0.39 s | 0.64 s | 2.2% | 20 of 20 |
 
-This test drives each app the way a person does. [RivalBench](bench/rivals) holds the app's key, plays each clip into a virtual microphone, lets go, and times the text landing in a text box. That time includes the paste, which is why Lip Service shows 0.21 s here and 0.16 s in the table above. Every row is 5 rounds of the 15 clips, with all three apps running at once on the same Mac mini. Most of the rivals' errors are formatting, such as turning a spoken list into a numbered one, so the accuracy columns are close to a tie. The setup and the raw results are in [bench/rivals/results/2026-10-27](bench/rivals/results/2026-10-27).
+This test drives each app the way a person does. [RivalBench](bench/rivals) holds the app's key, plays each clip into a virtual microphone, lets go, and times the text landing in a text box. That time includes the paste, which the table above leaves out. Every row is 5 rounds of the 15 clips, with all three apps running at once on the same Mac mini. Most of the rivals' errors are formatting, such as turning a spoken list into a numbered one, so the accuracy columns are close to a tie. The setup and the raw results are in [bench/rivals/results/2026-10-27](bench/rivals/results/2026-10-27).
 
 ## Build from source
 
