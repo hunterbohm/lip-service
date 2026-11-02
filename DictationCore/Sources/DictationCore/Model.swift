@@ -191,6 +191,8 @@ public struct Settings: Equatable, Codable, Sendable {
     public var agents = AgentSettings()
     /// Sends one anonymous report a day, the first time you use the app. See the README's Privacy section.
     public var sendUsageCount = true
+    /// Asks GitHub once a day for the newest release and says so when it is newer. It installs nothing.
+    public var checkForUpdates = true
 
     public init() {}
 
@@ -234,12 +236,13 @@ public struct Settings: Equatable, Codable, Sendable {
             .flatMap { hotkeys.contains($0) ? nil : $0 }
         agents = value(.agents, defaults.agents)
         sendUsageCount = value(.sendUsageCount, defaults.sendUsageCount)
+        checkForUpdates = value(.checkForUpdates, defaults.checkForUpdates)
     }
 
     private enum CodingKeys: String, CodingKey {
         case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
         case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, ghostwriteKey, handOffKey, agents
-        case sendUsageCount
+        case sendUsageCount, checkForUpdates
     }
 
     /// Written out by hand so a paste shortcut turned off is stored as null. The synthesized encoder leaves a nil out,
@@ -265,6 +268,7 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(handOffKey, forKey: .handOffKey)
         try container.encode(agents, forKey: .agents)
         try container.encode(sendUsageCount, forKey: .sendUsageCount)
+        try container.encode(checkForUpdates, forKey: .checkForUpdates)
     }
 
     /// Adds a dictation key, or puts it in place of `replacing`. Why it can't, or nil when it did.
