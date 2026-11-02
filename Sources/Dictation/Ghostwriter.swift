@@ -13,6 +13,7 @@ import os
 
     private let preferences: Preferences
     private let history: HistoryStore
+    private let usageCount: UsageReporter
     private let inserter: Inserter
     private let engine: SpeechEngine
     let pool: AgentPool
@@ -65,8 +66,9 @@ import os
     private var changing = false
 
     init(preferences: Preferences, history: HistoryStore, inserter: Inserter, engine: SpeechEngine, pool: AgentPool,
-         anchor: @escaping () -> (frame: NSRect, edge: BarEdge)) {
+         usageCount: UsageReporter, anchor: @escaping () -> (frame: NSRect, edge: BarEdge)) {
         (self.preferences, self.history, self.inserter, self.engine, self.pool, self.anchor) = (preferences, history, inserter, engine, pool, anchor)
+        self.usageCount = usageCount
         panel.onAction = { [unowned self] action in
             switch action {
             case .key(let key): _ = handleKey(key, clicked: true)
@@ -332,6 +334,7 @@ import os
     /// Return: back into the field the user started in, checked as Press Return checks it. No field there, or focus
     /// moved, and it is copied instead, with the bar saying so.
     private func type(_ text: String, in run: Run) async {
+        usageCount.used(.ghostwrite)
         record(text, kind: .ghostwrite(agent: run.agent.name), app: run.target.app)
         let takesText = run.target.element.map { Field($0).takesText(until: .now + 0.15) } ?? false
         guard takesText else {
@@ -429,6 +432,7 @@ import os
                                      })
         do {
             let note = try await run.agent.destination.sender.send(request, handoff)
+            usageCount.used(.handoff)
             record(run.words, kind: .handOff(agent: run.agent.name, destination: run.agent.destination.kind.title), app: run.target.app)
             await Task.yield()
             if self.run === run { handOffEvent(.sent(note: note)) }

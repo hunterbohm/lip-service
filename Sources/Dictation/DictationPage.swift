@@ -54,6 +54,16 @@ struct DictationPage: View {
                              help: "Without it, open this window from Spotlight or Raycast.",
                              isOn: preferences.binding(\.showMenuBarIcon))
                 }
+                .padding(.bottom, 24)
+                VStack(alignment: .leading, spacing: 4) {
+                    CheckRow(title: "Send an anonymous daily usage count", isOn: preferences.binding(\.sendUsageCount))
+                    Text("Once a day, when you first use Lip Service, it sends a hashed random ID, the app and macOS versions, the date, and whether you used dictation, Ghostwrite or Hand off. Never your voice, your words, your apps or your agent.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.secondary)
+                        .padding(.leading, 36)
+                        .frame(maxWidth: 680, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .page()
         }

@@ -1,0 +1,6 @@
+{
+  "name": "lipservice-usage",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/" }
+}
