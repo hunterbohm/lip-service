@@ -143,7 +143,10 @@ struct FocusTarget {
             if insertion.pressReturn {
                 landed = await field?.waitForText(fitted, until: pasted + (PressReturn.deadline - Self.returnCheckTime))
                 if landed == nil { try? await Task.sleep(for: .seconds(max(0, Self.unseenPaste - (Instant.now - pasted)))) }
-                if PressReturn.allows(returnCheck(target, pasteSeen: landed != nil, pastedAt: pasted)) {
+                // Return goes where the paste went: a field read only at paste time becomes the one Return checks.
+                var pasteTarget = target
+                if target.element == nil, let element = focus.element { pasteTarget.element = element }
+                if PressReturn.allows(returnCheck(pasteTarget, pasteSeen: landed != nil, pastedAt: pasted)) {
                     _ = Self.post(kVK_Return, flags: [])
                 } else {
                     Self.log.info("Press Return skipped")
