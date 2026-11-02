@@ -1,7 +1,9 @@
 name = "lipservice-usage"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+# Lip Service 1.0.6 reports to the workers.dev address, so it stays on.
 workers_dev = true
+routes = [{ pattern = "lipservice-usage.hunterbohm.me", custom_domain = true }]
 preview_urls = false
 
 # Off, so Cloudflare keeps no request log that could hold an IP address.
