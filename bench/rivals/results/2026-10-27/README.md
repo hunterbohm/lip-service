@@ -25,9 +25,9 @@ This run times each app from the moment you let go of its key to the moment its 
 
 | App | Trials | Errors | Median | p95 | Max | Round medians | Words wrong | Names right per round |
 |---|---|---|---|---|---|---|---|---|
-| Lip Service | 75 | 0 | 0.212 s | 0.302 s | 0.343 s | 0.188 to 0.234 s | 1.3% | 19 of 20 |
-| Willow (Pro) | 75 | 0 | 0.370 s | 0.534 s | 0.617 s | 0.350 to 0.389 s | 2.4% | 19 of 20 |
-| Wispr Flow (Free) | 75 | 0 | 0.388 s | 0.640 s | 0.819 s | 0.371 to 0.411 s | 2.2% | 20 of 20 |
+| Lip Service | 75 | 0 | 0.212 s | 0.302 s | 0.343 s | 0.188 to 0.234 s | 0.8% | 19 of 20 |
+| Willow (Pro) | 75 | 0 | 0.370 s | 0.534 s | 0.617 s | 0.350 to 0.389 s | 1.9% | 19 of 20 |
+| Wispr Flow (Free) | 75 | 0 | 0.388 s | 0.640 s | 0.819 s | 0.371 to 0.411 s | 1.7% | 20 of 20 |
 
 Lip Service's slowest round median (0.234 s) is below the fastest round medians of both rivals (0.350 s and 0.371 s).
 
@@ -43,7 +43,7 @@ The files:
 The word error rates mostly measure formatting, not hearing:
 
 - Willow and Wispr Flow turned "First… Second… And third…" (clip u12) into a numbered list. That counts as 4 errors per round for each of them.
-- The scorer ignores "um" and "uh", but the u14 reference keeps "you know", and all three apps drop it. Willow and Wispr Flow also drop "so".
+- The scorer ignores "um" and "uh". It scores u14 against both its spoken text and its clean version, which leaves out "you know", and takes whichever fits better, because all three apps drop "you know". These results were first published scored against the spoken text only: 1.3%, 2.4% and 2.2% of words wrong. Willow and Wispr Flow also drop "so", which still counts.
 - Willow writes "nine" as "9:00" in u11, which counts as one error.
 - Misheard words per round:
   - Lip Service, 2: "note" for node, and "in-physical" for Infisical.
