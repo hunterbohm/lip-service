@@ -17,6 +17,7 @@ import SwiftUI
     let copy: (String) -> Void
     let agents: AgentServices
     let timing: DictationTiming
+    let updates: UpdateNotice
     /// Opens the first run's window at a step, for "Set up again…" and the Ghostwrite page's empty state.
     let openSetup: (SetupStep) -> Void
 }
@@ -83,7 +84,7 @@ enum PageSheet: Equatable { case agents, voice, apps }
                                                                stop: { [weak coordinator] in coordinator?.stopRecordingShortcut() }),
                                   copy: { [inserter = coordinator.inserter] in inserter.copy($0) },
                                   agents: AgentServices(pool: coordinator.agents, preferences: preferences, history: coordinator.history),
-                                  timing: coordinator.timing, openSetup: { openSetup($0) })
+                                  timing: coordinator.timing, updates: coordinator.updates, openSetup: { openSetup($0) })
         super.init()
         openSetup = { [unowned self] step in showSetup(at: step) }
     }

@@ -1,8 +1,8 @@
 import DictationCore
 import Foundation
 
-/// UserDefaults under the two keys the reporter keeps. Only these two strings are stored for the count.
-private final class DefaultsStore: UsageCountStore {
+/// Strings in UserDefaults, under the keys the usage count and the update check keep.
+final class DefaultsStore: UsageCountStore {
     private let defaults: UserDefaults
     init(_ defaults: UserDefaults) { self.defaults = defaults }
     func string(forKey key: String) -> String? { defaults.string(forKey: key) }

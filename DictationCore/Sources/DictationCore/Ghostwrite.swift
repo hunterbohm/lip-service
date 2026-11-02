@@ -228,7 +228,7 @@ public enum VoiceNotes {
 
     /// While voice notes are built the agent may read and search, and do nothing else.
     public static func answer(_ request: PermissionRequest) -> String? {
-        guard let kind = request.toolKind, ["read", "search", "fetch", "think"].contains(kind) else { return request.rejection?.id }
+        guard let kind = request.toolKind, ["read", "search", "think"].contains(kind) else { return request.rejection?.id }
         return request.options.first { $0.kind == "allow_once" }?.id ?? request.rejection?.id
     }
 

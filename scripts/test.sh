@@ -1,6 +1,7 @@
 #!/bin/bash
 # Runs the DictationCore tests with swift-testing from the Command Line Tools, so no Xcode and no FluidAudio
 # build is needed. Fails first if the pure package imports a framework that would tie it to hardware or models.
+# Then runs the model download guard check.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 package_dir="$root/DictationCore"
@@ -21,3 +22,4 @@ if [[ "${DEVELOPER_DIR:-$(xcode-select -p)}" == /Library/Developer/CommandLineTo
     arguments+=(-Xswiftc -F -Xswiftc "$frameworks" -Xlinker -rpath -Xlinker "$frameworks" -Xlinker -rpath -Xlinker "$frameworks/../usr/lib")
 fi
 swift test "${arguments[@]}" "$@"
+"$root/scripts/test-download-guard.sh"

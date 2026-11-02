@@ -24,26 +24,8 @@ public enum CardKey: Equatable, Sendable {
     private static let named: [Int: CardKey] = [36: .returnKey, 76: .returnKey, KeyInput.escapeKeyCode: .escape, 126: .up, 125: .down, 51: .delete]
 }
 
-/// The agent question shown in the card, answered by its number or a click.
-public struct PermissionPrompt: Equatable, Sendable {
-    /// How long the question shows before a number key answers it, so a digit the user was typing into the app as it
-    /// appeared does not answer it. A click answers at once.
-    public static let readDelay = 0.8
-
-    /// The agent's options with the "always" ones moved last, so 1 is never a standing approval.
-    public var request: PermissionRequest
-    public var answerableAt = Instant(seconds: 0)
-
-    public init(_ request: PermissionRequest) {
-        self.request = request
-        self.request.options = request.options.enumerated()
-            .sorted { ($0.element.kind.hasSuffix("_always") ? 1 : 0, $0.offset) < ($1.element.kind.hasSuffix("_always") ? 1 : 0, $1.offset) }
-            .map(\.element)
-    }
-}
-
 /// The draft card. Listening, transcribing and thinking show on the bar; the card itself opens with the first words
-/// of the draft, or earlier for a question or a failure.
+/// of the draft, or earlier for a failure.
 ///
 ///     phase                     event                         next                    effects
 ///     ready, streaming          listen                        listening(over: draft)
@@ -54,9 +36,7 @@ public struct PermissionPrompt: Equatable, Sendable {
 ///     transcribing              heard("")                     back to the draft, or discarded
 ///     thinking, streaming       chunk                         streaming(text so far)
 ///     thinking, streaming       finished                      ready(cleaned)          paste, when Type directly
-///     thinking, streaming       asked(question)               permission
-///     permission                number or click               back to where it was    answer(option)
-///     thinking .. permission    failed(reason)                failed(reason, words)
+///     thinking, streaming       failed(reason)                failed(reason, words)
 ///     failed                    retry                         thinking                send(words)
 ///     failed                    copy                          copied                  copy(words)
 ///     ready                     return                        typed                   type(text)
@@ -71,20 +51,18 @@ public struct DraftCard: Equatable, Sendable {
         case thinking(draft: String?)
         case streaming(String)
         case ready(String)
-        indirect case permission(PermissionPrompt, resume: Phase)
         case failed(String)
         case typed, copied, discarded
     }
 
     public enum Event: Equatable, Sendable {
-        case listen, released, heard(String), chunk(String), finished, asked(PermissionPrompt), answered(String?)
+        case listen, released, heard(String), chunk(String), finished
         case failed(String), retry, copy, key(CardKey), cancelled
     }
 
     public enum Effect: Equatable, Sendable {
         /// A new request on the first send, a change in the same session after that.
         case send(words: String, isChange: Bool)
-        case answer(PermissionRequest, optionID: String?)
         case type(String)
         case copy(String)
         case cancel
@@ -114,7 +92,7 @@ public struct DraftCard: Equatable, Sendable {
         case .listening(let over), .transcribing(let over): over != nil
         case .thinking(let draft): draft != nil
         case .streaming: !typesDirectly
-        case .ready, .permission, .failed: true
+        case .ready, .failed: true
         case .typed, .copied, .discarded: false
         }
     }
@@ -125,7 +103,6 @@ public struct DraftCard: Equatable, Sendable {
         case .listening(let over), .transcribing(let over): over.flatMap { DraftCard(phase: $0).text }
         case .thinking(let draft): draft
         case .streaming(let text), .ready(let text): text
-        case .permission(_, let resume): DraftCard(phase: resume).text
         default: nil
         }
     }
@@ -149,13 +126,11 @@ public struct DraftCard: Equatable, Sendable {
     }
 
     /// Whether the card acts on this key now. Only these keys are kept from the app in front.
-    public func takes(_ key: CardKey, at now: Instant) -> Bool {
+    public func takes(_ key: CardKey) -> Bool {
         switch (phase, key) {
         case (_, .escape): isOpen
         case (.ready, .returnKey): true
         case (.failed, .returnKey): !requests.isEmpty
-        case (.permission(let prompt, _), .number(let number)):
-            prompt.request.options.indices.contains(number - 1) && now >= prompt.answerableAt
         default: false
         }
     }
@@ -165,29 +140,23 @@ public struct DraftCard: Equatable, Sendable {
         typesDirectly = false
     }
 
-    public mutating func handle(_ event: Event, at now: Instant = .now) -> [Effect] {
-        if case .key(let key) = event, !takes(key, at: now) { return [] }
+    public mutating func handle(_ event: Event) -> [Effect] {
+        if case .key(let key) = event, !takes(key) { return [] }
         switch (phase, event) {
         case (_, .key(.escape)):
-            if case .permission(let prompt, _) = phase {
-                phase = .discarded
-                return [.answer(prompt.request, optionID: prompt.request.rejection?.id), .cancel]
-            }
             phase = .discarded
             return [.cancel]
 
         case (_, .listen) where isChangeable:
             phase = .listening(over: phase)
             return []
-        // The draft underneath keeps going while a change is said over it, and what happens to it waits there: a
-        // question it asks, or its failure, which the change then retries.
-        case (.listening(let over?), .chunk), (.listening(let over?), .finished), (.listening(let over?), .asked),
-             (.listening(let over?), .failed):
-            phase = .listening(over: continuing(over, with: event, at: now))
+        // The draft underneath keeps going while a change is said over it, and what happens to it waits there: its
+        // failure, which the change then retries.
+        case (.listening(let over?), .chunk), (.listening(let over?), .finished), (.listening(let over?), .failed):
+            phase = .listening(over: continuing(over, with: event))
             return []
-        case (.transcribing(let over?), .chunk), (.transcribing(let over?), .finished), (.transcribing(let over?), .asked),
-             (.transcribing(let over?), .failed):
-            phase = .transcribing(over: continuing(over, with: event, at: now))
+        case (.transcribing(let over?), .chunk), (.transcribing(let over?), .finished), (.transcribing(let over?), .failed):
+            phase = .transcribing(over: continuing(over, with: event))
             return []
         case (.listening(let over), .released):
             phase = .transcribing(over: over)
@@ -202,13 +171,7 @@ public struct DraftCard: Equatable, Sendable {
                 return []
             }
             requests.append(words)
-            // A question still waiting under the change is declined, since the change replaces the turn that asked it.
-            var effects: [Effect] = [], waiting = over
-            while case .permission(let prompt, let resume) = waiting {
-                effects.append(.answer(prompt.request, optionID: prompt.request.rejection?.id))
-                waiting = resume
-            }
-            return effects + startThinking(draft: over.flatMap { DraftCard(phase: $0).text })
+            return startThinking(draft: over.flatMap { DraftCard(phase: $0).text })
 
         case (.thinking, .chunk(let text)), (.streaming, .chunk(let text)):
             reply += text
@@ -226,28 +189,6 @@ public struct DraftCard: Equatable, Sendable {
             }
             phase = .typed
             return [.type(cleaned)]
-
-        // An agent can keep streaming while it asks: the text goes into the draft under the question. A draft that
-        // finishes there waits as ready, even when it types directly, and answering types it.
-        case (.permission(let prompt, let resume), .chunk), (.permission(let prompt, let resume), .finished):
-            var draft = self
-            draft.phase = resume
-            draft.typesDirectly = false
-            _ = draft.handle(event, at: now)
-            reply = draft.reply
-            phase = .permission(prompt, resume: draft.phase)
-            return []
-        case (.permission(let prompt, let resume), .key(.number(let number))):
-            guard prompt.request.options.indices.contains(number - 1) else { return [] }
-            phase = resume
-            return [.answer(prompt.request, optionID: prompt.request.options[number - 1].id)] + typeIfDirect()
-        case (.permission(let prompt, let resume), .answered(let optionID)):
-            phase = resume
-            return [.answer(prompt.request, optionID: optionID)] + typeIfDirect()
-        case (_, .asked(var prompt)) where isOpen:
-            prompt.answerableAt = now + PermissionPrompt.readDelay
-            phase = .permission(prompt, resume: phase)
-            return []
 
         case (_, .failed(let reason)) where isOpen:
             phase = .failed(reason)
@@ -267,18 +208,11 @@ public struct DraftCard: Equatable, Sendable {
         }
     }
 
-    /// A draft that finished under a question, typed now that the question is answered, when drafts type directly.
-    private mutating func typeIfDirect() -> [Effect] {
-        guard typesDirectly, case .ready(let text) = phase else { return [] }
-        phase = .typed
-        return [.type(text)]
-    }
-
     /// The draft a change is being spoken over keeps streaming in underneath it.
-    private mutating func continuing(_ over: Phase, with event: Event, at now: Instant) -> Phase {
+    private mutating func continuing(_ over: Phase, with event: Event) -> Phase {
         var draft = self
         draft.phase = over
-        _ = draft.handle(event, at: now)
+        _ = draft.handle(event)
         reply = draft.reply
         return draft.phase
     }

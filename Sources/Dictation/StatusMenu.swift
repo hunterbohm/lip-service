@@ -11,13 +11,14 @@ import DictationCore
     private let preferences: Preferences
     private let engine: SpeechEngine
     private let inserter: Inserter
+    private let updates: UpdateNotice
     private var recents: [String] = []
     private var engineStatus = EngineStatus.loading(.compiling)
     private var keyTapRunning = false
     private var waiting = 0
 
-    init(preferences: Preferences, engine: SpeechEngine, inserter: Inserter) {
-        (self.preferences, self.engine, self.inserter) = (preferences, engine, inserter)
+    init(preferences: Preferences, engine: SpeechEngine, inserter: Inserter, updates: UpdateNotice) {
+        (self.preferences, self.engine, self.inserter, self.updates) = (preferences, engine, inserter, updates)
         super.init()
         menu.delegate = self
         item.menu = menu
@@ -57,6 +58,9 @@ import DictationCore
         if let issue = configuration.issues.first {
             let more = configuration.issues.count > 1 ? " (and \(configuration.issues.count - 1) more)" : ""
             menu.addItem(ActionItem("Vocabulary line \(issue.line): \(issue.message)\(more)") { [weak self] in self?.openVocabularyFile() })
+        }
+        if let release = updates.available {
+            menu.addItem(ActionItem("Lip Service \(release.version) is available") { [updates] in updates.download(release) })
         }
         menu.addItem(.separator())
 

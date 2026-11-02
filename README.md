@@ -53,11 +53,17 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.7.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.8.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
 1. Open the zip. Drag **Lip Service** into your **Applications** folder.
+
+	To check that this copy is the author's before you allow it, run these two commands in Terminal. The first must pass, and the second must print 760d91571175800b1e66274c20aad991ce484d1fac366eab7c14d58a8e9feb0b.
+
+		codesign --verify --deep --strict "/Applications/Lip Service.app"
+		codesign -d --extract-certificates=/tmp/lip-service-cert "/Applications/Lip Service.app" && shasum -a 256 /tmp/lip-service-cert0
+
 2. Open Lip Service. macOS blocks it, because the app is signed with its author's own certificate and is not notarized by Apple. Close the message, and don't move the app to the Trash.
 3. Open System Settings > **Privacy & Security**. Scroll down to **Security**, click **Open Anyway** next to the message about Lip Service, and confirm when macOS asks.
 
@@ -72,7 +78,7 @@ Download `Lip-Service-1.0.7.zip` from the [latest release](https://github.com/hu
 
 On the first launch, a setup window walks you through steps 4 to 6, a first dictation, your styles, and, if you want, your agent. Afterwards the Home page shows any of steps 4 to 6 that still needs doing, with a button that opens the right System Settings pane.
 
-To update, quit Lip Service and replace the app in **Applications** with the new one. macOS blocks the new copy once, so allow it again as in step 3. The Microphone permission stays, because every release is signed with the same certificate. If fn does nothing after an update, turn Lip Service off and back on in System Settings > **Privacy & Security** > **Accessibility**.
+From 1.0.8, Lip Service says in its menu bar menu and on the Home page when a newer release is out. To update, quit Lip Service and replace the app in **Applications** with the new one. macOS blocks the new copy once, so allow it again as in step 3. The Microphone permission stays, because every release is signed with the same certificate. If fn does nothing after an update, turn Lip Service off and back on in System Settings > **Privacy & Security** > **Accessibility**.
 
 ## Use it
 
@@ -108,10 +114,16 @@ The [reference](docs/reference.md) describes every feature and setting.
 ## Privacy
 
 - Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
-- Dictation goes online only to download its models from Hugging Face. It downloads a fixed version of each, and it checks every file against a SHA-256 hash built into the app before it uses it. It has no account.
+- Lip Service goes online by itself for three things, each described below: the speech models, the usage count, and the update check. Ghostwrite and Hand off send only to the agent and apps you set up. It has no account.
+- **Speech models.** On first launch it downloads its speech models from huggingface.co, at fixed versions and with no account token. It fetches only the files the app expects, refuses to write anywhere outside its model folder, and checks every file against a SHA-256 hash built into the app before it uses it.
 - **Usage count.** Once a day, the first time you finish a dictation, a Ghostwrite or a Hand off, Lip Service sends one small report to a Cloudflare Worker that its author runs, so the author can see how many people use it. The report holds exactly five things: a SHA-256 hash of a random ID made on your Mac (the ID itself never leaves it), the Lip Service version, the macOS version, the UTC date, and which of dictation, Ghostwrite and Hand off you used first that day. It never holds your voice, your words, the names of your apps or windows, what is on your screen, or which agent you use. The server stores those five things and nothing else, with no IP address. It ignores a report it can't read and a second one for the same day. To turn it off, clear **Send an anonymous daily usage count** on the **Dictation** page, and nothing is sent. The code for the report is in `DictationCore/Sources/DictationCore/UsageCount.swift` and the server is in `usage-worker/`.
+- **Update check.** Once a day, Lip Service asks GitHub which release is newest and tells you in the menu bar menu and on the Home page when yours is older. The request carries no ID and no cookies, and the app installs nothing by itself. To turn it off, clear **Check for updates** on the **Dictation** page, and nothing is sent.
 - Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file. The Stats page is counted from this file on your Mac, and its share image holds totals and a calendar, never your words or the apps.
-- Ghostwrite and Hand off send what you said, as text, to the agent you set up. Your audio is never sent. A Ghostwrite request also carries what Lip Service can read of the window you're in: its title, the field around the cursor, and nearby text. With **Learn my voice from my dictations** on, it also carries up to 8 of your recent dictations from the same kind of app, as examples of how you write. A hand-off carries the window's text, up to 4,000 characters, only while **Send the window's text with hand-offs** is on. Password apps and password fields are never read. The agent runs under its own permission rules and may pass all of this to its AI provider, so pick one you trust. Tokens for Slack, Discord, web addresses, and T3 Code stay in your Mac's Keychain.
+- Ghostwrite and Hand off send what you said, as text, to the agent you set up. Your audio is never sent. A Ghostwrite request also carries what Lip Service can read of the window you're in: its title, the field around the cursor, and nearby text. With **Learn my voice from my dictations** on, it also carries up to 8 of your recent dictations from the same kind of app, as examples of how you write. Password apps and password fields are never read.
+- A draft needs no tools, and the window's text can come from someone else, such as an email with instructions hidden in it. So Claude Code drafts start with its tools off and Codex drafts run read-only with no network. With any agent, Lip Service refuses every permission request during a draft and stops the draft as soon as the agent starts a tool. An agent that runs tools without asking may already have started one by then, so pick one whose own permission rules you trust.
+- A hand-off carries the window's text, up to 4,000 characters, only while **Send the window's text with hand-offs** is on. New installs start with it off.
+- **Build with** on the Ghostwrite page sends up to 30 of your recent dictations to your agent once, so it can write notes on how you write. While it does, it may only read, search, and think.
+- The agent runs under its own permission rules and may pass what it gets to its AI provider. Slack and Discord tokens, a web address's signing secret, and the T3 Code sign-in stay in your Mac's Keychain. A web address itself is saved with your settings, so put no secret in it, and use the signing secret instead.
 - To paste, Lip Service puts the text on the clipboard and presses Command+V for you. Then it puts back what the clipboard held before.
 - To spot your dictation keys, Lip Service sees every key you press, through Accessibility. It does not record, store, or send them.
 - With **Smart spacing** on, it reads the text just before the cursor to decide on a space and a capital letter. It does not keep that text.

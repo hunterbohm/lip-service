@@ -35,6 +35,8 @@ struct ModelStore: Sendable {
         }
         // The vocabulary file and every model file come from the pinned commit, never from main.
         ModelRegistry.revisionOverrides = Dictionary(uniqueKeysWithValues: PinnedModels.all.map { ($0.repo, $0.commit) })
+        // The download fetches only these files, so a listing cannot add others or place one outside the folder.
+        ModelHub.allowedFiles = Dictionary(uniqueKeysWithValues: PinnedModels.all.map { ($0.repo, Set($0.files.map(\.path))) })
         let folder = folder(for: model)
         var problems = ModelCheck.problems(in: folder, for: model)
         if !problems.isEmpty {

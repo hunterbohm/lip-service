@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """A stand-in ACP agent for testing Lip Service. Speaks newline-delimited JSON-RPC on stdio.
 
-usage: fake-acp-agent.py [--mode draft|permission|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
+usage: fake-acp-agent.py [--mode draft|permission|tool|report|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
                          [--spawn-child TAG]
 
 draft       streams --reply in a few chunks after --delay
 permission  asks session/request_permission first, then says which option it got
+tool        starts a tool call (a tool_call update) first, then streams --reply
+report      replies with the _meta its session/new carried and the config options set on its sessions, as JSON
 error       answers the prompt with a JSON-RPC error
 die         exits during the prompt, after a line on stderr; with --marker, only the first time
 slow        waits 30 s, or stops early on session/cancel
@@ -32,6 +34,7 @@ if args.spawn_child:
 lock = threading.Lock()
 answers, cancelled = {}, threading.Event()
 model = {"value": "fast-model"}
+seen = {"meta": None, "options": []}
 
 
 def send(obj):
@@ -77,6 +80,11 @@ def prompt(rid, params):
         cancelled.wait(30)
         return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "cancelled" if cancelled.is_set() else "end_turn"}})
     reply = args.reply
+    if args.mode == "report":
+        reply = json.dumps(seen, sort_keys=True)
+    if args.mode == "tool":
+        send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": session, "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Run touch /tmp/injected", "kind": "execute", "status": "pending"}}})
     if args.mode == "permission":
         ask = "perm-" + uuid.uuid4().hex[:6]
         got = threading.Event()
@@ -112,10 +120,14 @@ def handle(m):
         time.sleep(args.start_delay)
         send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {}, "agentInfo": {"name": "fake", "version": "1"}}})
     elif method == "session/new":
+        seen["meta"] = params.get("_meta")
         send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": "s-" + uuid.uuid4().hex[:8], "configOptions": options(),
                                                        "models": {"currentModelId": "fast-model", "availableModels": [
                                                            {"modelId": "fast-model", "name": "Fast"}, {"modelId": "full-model", "name": "Full"}]}}})
+    elif method == "session/set_config_option" and args.mode == "no-mode" and params.get("configId") == "mode":
+        send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown config option: mode"}})
     elif method == "session/set_config_option":
+        seen["options"].append([params.get("configId"), params.get("value")])
         model["value"] = params.get("value", model["value"])
         send({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": options()}})
     elif method == "session/set_model":

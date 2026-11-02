@@ -32,18 +32,6 @@ import os
         var handOff: HandOffCard?
         var session: (client: ACPClient, id: String)?
         var prompt: Task<Void, Never>?
-        /// The agent's questions still waiting for an answer. An agent can ask a second before the first is answered.
-        var permissions: [(request: PermissionRequest, answer: CheckedContinuation<String?, Never>)] = []
-
-        func answer(_ request: PermissionRequest, with optionID: String?) {
-            guard let index = permissions.firstIndex(where: { $0.request.isSameQuestion(as: request) }) else { return }
-            permissions.remove(at: index).answer.resume(returning: optionID)
-        }
-
-        func declineAll() {
-            for waiting in permissions { waiting.answer.resume(returning: nil) }
-            permissions = []
-        }
         var timer: Timer?
         var words = ""
         /// The release of the latest request, for the timing log.
@@ -100,7 +88,6 @@ import os
             case .transcribing, .thinking: return (agent, "\(run.agent.name) is writing…", true)
             case .streaming: return (agent, draft.typesDirectly ? "\(run.agent.name) is writing…" : "Writing", true)
             case .ready: return (agent, "Ready", false)
-            case .permission: return (agent, "\(run.agent.name) is asking", false)
             case .failed: return (agent, "Didn't finish", false)
             case .typed, .copied, .discarded: return nil
             }
@@ -210,13 +197,7 @@ import os
         guard let run else { return false }
         if !clicked, NSWorkspace.shared.frontmostApplication?.processIdentifier != run.target.pid { return false }
         if let draft = run.draft {
-            // A click on an answer is deliberate, so it does not wait out the question's read delay.
-            if clicked, case .number(let number) = key, case .permission(let prompt, _) = draft.phase,
-               prompt.request.options.indices.contains(number - 1) {
-                event(.answered(prompt.request.options[number - 1].id), in: run)
-                return true
-            }
-            guard draft.takes(key, at: .now) else { return false }
+            guard draft.takes(key) else { return false }
             event(.key(key), in: run)
             return true
         }
@@ -252,8 +233,6 @@ import os
             run.turn += 1
             let turn = run.turn
             run.prompt = Task { await self.send(words, isChange: isChange, turn: turn, in: run) }
-        case .answer(let request, let optionID):
-            run.answer(request, with: optionID)
         case .type(let text):
             Task { await self.type(text, in: run) }
         case .copy(let text):
@@ -262,7 +241,6 @@ import os
         case .cancel:
             run.prompt?.cancel()
             if let session = run.session { Task { await session.client.cancel(session: session.id) } }
-            run.declineAll()
         }
     }
 
@@ -284,22 +262,19 @@ import os
             }
             guard let session = run.session, !Task.isCancelled else { return }
             let first = Once()
-            _ = try await session.client.prompt(text, session: session.id, timeout: 120, onUpdate: { [weak self] update in
-                guard case .message(let chunk) = update else { return }
+            let tools = OSAllocatedUnfairLock(initialState: ToolStop())
+            let (client, sessionID) = (session.client, session.id)
+            _ = try await client.prompt(text, session: sessionID, timeout: 120, onUpdate: { [weak self] update in
+                if tools.withLock({ $0.see(update) }) {
+                    Task { @MainActor in self?.stopForTool(of: client, session: sessionID, in: run) }
+                }
+                guard case .message(let chunk) = update, !tools.withLock({ $0.stopped }) else { return }
                 Task { @MainActor in
                     guard run.turn == turn else { return }
                     if first.claim() { self?.log.info("ghostwrite first text \(Instant.now - started, format: .fixed(precision: 3)) s after send") }
                     self?.event(.chunk(chunk), in: run)
                 }
-            }, onPermission: { [weak self] request in
-                await withCheckedContinuation { continuation in
-                    Task { @MainActor in
-                        guard let self, self.run === run, run.turn == turn else { return continuation.resume(returning: request.rejection?.id) }
-                        run.permissions.append((request, continuation))
-                        self.event(.asked(PermissionPrompt(request)), in: run)
-                    }
-                }
-            })
+            }, onPermission: { $0.rejection?.id })
             guard !Task.isCancelled, run.turn == turn else { return }
             // Chunks hop to the main actor one by one, so the finish goes behind them.
             await Task.yield()
@@ -313,6 +288,18 @@ import os
             guard !Task.isCancelled, run.turn == turn else { return }
             fail(Self.unreachable(run.agent.name, error), in: run)
         }
+    }
+
+    /// A draft needs no tools. The turn is cancelled and its session never reused, since a tool call can come from
+    /// instructions hidden in the window's text. A tool in a turn a change replaced counts too: it is the same session.
+    private func stopForTool(of client: ACPClient, session: String, in run: Run) {
+        guard self.run === run else { return }
+        Task { await client.cancel(session: session, retiring: true) }
+        guard run.session?.id == session else { return }
+        run.turn += 1
+        run.session = nil
+        log.info("ghostwrite stopped at a tool call from \(run.agent.name, privacy: .public)")
+        fail(ToolStop.message(agent: run.agent.name), in: run)
     }
 
     private static func unreachable(_ name: String, _ error: any Error) -> String {
@@ -457,7 +444,6 @@ import os
         if let run {
             run.prompt?.cancel()
             if let session = run.session { Task { await session.client.cancel(session: session.id) } }
-            run.declineAll()
             run.timer?.invalidate()
         }
         run = nil
@@ -486,7 +472,6 @@ import os
             guard draft.showsCard else { return nil }
             let target = run.target.app?.name
             let heading = switch draft.phase {
-            case .permission: "\(run.agent.name) asks"
             case .failed: run.agent.name
             default: "\(run.agent.name) · draft" + (context?.windowTitle.map { " for \($0)" } ?? target.map { " for \($0)" } ?? "")
             }

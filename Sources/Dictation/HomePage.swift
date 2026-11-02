@@ -17,6 +17,7 @@ struct HomePage: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if query.isEmpty {
                     SetupNotices(setup: services.setup)
+                    if let release = services.updates.available { UpdateAvailable(updates: services.updates, release: release).padding(.bottom, 12) }
                     if services.willow.showsCard { WillowNotice(willow: services.willow).padding(.bottom, 12) }
                     Hero(stats: HistoryStats(entries, now: now, calendar: .current)).padding(.top, 6).padding(.bottom, 30)
                 }
@@ -112,6 +113,17 @@ private struct SetupNotices: View {
             }
         }
         .padding(.bottom, checks.isComplete ? 0 : 12)
+    }
+}
+
+private struct UpdateAvailable: View {
+    let updates: UpdateNotice
+    let release: Release
+
+    var body: some View {
+        Notice(tone: .info, title: "Lip Service \(release.version) is available") {
+            Button("Download") { updates.download(release) }.buttonStyle(DarkButtonStyle(kind: .prominent))
+        }
     }
 }
 

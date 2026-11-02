@@ -269,8 +269,9 @@ public struct AgentSettings: Equatable, Codable, Sendable {
     public var voiceExamples = true
     /// The user's voice written down once, sent with each draft.
     public var voiceNotes = ""
-    /// A hand-off message carries a short block of the window's text after the words.
-    public var includeWindowText = true
+    /// A hand-off message carries a short block of the window's text after the words. Off until the user turns it on,
+    /// since that text is untrusted and goes to an agent that may have tools.
+    public var includeWindowText = false
 
     public init() {}
 
