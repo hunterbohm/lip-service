@@ -128,7 +128,7 @@ The test clips are 15 chat messages, emails, notes, and prompts for AI agents, r
 | Parakeet with no name boosting | 4.3% | 12 of 20 | 0.16 s |
 | Whisper large-v3-turbo, through whisper.cpp | 3.2% | 13 of 20 | 1.24 s |
 
-Every row is 5 rounds of the 15 clips. The Lip Service row comes from `ROUNDS=5 scripts/e2e.sh`, which runs the built app on each clip. 1.0.6 changed how names are matched, and that work watched these clips. On 22 other clips held back to check it, with their names in the dictionary, 1.0.6 got 1.3% of words wrong and 22 of 22 names right. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
+Every row is 5 rounds of the 15 clips. The Lip Service row comes from `ROUNDS=5 scripts/e2e.sh`, which runs the built app on each clip. 1.0.6 changed how names are matched, and that work was tuned while looking at these clips, so expect more misses on speech it has not seen. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
 
 ### Against Willow and Wispr Flow
 
