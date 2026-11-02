@@ -126,9 +126,9 @@ body:
     id: agent
     attributes:
       label: Agent
-      description: The agent you set up for Ghostwrite and Hand off. Choose None for plain dictation.
+      description: The agent you set up for Ghostwrite and Hand off. Choose No agent for plain dictation.
       options:
-        - None
+        - No agent (plain dictation)
         - Hermes
         - Claude Code
         - Codex
@@ -146,17 +146,17 @@ body:
 
         `/usr/bin/log show --last 10m --info --debug --predicate 'subsystem == "com.hunterbohm.dictation"'`
 
-        For a crash, also attach the newest "Lip Service" or "Dictation" report from Console > Crash Reports. Paste the most relevant output only. Redact secrets.
+        For a crash, zip the newest "Lip Service" or "Dictation" report from Console > Crash Reports and attach the zip below. Paste the most relevant output only. Redact secrets.
       render: shell
 
   - type: upload
     id: attachments
     attributes:
       label: Screenshots, recordings, or supporting files
-      description: Upload screenshots, short screen recordings, crash reports, or log files. Redact anything private before uploading.
+      description: Upload screenshots, short screen recordings, zipped crash reports, or log files. Redact anything private before uploading.
     validations:
       required: false
-      accept: ".png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm,.log,.txt,.json,.ips,.crash,.zip"
+      accept: ".png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm,.log,.txt,.json,.zip"
 
   - type: textarea
     id: workaround
