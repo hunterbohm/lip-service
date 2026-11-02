@@ -43,10 +43,11 @@ enum CardAction: Equatable {
     func show(_ model: CardModel, above anchor: (frame: NSRect, edge: BarEdge)) {
         host.rootView = AnyView(CardView(model: model, onAction: { [weak self] in self?.onAction?($0) }))
         let size = host.fittingSize
-        let gap: CGFloat = 10
-        let x = (anchor.frame.midX - size.width / 2).rounded()
-        let y = anchor.edge == .top ? anchor.frame.minY - gap - size.height : anchor.frame.maxY + gap
-        panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+        var frame = anchor.edge.placeToast(width: size.width, height: size.height, against: BarRect(anchor.frame), gap: 10)
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor.frame) }) ?? NSScreen.main {
+            frame = frame.moved(into: BarRect(screen.visibleFrame))
+        }
+        panel.setFrame(NSRect(frame), display: true)
         panel.orderFrontRegardless()
     }
 
@@ -156,6 +157,10 @@ private struct CardView: View {
             note("Sending to \(card.destination)…")
         case .replying(let text):
             body(text)
+        case .replied(let text, let note):
+            body(text)
+            self.note(note)
+            footer([.init("", "Copy", main: true, action: .copy)], trailing: .init("esc", "Close", action: .key(.escape)))
         case .sent(let note):
             body(card.words, dimmed: true)
             self.note(note)

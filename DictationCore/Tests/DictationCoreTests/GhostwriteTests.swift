@@ -345,6 +345,31 @@ private struct Rig {
         #expect(card.handle(.key(.escape), at: asked) == [.answer(request, optionID: "no"), .cancel])
     }
 
+    @Test func aQuestionAskedWhileAChangeIsSaidWaitsUnderItAndTheChangeDeclinesIt() {
+        let request = PermissionRequest(rpcID: 5, session: "s", title: "Read a file", options: [
+            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
+        ])
+        var card = DraftCard(typesDirectly: false)
+        _ = card.handle(.released)
+        _ = card.handle(.heard("reply yes"))
+        _ = card.handle(DraftCard.Event.chunk("Yes."))
+        _ = card.handle(.listen)
+        _ = card.handle(.asked(PermissionPrompt(request)))
+        _ = card.handle(.released)
+        #expect(card.handle(.heard("make it longer")) == [.answer(request, optionID: "no"), .send(words: "make it longer", isChange: true)])
+        #expect(card.phase == .thinking(draft: "Yes."))
+
+        var cancelled = DraftCard(typesDirectly: false)
+        _ = cancelled.handle(.released)
+        _ = cancelled.handle(.heard("reply yes"))
+        _ = cancelled.handle(DraftCard.Event.chunk("Yes."))
+        _ = cancelled.handle(.listen)
+        _ = cancelled.handle(.asked(PermissionPrompt(request)))
+        _ = cancelled.handle(.cancelled)
+        guard case .permission(let prompt, .streaming("Yes.")) = cancelled.phase else { Issue.record("question lost"); return }
+        #expect(prompt.request == request)
+    }
+
     @Test func anUnreachableAgentKeepsTheWordsForCopyAndRetry() {
         var card = DraftCard(typesDirectly: false)
         _ = card.handle(.released)
@@ -403,8 +428,11 @@ private struct Rig {
         _ = card.handle(.chunk("Done. "))
         _ = card.handle(.chunk("I'll text you."))
         #expect(card.phase == .replying("Done. I'll text you."))
-        _ = card.handle(.sent(note: "Hermes keeps going in iMessage, where it always answers you."))
-        #expect(card.phase == .sent(note: "Hermes keeps going in iMessage, where it always answers you."))
+        _ = card.handle(.sent(note: "Hermes answered."))
+        #expect(card.phase == .replied(text: "Done. I'll text you.", note: "Hermes answered."), "the finished reply stays readable")
+        #expect(card.takes(.escape))
+        #expect(card.handle(.key(.escape)).isEmpty, "closing a sent reply cancels nothing")
+        #expect(!card.isOpen)
     }
 }
 
@@ -576,7 +604,7 @@ private enum Drafts {
         _ = card.handle(.chunk("Done."))
         #expect(!card.takes(.returnKey) && !card.takes(.escape))
         _ = card.handle(.sent(note: "Sent."))
-        #expect(!card.takes(.returnKey) && !card.takes(.escape))
+        #expect(!card.takes(.returnKey) && card.takes(.escape), "a finished reply stays until Escape")
         var picking = HandOffCard(words: "fix it", destination: "T3 Code", picksProject: true, now: t0)
         #expect(picking.takes(.escape) && !picking.takes(.returnKey))
         _ = picking.handle(.projects([HandOffCard.Project(id: "a", name: "alpha")]))

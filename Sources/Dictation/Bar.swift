@@ -409,11 +409,11 @@ private extension BarState.Body {
     var acceptsMouse: Bool { self == .idle || isListening }
 }
 
-private extension BarRect {
+extension BarRect {
     init(_ rect: NSRect) { self.init(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height) }
 }
 
-private extension NSRect {
+extension NSRect {
     init(_ rect: BarRect) { self.init(x: rect.x, y: rect.y, width: rect.width, height: rect.height) }
 }
 

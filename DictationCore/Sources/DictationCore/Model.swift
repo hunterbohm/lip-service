@@ -111,6 +111,12 @@ public struct BarRect: Equatable, Sendable {
     public var maxY: Double { y + height }
     public var midX: Double { x + width / 2 }
     public var midY: Double { y + height / 2 }
+
+    /// Moved, not resized, to lie inside `area` as far as it fits.
+    public func moved(into area: BarRect) -> BarRect {
+        BarRect(x: min(max(x, area.minX), area.maxX - width), y: min(max(y, area.minY), area.maxY - height),
+                width: width, height: height)
+    }
 }
 
 public enum MicrophoneChoice: Equatable, Codable, Sendable {

@@ -672,6 +672,18 @@ private final class FakePasteboard: Pasteboard {
         #expect(BarEdge.top.placeToast(width: 100, height: 30, against: body, gap: 8) == BarRect(x: 1282, y: 412, width: 100, height: 30))
     }
 
+    @Test func aCardBesideASideBarStaysOnTheScreen() {
+        let area = BarRect(x: 0, y: 0, width: 1440, height: 900)
+        let leftBody = BarEdge.left.place(width: 120, height: 40, in: area, inset: 8)
+        let leftCard = BarEdge.left.placeToast(width: 520, height: 160, against: leftBody, gap: 10).moved(into: area)
+        #expect(leftCard.minX >= area.minX && leftCard.maxX <= area.maxX && leftCard.maxY <= area.maxY)
+        let rightBody = BarEdge.right.place(width: 120, height: 40, in: area, inset: 8)
+        let rightCard = BarEdge.right.placeToast(width: 520, height: 160, against: rightBody, gap: 10).moved(into: area)
+        #expect(rightCard.minX >= area.minX && rightCard.maxX <= area.maxX)
+        let topBody = BarEdge.top.place(width: 300, height: 40, in: area, inset: 16)
+        #expect(BarEdge.top.placeToast(width: 520, height: 160, against: topBody, gap: 10).moved(into: area).minY >= area.minY)
+    }
+
     @Test func aDropSnapsToTheNearestEdgeMiddle() {
         #expect(BarEdge.nearest(x: 700, y: 60, in: screen) == .bottom)
         #expect(BarEdge.nearest(x: 700, y: 880, in: screen) == .top)

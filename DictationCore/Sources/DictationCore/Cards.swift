@@ -179,10 +179,11 @@ public struct DraftCard: Equatable, Sendable {
         case (_, .listen) where isChangeable:
             phase = .listening(over: phase)
             return []
-        case (.listening(let over?), .chunk), (.listening(let over?), .finished):
+        // The draft underneath keeps going while a change is said over it, and a question it asks waits there.
+        case (.listening(let over?), .chunk), (.listening(let over?), .finished), (.listening(let over?), .asked):
             phase = .listening(over: continuing(over, with: event, at: now))
             return []
-        case (.transcribing(let over?), .chunk), (.transcribing(let over?), .finished):
+        case (.transcribing(let over?), .chunk), (.transcribing(let over?), .finished), (.transcribing(let over?), .asked):
             phase = .transcribing(over: continuing(over, with: event, at: now))
             return []
         case (.listening(let over), .released):
@@ -198,7 +199,10 @@ public struct DraftCard: Equatable, Sendable {
                 return []
             }
             requests.append(words)
-            return startThinking(draft: over.flatMap { DraftCard(phase: $0).text })
+            // A question still waiting under the change is declined, since the change replaces the turn that asked it.
+            var effects: [Effect] = []
+            if case .permission(let prompt, _) = over { effects.append(.answer(prompt.request, optionID: prompt.request.rejection?.id)) }
+            return effects + startThinking(draft: over.flatMap { DraftCard(phase: $0).text })
 
         case (.thinking, .chunk(let text)), (.streaming, .chunk(let text)):
             reply += text
@@ -287,6 +291,8 @@ public struct HandOffCard: Equatable, Sendable {
         case sending
         /// The agent's own reply streaming in, for the reply-in-card destination.
         case replying(String)
+        /// That reply, finished. It stays until Escape, so it can be read and copied.
+        case replied(text: String, note: String)
         case sent(note: String)
         case cancelled
         case failed(String)
@@ -343,7 +349,7 @@ public struct HandOffCard: Equatable, Sendable {
         switch (phase, key) {
         case (.picking, _): true
         case (.confirming, .returnKey): true
-        case (.confirming, .escape), (.loadingProjects, .escape), (.failed, .escape): true
+        case (.confirming, .escape), (.loadingProjects, .escape), (.failed, .escape), (.replied, .escape): true
         default: false
         }
     }
@@ -355,6 +361,10 @@ public struct HandOffCard: Equatable, Sendable {
              (.failed, .key(.escape)):
             phase = .cancelled
             return [.cancel]
+        case (.replied, .key(.escape)):
+            // Already sent, so closing cancels nothing.
+            phase = .cancelled
+            return []
         case (.confirming(let until), .tick(let now)) where now >= until:
             phase = .sending
             return [.send(project: nil)]
@@ -395,8 +405,11 @@ public struct HandOffCard: Equatable, Sendable {
         case (.replying(let sofar), .chunk(let text)):
             phase = .replying(sofar + text)
             return []
-        case (.sending, .sent(let note)), (.replying, .sent(let note)):
+        case (.sending, .sent(let note)):
             phase = .sent(note: note)
+            return []
+        case (.replying(let text), .sent(let note)):
+            phase = .replied(text: text, note: note)
             return []
         case (_, .failed(let reason)) where isOpen:
             phase = .failed(reason)

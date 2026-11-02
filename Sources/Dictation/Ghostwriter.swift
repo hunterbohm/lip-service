@@ -95,7 +95,7 @@ import os
         guard let card = run.handOff else { return (agent, run.words.isEmpty && changing ? nil : "Writing it down…", true) }
         return switch card.phase {
         case .picking: (agent, "Waiting for you", false)
-        case .sent: (agent, "Nothing typed", false)
+        case .sent, .replied: (agent, "Nothing typed", false)
         case .failed: (agent, "Didn't finish", false)
         case .cancelled: nil
         default: (agent, "Sending to \(run.agent.name)…", true)
@@ -299,7 +299,14 @@ import os
     }
 
     private func fail(_ reason: String, in run: Run) {
-        if run.draft != nil { event(.failed(reason), in: run) } else { handOffEvent(.failed(reason)) }
+        guard self.run === run else { return }
+        if run.draft != nil { return event(.failed(reason), in: run) }
+        // A hand-off can fail before its card opens, such as when transcription fails, and the card is where it says why.
+        if run.handOff == nil {
+            run.handOff = HandOffCard(words: run.words, destination: run.agent.destination.title(agent: run.agent.name),
+                                      picksProject: false, now: .now)
+        }
+        handOffEvent(.failed(reason))
     }
 
     /// Return: back into the field the user started in, checked as Press Return checks it. No field there, or focus
@@ -322,6 +329,10 @@ import os
         guard let run else { return }
         if run.draft != nil {
             event(.copy, in: run)
+        } else if case .replied(let text, _) = run.handOff?.phase {
+            inserter.copy(text)
+            onNotice?(.copied(.focusMoved))
+            close()
         } else {
             inserter.copy(run.words)
             onNotice?(.copied(.focusMoved))
