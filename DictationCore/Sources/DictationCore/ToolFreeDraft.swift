@@ -30,3 +30,25 @@ public struct ToolFreeDraft: Equatable, Sendable {
 extension AgentConnection {
     public var toolFreeDraft: ToolFreeDraft { ToolFreeDraft.forPreset(presetID) }
 }
+
+/// A draft needs no tools, so the first one an agent starts ends the draft. Not every agent can switch its tools off,
+/// and one that runs tools without asking has already started by the time Lip Service hears of it.
+public struct ToolStop: Equatable, Sendable {
+    /// Tool updates seen so far, counting an agent's later updates for the same call.
+    public private(set) var tools = 0
+
+    public init() {}
+
+    public var stopped: Bool { tools > 0 }
+
+    /// Takes in one update from the agent. True for the first tool, the one that stops the draft.
+    public mutating func see(_ update: SessionUpdate) -> Bool {
+        guard case .tool = update else { return false }
+        tools += 1
+        return tools == 1
+    }
+
+    public static func message(agent: String) -> String {
+        "\(agent) tried to use a tool, so Lip Service stopped the draft. Drafts don't need tools."
+    }
+}

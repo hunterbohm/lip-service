@@ -50,4 +50,27 @@ import Testing
             #expect(preset.connection().draftOptions == preset.draftOptions, "\(preset.id)")
         }
     }
+
+    @Test func aDraftStopsAtTheFirstToolAndCountsTheRest() {
+        var stop = ToolStop()
+        let beforeTools = [stop.see(.message("Tuesday works.")), stop.see(.thought("hm")), stop.see(.other("plan"))]
+        #expect(beforeTools == [false, false, false] && !stop.stopped)
+        let first = stop.see(.tool(title: "Read ~/.ssh/id_ed25519", status: "pending"))
+        #expect(first && stop.stopped)
+        let second = stop.see(.tool(title: "Read ~/.ssh/id_ed25519", status: "completed"))
+        #expect(!second && stop.tools == 2)
+    }
+
+    @Test func aToolCallAndItsUpdateBothReachTheStop() throws {
+        func update(_ kind: String) throws -> SessionUpdate {
+            try #require(SessionUpdate.parse(["sessionId": "s", "update": ["sessionUpdate": .string(kind), "title": "Run touch /tmp/x", "status": "pending"]])).update
+        }
+        var call = ToolStop(), later = ToolStop()
+        let (first, second) = try (call.see(update("tool_call")), later.see(update("tool_call_update")))
+        #expect(first && second)
+    }
+
+    @Test func theStopSaysWhichAgentAndWhy() {
+        #expect(ToolStop.message(agent: "Hermes") == "Hermes tried to use a tool, so Lip Service stopped the draft. Drafts don't need tools.")
+    }
 }

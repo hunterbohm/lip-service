@@ -152,7 +152,9 @@ actor ACPClient {
     }
 
     /// Asks the agent to stop the prompt running in the session, if one is, and gives it 3 s to answer that prompt.
-    func cancel(session: String) async {
+    /// `retiring` also keeps the session from taking another prompt, for one that must not be trusted again.
+    func cancel(session: String, retiring: Bool = false) async {
+        if retiring { retired.insert(session) }
         guard let running = prompting[session] else { return }
         notify("session/cancel", ACP.cancel(session: session))
         for _ in 0..<150 where prompting[session] == running { try? await Task.sleep(for: .milliseconds(20)) }
