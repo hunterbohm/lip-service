@@ -58,9 +58,9 @@ public protocol UpdateCheckStore: AnyObject {
 /// without another request. With the setting off, or a running version that is not a number, it does nothing. The day
 /// is marked before the request, so a request that fails is not repeated until tomorrow.
 @MainActor public final class UpdateChecker {
-    public static let dayKey = "updateCheckLastDay"
-    public static let versionKey = "updateCheckVersion"
-    public static let pageKey = "updateCheckPage"
+    public nonisolated static let dayKey = "updateCheckLastDay"
+    public nonisolated static let versionKey = "updateCheckVersion"
+    public nonisolated static let pageKey = "updateCheckPage"
 
     private let store: any UpdateCheckStore
     private let isEnabled: () -> Bool
