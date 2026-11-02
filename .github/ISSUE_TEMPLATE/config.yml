@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request
+    url: https://github.com/hunterbohm/lip-service/discussions/categories/ideas
+    about: Suggest an improvement or new capability in Discussions.
+  - name: Question or help
+    url: https://github.com/hunterbohm/lip-service/discussions/categories/q-a
+    about: Ask how to install, set up, or use Lip Service in Discussions.
