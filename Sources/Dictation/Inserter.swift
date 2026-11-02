@@ -65,6 +65,14 @@ struct FocusTarget {
         guard let element, let otherElement = other.element else { return true }
         return CFEqual(element, otherElement)
     }
+
+    /// For Press Return, stricter than `matches`: a field known at release that can no longer be read is not the same
+    /// focus, since Return could land in something that just opened, such as a dialog. The paste keeps `matches`,
+    /// because a field read can miss for a moment and that should not turn a dictation into a copy.
+    func stillHas(_ other: FocusTarget) -> Bool {
+        if element != nil, other.element == nil { return false }
+        return matches(other)
+    }
 }
 
 /// The single owner of getting text into another app, and the only code that writes the pasteboard.
@@ -165,7 +173,7 @@ struct FocusTarget {
         let focus = FocusTarget.current(timeout: min(Self.returnCheckTime / 2, deadline - .now))
         let takesText = pasteSeen || (focus.isReadable
             && focus.element.map { Field($0).takesText(until: min(deadline, .now + Self.returnCheckTime / 2)) } ?? false)
-        return PressReturn.Check(sameFocus: target.matches(focus), exposesElement: focus.element != nil, pasteSeen: pasteSeen,
+        return PressReturn.Check(sameFocus: target.stillHas(focus), exposesElement: focus.element != nil, pasteSeen: pasteSeen,
                                  takesText: takesText,
                                  appStayedInFront: NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid
                                      && activations == target.activations,

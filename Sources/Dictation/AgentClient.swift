@@ -299,7 +299,11 @@ actor ACPClient {
         warm[agent.id] = entry
         do {
             let session = try await spare.value
-            if refill, warm[agent.id] != nil { warm[agent.id]?.spare = openSpare(agent, client: client) }
+            // Refilled only while this client and these options are still current: a late answer for a draft made
+            // before a model change must not put back a spare with the old model.
+            if refill, let now = warm[agent.id], now.client === client, now.draftOptions == agent.draftOptions, now.spare == nil {
+                warm[agent.id]?.spare = openSpare(agent, client: client)
+            }
             return (client, session)
         } catch {
             if warm[agent.id]?.spare == spare { warm[agent.id]?.spare = nil }
