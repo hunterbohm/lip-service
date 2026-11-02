@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import DictationCore
 import os
 
@@ -14,6 +15,7 @@ import os
     private let microphone = Microphone()
     let inserter: Inserter
     private let sounds = Sounds()
+    private let muter = OutputMuter()
     private let keyTap: KeyTap
     private let engine: SpeechEngine
     private let bar: Bar
@@ -22,13 +24,23 @@ import os
     private var pending = 0
     private var words = ""
     private var previews: Task<Void, Never>?
-    private var lastText: String?
+    private var last: Insertion?
     /// An unplugged microphone reported before the bar showed, so a fn chord never flashes it.
     private var fallback: String?
     private var missingMicrophone = MissingMicrophone()
     private var notice: BarNotice?
     private var noticeSerial = 0
+    /// Counts captures, so names from the screen that arrive after their capture ended are dropped.
+    private var capture = 0
+    /// The newest dictation Learn from your fixes watches, until the next dictation or a minute later.
+    private var watchedFix: (pasted: Inserter.Pasted, serial: Int)?
+    private var fixSerial = 0
+    /// The word the Learned notice can undo.
+    private var learned: Vocabulary.Term?
     private var fnSettingMentioned = false
+    /// A vocabulary change waiting for no dictation to be in flight, since the engine rebuilds its rescorer between
+    /// jobs and a release would wait on it. Learning a word saves one at the start of the next capture.
+    private var vocabularyToApply: Vocabulary??
 
     init() {
         inserter = Inserter(preferences: preferences)
@@ -48,6 +60,7 @@ import os
             case .moved(let edge): preferences.change { $0.barEdge = edge }
             case .toastAction(.retryModel): engine.retry()
             case .toastAction(.openKeyboardSettings): StatusMenu.openSettings(StatusMenu.keyboardSettings)
+            case .toastAction(.undoLearned): undoLearned()
             }
         }
         preferences.onChange = { [unowned self] old, new in apply(old, new) }
@@ -72,13 +85,14 @@ import os
     }
 
     private func apply(_ old: Configuration, _ new: Configuration) {
-        if old.activeVocabulary != new.activeVocabulary { engine.configure(vocabulary: new.activeVocabulary) }
+        if old.activeVocabulary != new.activeVocabulary { vocabularyToApply = .some(new.activeVocabulary) }
         if old.settings.hotkeys != new.settings.hotkeys {
             stopPreviews()
             microphone.cancel()
             keyTap.hotkeys = new.settings.hotkeys
         }
         keyTap.pasteLast = new.settings.pasteLast
+        if !new.settings.muteWhileDictating { muter.stop() }
         render()
     }
 
@@ -95,10 +109,13 @@ import os
             case .start:
                 fallback = nil
                 words = ""
+                capture += 1
+                checkFix()
                 preferences.reloadVocabularyIfChanged()
                 do {
                     try microphone.start(from: preferences.current.settings.microphone)
                     engine.prepare()
+                    readScreenNames()
                     startPreviews()
                 } catch {
                     keyTap.abort()
@@ -106,22 +123,32 @@ import os
                 }
             case .cancel:
                 fallback = nil
+                capture += 1
                 stopPreviews()
                 microphone.cancel()
             case .finish:
+                capture += 1
                 stopPreviews()
                 guard let recording = microphone.stop(releasedAt: .now) else { break }
-                let target = FocusTarget.current()
+                let target = inserter.releaseTarget()
                 pending += 1
                 Task { await deliver(recording, to: target) }
             }
         }
-        if cue == .start {
-            notice = nil
+        let settings = preferences.current.settings
+        let sound = settings.sounds ? cue : nil
+        switch cue {
+        case .start:
+            if notice?.outlastsNextDictation != true { notice = nil }
             showFallback()
             showFnKeySetting()
+            if let sound { sounds.play(sound) }
+            if settings.muteWhileDictating { muter.listen(afterCue: sound == nil ? 0 : sounds.startLength) }
+        case .stop, .cancel:
+            muter.stop { [sounds] in if let sound { sounds.play(sound) } }
+        case nil:
+            break
         }
-        if let cue, preferences.current.settings.sounds { sounds.play(cue) }
         render()
     }
 
@@ -137,6 +164,25 @@ import os
         fallback = nil
         missingMicrophone.didMention(missing)
         show(.microphoneMissing(chosen: missing, using: AudioDevices.defaultInput()?.name ?? "the system default"))
+    }
+
+    /// Off the main thread, within ScreenReader's budget. Only with boosting on, since the names go to the rescorer.
+    private func readScreenNames() {
+        let configuration = preferences.current
+        guard configuration.settings.screenNames, configuration.activeVocabulary?.terms.isEmpty == false,
+              !IsSecureEventInputEnabled(), let front = NSWorkspace.shared.frontmostApplication,
+              !PrivateApps.contains(front.bundleIdentifier)
+        else { return }
+        let pid = front.processIdentifier, started = Instant.now, current = capture
+        let known = configuration.vocabulary.terms.map(\.text)
+        Task { [weak self] in
+            let names = await Task.detached(priority: .userInitiated) {
+                ScreenNames.extract(ScreenReader.read(pid: pid), excluding: known)
+            }.value
+            guard let self, capture == current else { return }
+            log.info("screen names: \(names.count) in \(Instant.now - started, format: .fixed(precision: 3)) s")
+            engine.boost(screenNames: names)
+        }
     }
 
     /// One preview loop per capture. Only `dictate` decides the inserted text.
@@ -170,24 +216,73 @@ import os
         log.info("""
             \(recording.seconds, format: .fixed(precision: 1)) s audio, release to text \(Instant.now - recording.releasedAt, format: .fixed(precision: 3)) s \
             (waited \(dictation.waited, format: .fixed(precision: 3)), decode \(dictation.decode, format: .fixed(precision: 3)), \
-            rescore \(dictation.rescore, format: .fixed(precision: 3)))
+            rescore \(dictation.rescore, format: .fixed(precision: 3)), screen names \(dictation.screenTerms))
             """)
         guard !dictation.text.isEmpty else { return }
-        lastText = dictation.text
-        menu.remember(dictation.text)
-        if preferences.current.settings.keepHistory { history.add(HistoryEntry(text: dictation.text, audioSeconds: recording.seconds, app: target.app)) }
-        let outcome = await inserter.insert(dictation.text, target: target, releasedAt: recording.releasedAt)
+        let insertion = Insertion.make(dictation.text, app: target.app?.bundleID, configuration: preferences.current)
+        last = insertion
+        menu.remember(insertion.text)
+        if preferences.current.settings.keepHistory { history.add(HistoryEntry(text: insertion.text, audioSeconds: recording.seconds, app: target.app)) }
+        let (outcome, pasted) = await inserter.insert(insertion, target: target, releasedAt: recording.releasedAt)
+        if let pasted { watch(pasted) }
         if case .copied(let reason) = outcome {
             log.info("copied instead of pasting: \(String(describing: reason), privacy: .public)")
             show(.copied(reason))
         }
     }
 
+    private static let fixWindow = Duration.seconds(60)
+
+    private func watch(_ pasted: Inserter.Pasted) {
+        fixSerial += 1
+        let serial = fixSerial
+        watchedFix = (pasted, serial)
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.fixWindow)
+            if let self, watchedFix?.serial == serial { checkFix() }
+        }
+    }
+
+    /// Reads the watched field once, off the main thread, and learns the word if the user fixed one.
+    private func checkFix() {
+        guard let watched = watchedFix else { return }
+        watchedFix = nil
+        Task { [weak self] in
+            guard let current = await watched.pasted.field.contents()?.value, let self else { return }
+            preferences.reloadVocabularyIfChanged()
+            var vocabulary = preferences.current.vocabulary
+            guard preferences.current.settings.learnFixes,
+                  let term = FixLearning.learn(from: watched.pasted.span, now: current, vocabulary: vocabulary, isWord: Spelling.isWord)
+            else { return }
+            do {
+                try vocabulary.save(term, replacing: nil)
+                try preferences.saveVocabulary(vocabulary)
+            } catch {
+                return log.error("could not learn a word: \(error.localizedDescription, privacy: .public)")
+            }
+            learned = term
+            show(.learned(term.text))
+        }
+    }
+
+    /// Takes the word out again, unless it was edited since.
+    private func undoLearned() {
+        guard let term = learned else { return }
+        learned = nil
+        preferences.reloadVocabularyIfChanged()
+        var vocabulary = preferences.current.vocabulary
+        vocabulary.terms.removeAll { $0 == term }
+        try? preferences.saveVocabulary(vocabulary)
+        notice = nil
+        render()
+    }
+
     /// Control+Command+V. The last dictation again, wherever focus is now.
     private func pasteLast() {
-        guard let lastText else { return show(.nothingToPaste) }
+        guard let last else { return show(.nothingToPaste) }
         Task {
-            if case .copied(let reason) = await inserter.insert(lastText, target: .current(), releasedAt: .now) {
+            if case .copied(let reason) = await inserter.insert(last.again, target: inserter.releaseTarget(),
+                                                                 releasedAt: .now).outcome {
                 show(.copied(reason))
             }
         }
@@ -206,8 +301,15 @@ import os
         }
     }
 
+    /// Also the mute's safety net, since a capture that ended without a cue, such as a microphone failure, unmutes
+    /// here, and where a waiting vocabulary change reaches the engine.
     private func render() {
         let settings = preferences.current.settings
+        if !keyTap.machine.showsListening { muter.stop() }
+        if case .some(let vocabulary) = vocabularyToApply, !keyTap.machine.isCapturing, pending == 0 {
+            vocabularyToApply = nil
+            engine.configure(vocabulary: vocabulary)
+        }
         bar.render(BarState.derive(hotkey: keyTap.machine, words: words, pending: pending, engine: engineStatus,
                                    notice: notice, showsIdle: !settings.hideBarWhenIdle),
                    edge: settings.barEdge)

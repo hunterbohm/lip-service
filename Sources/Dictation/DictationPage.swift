@@ -43,6 +43,8 @@ struct DictationPage: View {
                            help: "Adds a space after the word before the cursor and keeps a sentence you continue lowercase."),
                     toggle("Vocabulary boost", "sparkles", \.vocabularyEnabled, help: "Spells the words in your Dictionary your way."),
                     toggle("Hide bar when idle", "rectangle.dashed", \.hideBarWhenIdle, help: "Shows the bar only while you talk."),
+                    toggle("Mute other audio", "speaker.slash", \.muteWhileDictating,
+                           help: "Mutes your Mac's sound while you talk and turns it back on when you stop."),
                 ])
                 .padding(.bottom, 30)
                 HStack(alignment: .top, spacing: 48) {

@@ -23,7 +23,7 @@ private func run(_ envelope: inout LevelEnvelope, from start: Double, seconds: D
         var time = run(&envelope, from: 0, seconds: 1, target: 1)
         let peak = envelope.level(delay: 0, at: time)
         time = run(&envelope, from: time, seconds: LevelEnvelope.attack, target: 0)
-        #expect(envelope.level(delay: 0, at: time) > peak * 0.6)
+        #expect(envelope.level(delay: 0, at: time) > peak * (1 - 0.632))
         time = run(&envelope, from: time, seconds: 1.5, target: 0)
         #expect(envelope.level(delay: 0, at: time) < 0.01)
     }
@@ -63,5 +63,47 @@ private func run(_ envelope: inout LevelEnvelope, from start: Double, seconds: D
         let envelope = LevelEnvelope { age in age < 0.5 ? 0.8 : 0.2 }
         #expect(abs(envelope.level(delay: 0.1, at: 0) - 0.8) < 0.001)
         #expect(abs(envelope.level(delay: 1, at: 0) - 0.2) < 0.001)
+    }
+
+    private func levels(_ voice: inout LevelEnvelope, _ glow: inout LevelEnvelope, from start: Double, seconds: Double, target: Float) -> Double {
+        voice.follow(target)
+        glow.follow(target)
+        var time = start
+        while time < start + seconds {
+            time += 1.0 / 60
+            voice.advance(to: time)
+            glow.advance(to: time)
+        }
+        return time
+    }
+
+    @Test func theGlowTrailsTheVoiceAndReachesTheSameLevel() {
+        var voice = LevelEnvelope(), glow = LevelEnvelope(stages: LevelEnvelope.glow)
+        voice.advance(to: 0)
+        glow.advance(to: 0)
+        var time = levels(&voice, &glow, from: 0, seconds: 0.2, target: 1)
+        #expect(glow.level(delay: 0, at: time) < voice.level(delay: 0, at: time) - 0.1)
+        time = levels(&voice, &glow, from: time, seconds: 3, target: 1)
+        #expect(glow.level(delay: 0, at: time) > 0.99)
+        #expect(abs(glow.level(delay: 0, at: time) - voice.level(delay: 0, at: time)) < 0.01)
+        time = levels(&voice, &glow, from: time, seconds: 0.3, target: 0)
+        #expect(glow.level(delay: 0, at: time) > voice.level(delay: 0, at: time) + 0.05)
+        time = levels(&voice, &glow, from: time, seconds: 3, target: 0)
+        #expect(glow.level(delay: 0, at: time) < 0.01 && voice.level(delay: 0, at: time) < 0.01)
+    }
+
+    @Test func resettingKeepsTheStages() {
+        var voice = LevelEnvelope(), glow = LevelEnvelope(stages: LevelEnvelope.glow)
+        glow.reset()
+        voice.advance(to: 0)
+        glow.advance(to: 0)
+        let time = levels(&voice, &glow, from: 0, seconds: 0.2, target: 1)
+        #expect(glow.level(delay: 0, at: time) < voice.level(delay: 0, at: time) - 0.1)
+    }
+
+    @Test func aFilledGlowReadsTheSameProfile() {
+        let glow = LevelEnvelope(stages: LevelEnvelope.glow) { age in age < 0.5 ? 0.8 : 0.2 }
+        #expect(abs(glow.level(delay: 0.1, at: 0) - 0.8) < 0.001)
+        #expect(abs(glow.level(delay: 1, at: 0) - 0.2) < 0.001)
     }
 }

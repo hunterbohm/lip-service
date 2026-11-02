@@ -74,9 +74,14 @@ To update, quit Lip Service and replace the app in **Applications** with the new
 - Hold fn or Right Control, speak, and let go. The text is pasted at the cursor.
 - To dictate without holding the key, tap it twice. Press it once more to insert the text, or press Escape to throw it away.
 - To paste your last dictation again, press Control+Command+V.
-- While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far. Drag it to the top or to either side of the screen.
+- While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far, with a ring of blue dots around it that glows as you talk. Drag it to the top or to either side of the screen.
 - Lip Service removes filler words such as "um" and fixes capitals and punctuation.
 - To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.
+- When you correct one word it typed, Lip Service adds your spelling to the dictionary and says so on the bar, with **Undo**.
+- Names shown in the window you're dictating into, such as the people in a chat, come out spelled the way the screen shows them. Lip Service reads them on your Mac when you start talking and keeps nothing.
+- On the **Profiles** page, pick a style for each group of apps: **Formal**, **Casual** with no period at the end, or **Very casual** in lowercase. Each group can also press Return for you after the text goes in, only into the field you dictated into.
+- To insert text you type often, such as your address, add a snippet on the **Dictionary** page. Say its cue on its own and the saved text goes in exactly as written.
+- To stop music and videos playing over you, turn on **Mute other audio** on the **Dictation** page. The sound comes back as soon as you stop talking, and again later if an output was unplugged while muted.
 - To open the Lip Service window, open the app again from Spotlight or the Finder, or choose **Open Lip Service…** from its menu bar icon. The window has your dictation history and the settings for the keys, the microphone, and the bar.
 - The **Stats** page shows how many words you dictated, how fast you talk, and the time you saved compared with typing. **Share** makes an image of your totals.
 - If you used Willow Voice, click **Import from Willow** on the Home page to bring over its history and settings.

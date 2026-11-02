@@ -1,9 +1,10 @@
 import AudioToolbox
 import AVFoundation
 import CoreAudio
+import DictationCore
 import Foundation
 
-/// Input devices as CoreAudio reports them. Read fresh on each call, since devices come and go.
+/// Devices as CoreAudio reports them. Read fresh on each call, since devices come and go.
 enum AudioDevices {
     struct Input: Equatable, Identifiable {
         var id: String { uid }
@@ -41,6 +42,59 @@ enum AudioDevices {
         var id = device
         return AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id,
                                     UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr
+    }
+
+    /// The device a running or stopped engine's input points at.
+    static func current(of engine: AVAudioEngine) -> AudioDeviceID? {
+        guard let unit = engine.inputNode.audioUnit else { return nil }
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size) == noErr ? id : nil
+    }
+
+    /// The default output and whether it is muted, or nil when it has no mute control that can be set, as with most
+    /// HDMI and DisplayPort displays.
+    static func defaultOutputMute() -> OutputMute.Output? {
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id) == noErr, id != 0,
+              let uid = stringProperty(id, kAudioDevicePropertyDeviceUID), let muted = outputMuted(id)
+        else { return nil }
+        return OutputMute.Output(device: uid, muted: muted)
+    }
+
+    /// Sets the mute of the output with this UID. False when it is gone or refuses.
+    @discardableResult static func setOutputMute(_ muted: Bool, uid: String) -> Bool {
+        guard let ids: [AudioDeviceID] = arrayProperty(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDevices),
+              let id = ids.first(where: { stringProperty($0, kAudioDevicePropertyDeviceUID) == uid }), outputMuted(id) != nil
+        else { return false }
+        var address = muteAddress
+        var value = UInt32(muted ? 1 : 0)
+        return AudioObjectSetPropertyData(id, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &value) == noErr
+    }
+
+    /// Calls `handler` on `queue` whenever a device is added or removed, for as long as the app runs.
+    static func onDeviceListChange(queue: DispatchQueue, _ handler: @escaping @Sendable () -> Void) {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue) { _, _ in handler() }
+    }
+
+    private static let muteAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput,
+                                                                mElement: kAudioObjectPropertyElementMain)
+
+    /// Nil when the device has no settable output mute.
+    private static func outputMuted(_ id: AudioDeviceID) -> Bool? {
+        var address = muteAddress
+        var settable = DarwinBoolean(false)
+        guard AudioObjectHasProperty(id, &address), AudioObjectIsPropertySettable(id, &address, &settable) == noErr,
+              settable.boolValue else { return nil }
+        var value = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value != 0
     }
 
     private static func inputChannelCount(_ id: AudioDeviceID) -> Int {

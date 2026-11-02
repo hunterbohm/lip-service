@@ -10,7 +10,7 @@ import json, os, re, sys
 
 BENCH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BENCH)
-from score import TELLA, VOCAB, edits, norm_words, pct, vocab_hits  # noqa: E402
+from score import TELLA, VOCAB, best_reference, edits, norm_words, pct, vocab_hits  # noqa: E402
 
 MIN_VOCAB_HITS = 18
 MAX_WER = 3.2
@@ -22,7 +22,7 @@ BAKEOFF = [
 
 
 def main(path):
-    refs = {r["id"]: r["text"] for r in map(json.loads, open(os.path.join(BENCH, "manifest.jsonl")))}
+    refs = {r["id"]: r for r in map(json.loads, open(os.path.join(BENCH, "manifest.jsonl")))}
     rows, junk = [], 0
     for line in open(path):
         if line.startswith("{"):
@@ -42,15 +42,16 @@ def main(path):
     missed = []
     for r in ok:
         if r["clip"] in refs:
-            ref = norm_words(refs[r["clip"]])
-            e += edits(ref, norm_words(r["text"]))
+            hyp = norm_words(r["text"])
+            ref_text, ref = best_reference(refs[r["clip"]], hyp)
+            e += edits(ref, hyp)
             n += len(ref)
-            h, t = vocab_hits(refs[r["clip"]], r["text"])
+            h, t = vocab_hits(ref_text, r["text"])
             hits += h
             total += t
             if r["round"] == rounds[0]:
                 missed += [f"{term}({r['clip']})" for term in VOCAB
-                           if re.search(r"\b%s\b" % term, refs[r["clip"]]) and not re.search(r"\b%s\b" % term, r["text"], flags=re.I)]
+                           if re.search(r"\b%s\b" % term, refs[r["clip"]]["text"]) and not re.search(r"\b%s\b" % term, r["text"], flags=re.I)]
         elif r["clip"] in TELLA:
             ref = norm_words(TELLA[r["clip"]])
             real_e += edits(ref, norm_words(r["text"]))

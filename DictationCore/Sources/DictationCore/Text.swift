@@ -226,10 +226,13 @@ public struct TextFinisher: Sendable {
     private let cleanup: Cleanup
 
     /// Nil when vocabulary is off, which drops aliases and term casing. Calendar casing and cleanup still run.
-    public init(vocabulary: Vocabulary?) {
+    /// `everydayWords` are the terms, lowercased, that are also ordinary English words, such as Notion or Linear.
+    /// Those keep the case they were heard in, so "a vague notion" stays as it is, and take the term's spelling only
+    /// where boosting or an alias put the term in.
+    public init(vocabulary: Vocabulary?, everydayWords: Set<String> = []) {
         let terms = vocabulary?.terms ?? []
         aliases = AliasRules(terms: terms)
-        cleanup = Cleanup(properNouns: terms.map(\.text) + Cleanup.calendarNames)
+        cleanup = Cleanup(properNouns: terms.map(\.text).filter { !everydayWords.contains($0.lowercased()) } + Cleanup.calendarNames)
     }
 
     public func finish(raw: String, boosted: String?) -> String {

@@ -58,6 +58,7 @@ import DictationCore
         Scene(name: "26-dragging", state: BarState(body: .idle), edge: .bottom, dragNearest: .right),
         Scene(name: "27-listening-quiet", state: BarState(body: .listening(words: "", handsFree: false)), quiet: true),
         Scene(name: "28-listening-word-printing", state: BarState(body: .listening(words: short, handsFree: false)), settle: 0.12),
+        Scene(name: "29-toast-learned", state: BarState(body: .listening(words: "", handsFree: false), toast: .learned("Siobhan"))),
     ]
 
     static func run(into directory: URL) -> Int32 {
@@ -75,7 +76,9 @@ import DictationCore
             bar.render(scene.state, edge: scene.edge)
             bar.showOutlines(nearest: scene.dragNearest)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
-            let panels = bar.visiblePanels.map { (frame: $0.frame.offsetBy(dx: -stage.minX, dy: -stage.minY), image: snapshot($0)) }
+            let panels = bar.visiblePanels.map {
+                (frame: $0.panel.frame.offsetBy(dx: -stage.minX, dy: -stage.minY), image: snapshot($0.panel), shadow: $0.shadow)
+            }
             let stagePath = directory.appending(path: "\(scene.name).png")
             let closeUpPath = directory.appending(path: "\(scene.name)-closeup.png")
             guard write(compose(panels, in: NSRect(origin: .zero, size: stage.size)), to: stagePath),
@@ -102,11 +105,11 @@ import DictationCore
     private static func closeUp(around frames: [NSRect]) -> NSRect {
         guard let first = frames.first else { return NSRect(origin: .zero, size: stage.size) }
         let union = frames.dropFirst().reduce(first) { $0.union($1) }
-        return union.insetBy(dx: -36, dy: -24).intersection(NSRect(origin: .zero, size: stage.size))
+        return union.insetBy(dx: -36, dy: -24)
     }
 
     /// A light window with a darker sidebar stands in for the screen, so the bar's contrast reads as it would.
-    private static func compose(_ panels: [(frame: NSRect, image: NSImage)], in region: NSRect) -> NSBitmapImageRep {
+    private static func compose(_ panels: [(frame: NSRect, image: NSImage, shadow: Bool)], in region: NSRect) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(region.width * scale), pixelsHigh: Int(region.height * scale),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -117,7 +120,7 @@ import DictationCore
         transform.translateX(by: -region.minX, yBy: -region.minY)
         transform.concat()
         NSColor(white: 0.97, alpha: 1).setFill()
-        NSRect(origin: .zero, size: stage.size).fill()
+        region.fill()
         NSColor(white: 0.9, alpha: 1).setFill()
         NSRect(x: 0, y: 0, width: 180, height: stage.height).fill()
         NSColor(white: 0.82, alpha: 1).setFill()
@@ -128,7 +131,7 @@ import DictationCore
         shadow.shadowOffset = NSSize(width: 0, height: -2)
         for panel in panels {
             NSGraphicsContext.saveGraphicsState()
-            shadow.set()
+            if panel.shadow { shadow.set() }
             panel.image.draw(in: panel.frame)
             NSGraphicsContext.restoreGraphicsState()
         }

@@ -15,6 +15,7 @@ struct WindowRoot: View {
                     case .home: HomePage(services: services, state: state)
                     case .stats: StatsPage(services: services, state: state)
                     case .dictation: DictationPage(services: services)
+                    case .profiles: ProfilesPage(preferences: services.preferences)
                     case .microphone: MicrophonePage(services: services)
                     case .dictionary: DictionaryPage(preferences: services.preferences)
                     case .history: HistoryPage(services: services)

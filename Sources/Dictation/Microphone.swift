@@ -97,6 +97,8 @@ private final class InputDevice: @unchecked Sendable {
     private var choice = MicrophoneChoice.systemDefault
     private var selected: (@Sendable (MicrophoneSource) -> Void)?
     private var observer: (any NSObjectProtocol)?
+    /// The chosen device the running engine was pointed at, and the format its tap takes. Nil on the system default.
+    private var picked: (device: AudioDeviceID, format: AVAudioFormat)?
 
     init() { observe(engine) }
 
@@ -119,31 +121,60 @@ private final class InputDevice: @unchecked Sendable {
         }
     }
 
-    /// Runs before every start and restart, so a device plugged in or out since is seen.
-    private func selectDevice() {
+    /// Runs before every start and restart, so a device plugged in or out since is seen. Returns the chosen device
+    /// the engine now points at, or nil on the system default.
+    private func selectDevice() -> AudioDeviceID? {
         let inputs = AudioDevices.inputs()
         let source = choice.source(connected: inputs.map(\.uid))
         selected?(source)
         engine = AVAudioEngine()
-        observe(engine)
-        guard case .device(let uid) = source, let chosen = inputs.first(where: { $0.uid == uid }) else { return }
-        if !AudioDevices.select(chosen.deviceID, for: engine) { selected?(.fallback(missing: chosen.name)) }
+        guard case .device(let uid) = source, let chosen = inputs.first(where: { $0.uid == uid }) else { return nil }
+        guard AudioDevices.select(chosen.deviceID, for: engine) else {
+            selected?(.fallback(missing: chosen.name))
+            return nil
+        }
+        return chosen.deviceID
     }
 
     private func begin(_ sink: SampleSink) throws {
         end()
-        selectDevice()
+        let device = selectDevice()
+        if device != nil { settleAfterPicking() }
+        observe(engine)
+        try run(sink, on: device)
+    }
+
+    /// The longest a start waits for the change that picking a device posts.
+    private static let settleLimit = 0.15
+
+    /// Pointing a fresh engine at a device whose rate differs from the one it opened with posts a configuration change
+    /// once the engine is prepared, and that change stops a started engine. Waiting for it here lets the engine start
+    /// once. Restarting after it instead lost the first ~0.14 s after key-down. Any later change still restarts.
+    private func settleAfterPicking() {
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
+        guard input.inputFormat(forBus: 0).sampleRate != input.outputFormat(forBus: 0).sampleRate else { return }
+        let changed = DispatchSemaphore(value: 0)
+        let observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
+                                                              queue: nil) { _ in changed.signal() }
+        engine.prepare()
+        _ = changed.wait(timeout: .now() + Self.settleLimit)
+        NotificationCenter.default.removeObserver(observer)
+    }
+
+    private func run(_ sink: SampleSink, on device: AudioDeviceID?) throws {
+        let input = engine.inputNode
+        // The hardware format, because a chosen device leaves the node's output format at the rate of the device the
+        // engine opened with, and a tap in that format fails to start. SampleSink converts from each buffer's format.
+        let format = input.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw DictationError("No microphone is available.") }
-        // No fixed format, so the tap always matches the hardware. SampleSink converts from each buffer's format.
-        input.installTap(onBus: 0, bufferSize: 1024, format: nil, block: sink.tapBlock())
+        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: sink.tapBlock())
         engine.prepare()
         do { try engine.start() } catch {
             input.removeTap(onBus: 0)
             throw error
         }
         self.sink = sink
+        picked = device.map { ($0, format) }
     }
 
     private func end() {
@@ -151,14 +182,19 @@ private final class InputDevice: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         sink = nil
+        picked = nil
     }
 
     /// A headset connected mid-capture stops the engine. Restart on the new device and keep appending to the
-    /// same samples. If the restart fails, `stop` still returns what was captured.
+    /// same samples. If the restart fails, `stop` still returns what was captured. A change that leaves the chosen
+    /// device and its format as they were, such as the one picking a device posts when it comes after
+    /// `settleAfterPicking` gave up, starts the same engine again. A fresh engine would select the device again, post
+    /// another change, and never settle.
     private func restartAfterDeviceChange() {
         guard let sink else { return }
+        let same = picked.flatMap { AudioDevices.current(of: engine) == $0.device && engine.inputNode.inputFormat(forBus: 0) == $0.format ? $0.device : nil }
         end()
-        try? begin(sink)
+        if let same { try? run(sink, on: same) } else { try? begin(sink) }
     }
 }
 

@@ -41,6 +41,13 @@ def edits(ref, hyp):
     return d[-1]
 
 
+def best_reference(row, hyp_words):
+    """The manifest row's reference closest to the words heard, as (text, words). A row with fillers also gives the
+    cleaned "clean" sentence, so an app that removes fillers is scored the same as one that keeps them."""
+    refs = [row["text"]] + ([row["clean"]] if "clean" in row else [])
+    return min(((ref, norm_words(ref)) for ref in refs), key=lambda ref: edits(ref[1], hyp_words))
+
+
 def vocab_hits(ref, hyp):
     total = hits = 0
     for term in VOCAB:
@@ -68,7 +75,7 @@ def load(paths):
 
 
 def main(paths):
-    refs = {r["id"]: r["text"] for r in map(json.loads, open("manifest.jsonl"))}
+    refs = {r["id"]: r for r in map(json.loads, open("manifest.jsonl"))}
     rows, junk = load(paths)
     by = defaultdict(list)
     for r in rows:
@@ -86,23 +93,23 @@ def main(paths):
         lat = [r["release_to_final_s"] for r in ok]
         syn = [r["release_to_final_s"] for r in ok if r["clip"] in refs]
         real = [r["release_to_final_s"] for r in ok if r["clip"] in TELLA]
-        per_round = defaultdict(lambda: [0, 0])
+        per_round = defaultdict(lambda: [0, 0, 0])
         e_all = n_all = vh = vt = 0
         te = tn = 0
         for r in ok:
             if r["clip"] in refs:
-                ref = norm_words(refs[r["clip"]])
-                e = edits(ref, norm_words(r["text"]))
+                hyp = norm_words(r["text"])
+                ref_text, ref = best_reference(refs[r["clip"]], hyp)
+                e = edits(ref, hyp)
                 e_all += e; n_all += len(ref)
-                per_round[r["round"]][0] += e; per_round[r["round"]][1] += len(ref)
-                h, t = vocab_hits(refs[r["clip"]], r["text"])
+                per_round[r["round"]][0] += e; per_round[r["round"]][1] += len(ref); per_round[r["round"]][2] += 1
+                h, t = vocab_hits(ref_text, r["text"])
                 vh += h; vt += t
             elif r["clip"] in TELLA:
                 ref = norm_words(TELLA[r["clip"]])
                 te += edits(ref, norm_words(r["text"])); tn += len(ref)
-        full = sum(len(norm_words(t)) for t in refs.values())
-        rounds = [e / n for e, n in per_round.values() if n == full] or [float("nan")]
-        n_vocab = sum(vocab_hits(t, t)[1] for t in refs.values())
+        rounds = [e / n for e, n, clips in per_round.values() if clips == len(refs)] or [float("nan")]
+        n_vocab = sum(vocab_hits(row["text"], row["text"])[1] for row in refs.values())
         print(f"{eng:10} {len(rs):4} {len(rs) - len(ok):3} {pct(lat, .5):6.3f} {pct(lat, .95):6.3f} {max(lat):6.3f} | "
               f"{pct(syn, .5):7.3f} {pct(real, .5) if real else float('nan'):8.3f} | "
               f"{100 * e_all / n_all:6.1f}% {100 * min(rounds):4.1f}-{100 * max(rounds):4.1f}% | "
@@ -123,12 +130,12 @@ def main(paths):
         for r in by[eng]:
             if r["round"] == 1 and r["clip"] in refs and "error" not in r:
                 for term in VOCAB:
-                    if re.search(r"\b%s\b" % term, refs[r["clip"]]) and not re.search(r"\b%s\b" % term, r["text"], flags=re.I):
+                    if re.search(r"\b%s\b" % term, refs[r["clip"]]["text"]) and not re.search(r"\b%s\b" % term, r["text"], flags=re.I):
                         miss.append(f"{term}({r['clip']})")
         print(f"{eng:10} {', '.join(miss) or 'none'}")
     with open("results/texts-round1.txt", "w") as f:
         for clip in sorted({r["clip"] for r in rows}):
-            f.write(f"== {clip}  REF: {refs.get(clip) or TELLA.get(clip)}\n")
+            f.write(f"== {clip}  REF: {refs[clip]['text'] if clip in refs else TELLA.get(clip)}\n")
             for r in rows:
                 if r["clip"] == clip and r["round"] == 1:
                     f.write(f"  {r['engine']:9} {r.get('text', r.get('error'))}\n")

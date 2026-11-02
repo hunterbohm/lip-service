@@ -61,14 +61,23 @@ private final class RenderWindow: NSWindow {
             ("home-setup", {}),
             ("home", { checks = SetupChecks(microphone: true, accessibility: true, fnKey: .ready); willow.dismissCard() }),
             ("home-search", { state.search = "profit" }),
-            ("dictation", { state.search = ""; state.page = .dictation }),
-            ("microphone", { state.page = .microphone }),
-            ("dictionary", { state.page = .dictionary }),
+            ("dictation", { state.search = ""; state.page = .dictation; window.setContentSize(NSSize(width: 1000, height: 860)) }),
+            ("profiles", {
+                preferences.change { $0.profiles.set(ProfileRules(style: .veryCasual, pressReturn: true), for: .messages) }
+                state.page = .profiles
+                window.setContentSize(NSSize(width: 1000, height: 1500))
+            }),
+            ("microphone", { window.setContentSize(NSSize(width: 1000, height: 640)); state.page = .microphone }),
+            ("dictionary", {
+                preferences.change { $0.snippets = sampleSnippets }
+                state.page = .dictionary
+                window.setContentSize(NSSize(width: 1000, height: 1000))
+            }),
             ("dictionary-empty", {
                 try? Vocabulary.bundledDefault.write(to: vocabularyURL, atomically: true, encoding: .utf8)
                 preferences.reloadVocabularyIfChanged()
             }),
-            ("history", { state.page = .history }),
+            ("history", { window.setContentSize(NSSize(width: 1000, height: 640)); state.page = .history }),
             ("stats", {
                 history.deleteAll()
                 _ = history.merge(statsSample)
@@ -124,6 +133,12 @@ private final class RenderWindow: NSWindow {
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         NSApplication.shared.windows.forEach { $0.contentView?.layoutSubtreeIfNeeded() }
     }
+
+    static let sampleSnippets = [
+        Snippet(cue: "my address", text: "Hunter Bohm\n1100 Congress Avenue\nAustin, TX 78701"),
+        Snippet(cue: "my email", text: "hunter@example.com"),
+        Snippet(cue: "sign off", text: "Thanks,\nHunter"),
+    ]
 
     static let sampleVocabulary = """
         ProfitPilot: profit pilot, prophet pilot

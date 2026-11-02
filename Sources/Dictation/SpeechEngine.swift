@@ -1,6 +1,7 @@
 import DictationCore
 import FluidAudio
 import Foundation
+import os
 import Synchronization
 
 /// Audio still being captured. It only grows while one capture lasts. The engine reads it on its worker.
@@ -26,8 +27,10 @@ final class SpeechEngine: Sendable {
     static let previewInterval = Duration.milliseconds(300)
 
     fileprivate enum Job: Sendable {
+        /// Key-down: a new capture starts.
         case warm
         case configure(Vocabulary?)
+        case screenNames([String])
         case preview(any LiveAudio, CheckedContinuation<String?, Never>)
         case dictate(Recording, CheckedContinuation<Dictation, any Error>)
     }
@@ -53,6 +56,11 @@ final class SpeechEngine: Sendable {
 
     /// Key-down. Never blocks.
     func prepare() { jobs.yield(.warm) }
+
+    /// Names read from the screen for the capture in progress, boosted on top of the vocabulary for its dictation
+    /// only. Their rescorer builds on a task of its own while the key is held. A release that finds it unfinished
+    /// cancels it and boosts with the vocabulary alone, so release never waits on the build.
+    func boost(screenNames: [String]) { jobs.yield(.screenNames(screenNames)) }
 
     /// The words so far, without boosting, from the newest 15 s of a capture, so the cost stays flat however long
     /// it runs. Nil, without decoding, when a dictation is queued. After answering, the worker computes any
@@ -165,6 +173,39 @@ private struct Booster: Sendable {
     }
 }
 
+/// A rescorer for the vocabulary plus one capture's names from the screen, built off the worker.
+private struct CaptureBuild {
+    let names: [String]
+    private let task: Task<Void, Never>
+    private let built = Built()
+
+    private final class Built: Sendable {
+        let booster = Mutex<Booster?>(nil)
+    }
+
+    init(names: [String], vocabulary: Vocabulary, models: BoostingModels) {
+        self.names = names
+        let combined = Vocabulary(terms: vocabulary.terms + names.map { Vocabulary.Term(text: $0) }, minSimilarity: vocabulary.minSimilarity)
+        task = Task.detached(priority: .userInitiated) { [built] in
+            let started = Instant.now
+            guard !Task.isCancelled else { return }
+            let booster = Booster(vocabulary: combined, models: models)
+            guard !Task.isCancelled else { return }
+            built.booster.withLock { $0 = booster }
+            Worker.log.info("screen names: \(names.count) terms, rescorer built in \(Instant.now - started, format: .fixed(precision: 3)) s")
+        }
+    }
+
+    /// The rescorer if it is ready now. Otherwise the build is cancelled and its result dropped.
+    func take() -> Booster? {
+        if let booster = built.booster.withLock({ $0 }) { return booster }
+        task.cancel()
+        return nil
+    }
+
+    func cancel() { task.cancel() }
+}
+
 /// Exists only inside the worker task.
 private struct Worker {
     /// FluidAudio rejects audio under 0.3 s. Padding to 1 s costs nothing, since it pads to 15 s internally.
@@ -175,6 +216,10 @@ private struct Worker {
     let store: ModelStore
     var boostingModels: BoostingModels?
     var booster: Booster?
+    /// The vocabulary with this capture's names from the screen, building while the key is held. Nil without them.
+    var capture: CaptureBuild?
+    var screenNames: [String] = []
+    var vocabulary: Vocabulary?
     var finisher: TextFinisher
     /// Nil until the first model run after loading, which counts as idle.
     var lastRun: Instant?
@@ -198,10 +243,13 @@ private struct Worker {
         for await job in jobs {
             switch job {
             case .warm:
+                worker.boost(screenNames: [])
                 let idle = worker.lastRun.map { Instant.now - $0 } ?? .infinity
                 if queued.isZero, idle >= options.warmAfterIdle { await worker.warm() }
             case .configure(let vocabulary):
                 await worker.reconfigure(vocabulary, onStatus)
+            case .screenNames(let names):
+                if queued.isZero { worker.boost(screenNames: names) }
             case .preview(let audio, let continuation):
                 guard queued.isZero else {
                     continuation.resume(returning: nil)
@@ -237,9 +285,12 @@ private struct Worker {
     /// Only canonical terms go to FluidAudio. Aliases stay deterministic, in TextFinisher, because the bakeoff
     /// measured boosting without them. A CTC failure turns boosting off and nothing else.
     mutating func reconfigure(_ vocabulary: Vocabulary?, _ onStatus: @Sendable (EngineStatus) -> Void) async {
-        finisher = TextFinisher(vocabulary: vocabulary)
+        let terms = vocabulary?.terms.map(\.text) ?? []
+        finisher = TextFinisher(vocabulary: vocabulary, everydayWords: await MainActor.run { Spelling.everydayWords(terms) })
+        self.vocabulary = vocabulary
         booster = nil
         windows = []
+        defer { boost(screenNames: screenNames) }
         guard let vocabulary, !vocabulary.terms.isEmpty else {
             onStatus(.ready(boosting: .off))
             return
@@ -259,6 +310,17 @@ private struct Worker {
             onStatus(.ready(boosting: .unavailable(error.localizedDescription)))
         }
     }
+
+    /// Boosting must be on, so names from the screen never download or load the boosting model by themselves.
+    mutating func boost(screenNames names: [String]) {
+        screenNames = names
+        capture?.cancel()
+        capture = nil
+        guard !names.isEmpty, booster != nil, let vocabulary, let boostingModels else { return }
+        capture = CaptureBuild(names: names, vocabulary: vocabulary, models: boostingModels)
+    }
+
+    static let log = Logger(subsystem: "com.hunterbohm.dictation", category: "dictation")
 
     /// One second of silence through both models, so the next dictation finds them awake.
     mutating func warm() async {
@@ -298,12 +360,14 @@ private struct Worker {
     /// state. Rescoring waits for both.
     mutating func transcribe(_ recording: Recording) async throws -> Dictation {
         let started = Instant.now
+        let captureBooster = capture?.take(), screenTerms = captureBooster == nil ? 0 : screenNames.count
         defer {
             lastRun = .now
             windows = []
+            boost(screenNames: [])
         }
         let samples = Self.padded(recording.samples)
-        let booster = booster, cached = windows
+        let booster = captureBooster ?? booster, cached = windows
         async let logProbs = booster?.logProbs(samples, reusing: cached)
         let result: ASRResult
         do { result = try await decode(samples) } catch { result = try await decode(samples) }
@@ -314,7 +378,7 @@ private struct Worker {
         let text = finisher.finish(raw: result.text, boosted: boosted)
         let finished = Instant.now
         return Dictation(text: text, raw: result.text, boosted: boosted, waited: started - recording.releasedAt,
-                         decode: decoded - started, rescore: rescored - decoded, finish: finished - rescored)
+                         decode: decoded - started, rescore: rescored - decoded, finish: finished - rescored, screenTerms: screenTerms)
     }
 
     private static func padded(_ samples: [Float]) -> [Float] {

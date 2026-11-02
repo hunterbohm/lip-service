@@ -24,11 +24,14 @@ public struct Dictation: Equatable, Sendable {
     public var decode: Double
     public var rescore: Double
     public var finish: Double
+    /// Names from the screen boosted on top of the vocabulary.
+    public var screenTerms: Int
 
     public init(text: String, raw: String, boosted: String?, waited: Double, decode: Double, rescore: Double,
-                finish: Double) {
+                finish: Double, screenTerms: Int = 0) {
         (self.text, self.raw, self.boosted) = (text, raw, boosted)
         (self.waited, self.decode, self.rescore, self.finish) = (waited, decode, rescore, finish)
+        self.screenTerms = screenTerms
     }
 }
 
@@ -166,6 +169,15 @@ public struct Settings: Equatable, Codable, Sendable {
     public var showMenuBarIcon = true
     /// Adds a space before inserted text that follows a word, and lowercases its first word mid-sentence.
     public var smartSpacing = true
+    /// The style and Return rule for each group of apps, picked by the app in front at release.
+    public var profiles = AppProfiles.defaults
+    public var snippets: [Snippet] = []
+    /// Mutes the Mac's sound while you talk, once the start cue has played.
+    public var muteWhileDictating = false
+    /// Boosts names read from the front window at key-down, for that dictation only.
+    public var screenNames = true
+    /// Adds a word to the dictionary when the user corrects one word of a dictation.
+    public var learnFixes = true
 
     public init() {}
 
@@ -175,7 +187,11 @@ public struct Settings: Equatable, Codable, Sendable {
         func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
             (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
         }
-        let hotkeys = value(.hotkeys, defaults.hotkeys).reduce(into: [Shortcut]()) { if !$0.contains($1) { $0.append($1) } }
+        /// One element that does not read drops only itself.
+        func elements<T: Decodable>(_ key: CodingKeys, _ fallback: [T]) -> [T] {
+            (try? container.decodeIfPresent(LossyArray<T>.self, forKey: key))?.elements ?? fallback
+        }
+        let hotkeys = elements(.hotkeys, defaults.hotkeys).reduce(into: [Shortcut]()) { if !$0.contains($1) { $0.append($1) } }
         self.hotkeys = hotkeys.isEmpty ? defaults.hotkeys : hotkeys
         // Present and null means the user turned it off. Absent means a value stored before the setting existed.
         pasteLast = container.contains(.pasteLast) ? value(.pasteLast, Shortcut?.none) : defaults.pasteLast
@@ -187,11 +203,16 @@ public struct Settings: Equatable, Codable, Sendable {
         keepHistory = value(.keepHistory, defaults.keepHistory)
         showMenuBarIcon = value(.showMenuBarIcon, defaults.showMenuBarIcon)
         smartSpacing = value(.smartSpacing, defaults.smartSpacing)
+        profiles = value(.profiles, defaults.profiles)
+        snippets = elements(.snippets, defaults.snippets)
+        muteWhileDictating = value(.muteWhileDictating, defaults.muteWhileDictating)
+        screenNames = value(.screenNames, defaults.screenNames)
+        learnFixes = value(.learnFixes, defaults.learnFixes)
     }
 
     private enum CodingKeys: String, CodingKey {
         case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
-        case smartSpacing
+        case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes
     }
 
     /// Written out by hand so a paste shortcut turned off is stored as null. The synthesized encoder leaves a nil out,
@@ -208,6 +229,11 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(keepHistory, forKey: .keepHistory)
         try container.encode(showMenuBarIcon, forKey: .showMenuBarIcon)
         try container.encode(smartSpacing, forKey: .smartSpacing)
+        try container.encode(profiles, forKey: .profiles)
+        try container.encode(snippets, forKey: .snippets)
+        try container.encode(muteWhileDictating, forKey: .muteWhileDictating)
+        try container.encode(screenNames, forKey: .screenNames)
+        try container.encode(learnFixes, forKey: .learnFixes)
     }
 
     /// Adds a dictation key, or puts it in place of `replacing`. Why it can't, or nil when it did.
@@ -264,6 +290,8 @@ public enum BarNotice: Equatable, Sendable {
     case modelFailed(String)
     /// fn is a dictation key, but Keyboard > Press fn key to is not Do Nothing, so macOS also acts on it.
     case fnKeySetting
+    /// A word learned from the user's fix went into the dictionary.
+    case learned(String)
 
     public var title: String {
         switch self {
@@ -273,6 +301,7 @@ public enum BarNotice: Equatable, Sendable {
         case .nothingToPaste: "Nothing to paste yet"
         case .modelFailed: "The speech model didn't load"
         case .fnKeySetting: "macOS also acts on fn"
+        case .learned(let word): "Learned \(word)"
         }
     }
 
@@ -285,12 +314,19 @@ public enum BarNotice: Equatable, Sendable {
         case .nothingToPaste: "Dictate something first."
         case .modelFailed(let reason): reason
         case .fnKeySetting: "Set Keyboard > Press fn key to > Do Nothing."
+        case .learned: "Added to your dictionary from your fix."
         }
+    }
+
+    /// Starting the next dictation clears a notice, except one this kind. A word is learned at the start of the next
+    /// dictation, so its notice must outlast that start to be seen at all.
+    public var outlastsNextDictation: Bool {
+        if case .learned = self { true } else { false }
     }
 
     public var tone: NoticeTone {
         switch self {
-        case .copied, .nothingToPaste: .info
+        case .copied, .nothingToPaste, .learned: .info
         case .microphoneMissing, .fnKeySetting: .warning
         case .failed, .modelFailed: .failure
         }
@@ -301,6 +337,7 @@ public enum BarNotice: Equatable, Sendable {
         switch self {
         case .modelFailed: .retryModel
         case .fnKeySetting: .openKeyboardSettings
+        case .learned: .undoLearned
         default: nil
         }
     }
@@ -324,11 +361,13 @@ extension CopyReason {
 public enum BarToastAction: Equatable, Sendable {
     case retryModel
     case openKeyboardSettings
+    case undoLearned
 
     public var title: String {
         switch self {
         case .retryModel: "Retry"
         case .openKeyboardSettings: "Open Settings"
+        case .undoLearned: "Undo"
         }
     }
 }

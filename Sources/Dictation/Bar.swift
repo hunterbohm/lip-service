@@ -19,9 +19,11 @@ enum BarEvent: Equatable {
     private let bodyPanel = BarPanel()
     private let toastPanel = BarPanel()
     private let outlinePanel = BarPanel()
+    private let haloPanel = BarPanel()
     private let bodyHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let toastHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let outlineHost = BarHostingView(rootView: AnyView(EmptyView()))
+    private let haloHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let level: @MainActor () -> Float
     /// The visible frame of the screen to use. Defaults to the screen the bar is on, or the mouse's.
     private let area: (@MainActor (_ current: NSScreen?) -> NSRect)?
@@ -41,11 +43,12 @@ enum BarEvent: Equatable {
     init(level: @escaping @MainActor () -> Float, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
         self.level = level
         self.area = area
-        for (panel, host) in [(bodyPanel, bodyHost), (toastPanel, toastHost), (outlinePanel, outlineHost)] {
+        for (panel, host) in [(bodyPanel, bodyHost), (toastPanel, toastHost), (outlinePanel, outlineHost), (haloPanel, haloHost)] {
             panel.contentView = host
         }
         toastHost.sizingOptions = [.intrinsicContentSize]
         outlinePanel.hasShadow = false
+        haloPanel.hasShadow = false
     }
 
     /// Shown with orderFrontRegardless, never makeKeyAndOrderFront, so the app never activates and focus stays in
@@ -79,6 +82,7 @@ enum BarEvent: Equatable {
             bodyPanel.orderOut(nil)
             // A panel out of view keeps its views running, and the spinner's timeline would redraw 60 times a second.
             bodyHost.rootView = AnyView(EmptyView())
+            hideHalo()
             return nil
         }
         bodyHost.rootView = AnyView(BodyView(shown: state.body, edge: edge, meter: meter,
@@ -87,17 +91,37 @@ enum BarEvent: Equatable {
         let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area),
                                       inset: BarStyle.inset(of: state.body, edge: edge)))
         bodyPanel.ignoresMouseEvents = !state.body.acceptsMouse
+        var haloFrame: NSRect?
+        if let bar = state.body.wordsBar {
+            haloHost.rootView = AnyView(HaloView(meter: meter, listening: !bar.finishing))
+            haloFrame = frame.insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin)
+        } else {
+            hideHalo()
+        }
         if animated, bodyPanel.isVisible, bodyPanel.frame.height == frame.height, bodyPanel.frame != frame {
+            // A halo that is not up yet starts around the body as it is, so both grow to the new width together.
+            if haloFrame != nil, !haloPanel.isVisible {
+                haloPanel.setFrame(bodyPanel.frame.insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin), display: true)
+            }
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
                 bodyPanel.animator().setFrame(frame, display: true)
+                if let haloFrame { haloPanel.animator().setFrame(haloFrame, display: true) }
             }
         } else {
             bodyPanel.setFrame(frame, display: true)
+            if let haloFrame { haloPanel.setFrame(haloFrame, display: true) }
         }
         bodyPanel.orderFrontRegardless()
+        if haloFrame != nil { haloPanel.order(.below, relativeTo: bodyPanel.windowNumber) }
         return frame
+    }
+
+    /// The halo's timeline would keep redrawing in a panel that is out of view, so its view goes with it.
+    private func hideHalo() {
+        haloPanel.orderOut(nil)
+        haloHost.rootView = AnyView(EmptyView())
     }
 
     private func layoutToast(in area: NSRect, against bodyFrame: NSRect?) {
@@ -137,6 +161,7 @@ enum BarEvent: Equatable {
         outlinePanel.setFrame(started.area, display: true)
         outlinePanel.order(.below, relativeTo: bodyPanel.windowNumber)
         toastPanel.orderOut(nil)
+        hideHalo()
         return started
     }
 
@@ -149,15 +174,17 @@ enum BarEvent: Equatable {
         let timer = Timer(timeInterval: 1.0 / VoiceMeter.sampleRate, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.meter.follow(Loudness.fraction(rms: self.level()))
+                self.meter.hear(rms: self.level())
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         sampler = timer
     }
 
-    /// The panels as they are now, for --render-bar.
-    var visiblePanels: [NSPanel] { [outlinePanel, bodyPanel, toastPanel].filter(\.isVisible) }
+    /// The panels as they are now, bottom first, for --render-bar. `shadow` is whether the system gives the panel one.
+    var visiblePanels: [(panel: NSPanel, shadow: Bool)] {
+        [(haloPanel, false), (outlinePanel, true), (bodyPanel, true), (toastPanel, true)].filter { $0.0.isVisible }
+    }
 
     /// Shows the drag outlines as they look mid-drag with the mouse nearest `edge`, or hides them, for --render-bar.
     func showOutlines(nearest: BarEdge?) {
@@ -209,36 +236,52 @@ private final class BarHostingView: NSHostingView<AnyView> {
 /// Not observable: the views run on a timeline and look at it each frame.
 @MainActor final class VoiceMeter {
     nonisolated static let sampleRate = 60.0
+    /// Kept across dictations, so the next one starts already scaled to the speaker and the room.
+    private var loudness = AutoLevel(rate: sampleRate)
     private var envelope = LevelEnvelope()
+    /// The same voice smoothed once more, which lights the halo.
+    private var glow = LevelEnvelope(stages: LevelEnvelope.glow)
     /// Set by --render-bar: the time every view draws for, and the envelope stays as `freeze` left it.
     private(set) var frozenAt: Double?
 
     func reset() {
         guard frozenAt == nil else { return }
         envelope.reset()
+        glow.reset()
     }
+
+    /// The RMS of the newest audio, scaled to the voice and the room.
+    func hear(rms: Float) { follow(loudness.fraction(rms: rms)) }
 
     func follow(_ fraction: Float) {
         guard frozenAt == nil else { return }
         envelope.follow(fraction)
+        glow.follow(fraction)
     }
 
     func freeze(at time: Double, profile: (Double) -> Float) {
         frozenAt = time
         envelope = LevelEnvelope(filling: profile)
+        glow = LevelEnvelope(stages: LevelEnvelope.glow, filling: profile)
     }
 
     func reading(at time: Double) -> VoiceReading {
-        if frozenAt == nil { envelope.advance(to: time) }
-        return VoiceReading(envelope: envelope, time: frozenAt == nil ? time : envelope.clock ?? 0)
+        if frozenAt == nil {
+            envelope.advance(to: time)
+            glow.advance(to: time)
+        }
+        return VoiceReading(envelope: envelope, glow: glow, time: frozenAt == nil ? time : envelope.clock ?? 0)
     }
 }
 
 struct VoiceReading {
     fileprivate let envelope: LevelEnvelope
+    fileprivate let glow: LevelEnvelope
     fileprivate let time: Double
 
     func level(delay: Double) -> Double { Double(envelope.level(delay: delay, at: time)) }
+    /// The level the halo glows with, `delay` seconds ago.
+    func glow(delay: Double) -> Double { Double(glow.level(delay: delay, at: time)) }
 }
 
 /// Sizes shared by the views and the layout.
@@ -252,6 +295,8 @@ struct VoiceReading {
     static let buttonsWidth = 2 * buttonSize + 6
     static let idle = CGSize(width: 28, height: 14)
     static let toastGap: CGFloat = 8
+    /// How far the halo's panel reaches past the body on every side: the halo's reach, and two points to spare.
+    static let haloMargin = CGFloat(HaloGlow.reach) + 2
     static let toastMaxWidth: CGFloat = 520
     static let toastTitleFont = NSFont.systemFont(ofSize: 13.5, weight: .semibold)
     static let toastDetailFont = NSFont.systemFont(ofSize: 12.5)
@@ -428,8 +473,8 @@ private struct BodyView: View {
     }
 }
 
-/// Redraws every frame, or once at the time --render-bar froze, or once when `still` is set. Nothing here runs once the
-/// view is out of the window.
+/// Redraws at most 60 times a second, even on a faster screen, or once at the time --render-bar froze, or once when
+/// `still` is set. Nothing here runs once the view is out of the window.
 private struct Ticker<Content: View>: View {
     let frozenAt: Double?
     var still = false
@@ -441,7 +486,7 @@ private struct Ticker<Content: View>: View {
         } else if still {
             content(0)
         } else {
-            TimelineView(.animation) { context in content(context.date.timeIntervalSinceReferenceDate) }
+            TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in content(context.date.timeIntervalSinceReferenceDate) }
         }
     }
 }
@@ -479,6 +524,65 @@ private struct Print: View {
             guard let radius = HalftonePrint.radius(coverage: covered) else { continue }
             let x = left + dot.x, y = centerY - dot.y
             context.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius)), with: .color(Self.ink))
+        }
+    }
+}
+
+/// The dots of the halo for one capsule size, rebuilt only when the size changes.
+@MainActor private final class HaloDots {
+    private var size = CGSize.zero
+    private var dots: [HaloGlow.Dot] = []
+
+    func dots(for size: CGSize) -> [HaloGlow.Dot] {
+        if size != self.size {
+            self.size = size
+            dots = HaloGlow.dots(capsuleWidth: size.width, capsuleHeight: size.height)
+        }
+        return dots
+    }
+}
+
+/// A ring of small blue dots around the capsule that light up with the voice, drawn in the halo panel, which reaches
+/// `BarStyle.haloMargin` past the capsule on every side. It fades in while listening and out while the words are
+/// finished. Each frame it puts
+/// every lit dot into one of `shades` paths by its opacity and fills each path once. With Reduce Motion there is no halo.
+private struct HaloView: View {
+    let meter: VoiceMeter
+    let listening: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var aura = Eased()
+    @State private var grid = HaloDots()
+
+    private static let shades = 24
+    private static let blue = Color(red: HaloGlow.color.red, green: HaloGlow.color.green, blue: HaloGlow.color.blue)
+    private static let shadeStep = HaloGlow.opacityGain / Double(shades - 1)
+
+    var body: some View {
+        Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
+            Canvas { context, size in draw(into: &context, size: size, time: time) }
+        }
+    }
+
+    private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
+        guard !reduceMotion else { return }
+        let target = listening ? 1.0 : 0.0
+        let light = meter.frozenAt != nil ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
+        guard light > 0.004 else { return }
+        let margin = BarStyle.haloMargin
+        let dots = grid.dots(for: CGSize(width: size.width - 2 * margin, height: size.height - 2 * margin))
+        let voice = meter.reading(at: time)
+
+        var paths = [Path](repeating: Path(), count: Self.shades)
+        for dot in dots {
+            let strength = HaloGlow.strength(of: dot, glow: voice.glow(delay: dot.delay))
+            guard strength >= HaloGlow.faintest else { continue }
+            let radius = HaloGlow.radius(strength: strength)
+            let shade = min(Self.shades - 1, Int(((HaloGlow.opacity(strength: strength) - HaloGlow.faintestOpacity) / Self.shadeStep).rounded()))
+            paths[shade].addEllipse(in: CGRect(x: margin + dot.x - radius, y: margin + dot.y - radius, width: 2 * radius, height: 2 * radius))
+        }
+        for (shade, path) in paths.enumerated() where !path.isEmpty {
+            let opacity = (HaloGlow.faintestOpacity + Double(shade) * Self.shadeStep) * light
+            context.fill(path, with: .color(Self.blue.opacity(opacity)))
         }
     }
 }

@@ -21,8 +21,9 @@ enum Mode {
                    --clip locates the clip when the binary runs outside the app bundle.
                    --models reads the models from DIR instead of FluidAudio's folder.
                Dictation --bench [--rounds N] [--hold-cap S] [--gap S] [--warm on|off] [--preview on|off]
-                         [--vocabulary PATH] [--models DIR] CLIP.wav...
+                         [--vocabulary PATH] [--screen-names PATH] [--models DIR] CLIP.wav...
                    Prints one JSON line per clip and round. Round 0 warms up on the first clip.
+                   --screen-names boosts the names in PATH, one per line, as names from the screen at each key-down.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
                Dictation --render-bar DIR
@@ -59,6 +60,7 @@ enum Mode {
                     case "--warm": options.warm = try Self.switchValue(of: argument, from: &rest)
                     case "--preview": options.preview = try Self.switchValue(of: argument, from: &rest)
                     case "--vocabulary": options.vocabulary = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case "--screen-names": options.screenNames = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case "--models": options.models = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case let flag where flag.hasPrefix("--"): throw DictationError("unknown option \(flag)")
                     default: options.clips.append(URL(fileURLWithPath: argument))
@@ -127,6 +129,8 @@ enum Headless {
         var preview = true
         /// The bakeoff's unless given.
         var vocabulary: URL?
+        /// Names boosted at each key-down the way names from the screen are.
+        var screenNames: URL?
         /// FluidAudio's folder unless given.
         var models: URL?
     }
@@ -194,6 +198,14 @@ enum Headless {
             for issue in parsed.issues { log("\(file.lastPathComponent) line \(issue.line): \(issue.message)") }
             vocabulary = parsed.vocabulary
         }
+        var screenNames: [String] = []
+        if let file = options.screenNames {
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else {
+                log("cannot read \(file.path)")
+                return 1
+            }
+            screenNames = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
         let clips: [(id: String, samples: [Float])]
         do {
             clips = try options.clips.map { ($0.deletingPathExtension().lastPathComponent, try Recording.load(wav: $0).samples) }
@@ -214,6 +226,7 @@ enum Headless {
                 let seconds = Double(clip.samples.count) / Recording.sampleRate
                 if options.gap > 0 { try? await Task.sleep(for: .seconds(options.gap)) }
                 if options.warm { engine.prepare() }
+                if !screenNames.isEmpty { engine.boost(screenNames: screenNames) }
                 let hold = min(options.holdCap, seconds)
                 let playback = ClipPlayback(clip: clip.samples, pressed: .now, head: seconds - hold)
                 let previews = Task { [preview = options.preview] in
@@ -235,7 +248,8 @@ enum Headless {
                     row["release_to_text_s"] = Instant.now - released
                     row.merge(["raw": dictation.raw, "boosted": dictation.boosted ?? NSNull(), "text": dictation.text,
                                "waited_s": dictation.waited, "decode_s": dictation.decode,
-                               "rescore_s": dictation.rescore, "finish_s": dictation.finish]) { old, _ in old }
+                               "rescore_s": dictation.rescore, "finish_s": dictation.finish,
+                               "screen_terms": dictation.screenTerms]) { old, _ in old }
                 } catch {
                     failures += 1
                     row["error"] = error.localizedDescription

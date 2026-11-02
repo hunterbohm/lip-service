@@ -18,6 +18,9 @@ import DictationCore
         sound?.play()
     }
 
+    /// The start cue's length, so muting other sound can wait for it.
+    var startLength: Double { start?.duration ?? 0 }
+
     private static func load(_ name: String) -> NSSound? {
         Bundle.main.url(forResource: name, withExtension: "wav").flatMap { NSSound(contentsOf: $0, byReference: false) }
     }

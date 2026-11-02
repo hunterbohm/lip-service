@@ -9,7 +9,7 @@ from collections import defaultdict
 
 BENCH = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BENCH)
-from score import VOCAB, edits, norm_words, pct, vocab_hits  # noqa: E402
+from score import VOCAB, best_reference, edits, norm_words, pct, vocab_hits  # noqa: E402
 
 
 def summarize(rows, refs):
@@ -24,9 +24,9 @@ def summarize(rows, refs):
         e = n = hits = total = 0
         missed = defaultdict(int)
         for r in ok:
-            ref = refs[r["clip"]]
-            words = norm_words(ref)
-            e += edits(words, norm_words(r["text"]))
+            hyp = norm_words(r["text"])
+            ref, words = best_reference(refs[r["clip"]], hyp)
+            e += edits(words, hyp)
             n += len(words)
             h, t = vocab_hits(ref, r["text"])
             hits += h
@@ -60,7 +60,7 @@ def main():
     ap.add_argument("results")
     ap.add_argument("--json")
     args = ap.parse_args()
-    refs = {r["id"]: r["text"] for r in map(json.loads, open(os.path.join(BENCH, "manifest.jsonl")))}
+    refs = {r["id"]: r for r in map(json.loads, open(os.path.join(BENCH, "manifest.jsonl")))}
     rows = [json.loads(line) for line in open(args.results) if line.startswith("{")]
     summary = summarize(rows, refs)
     print(f"{'app':14} {'trials':>6} {'err':>4} {'WER':>6} {'names':>9} {'p50 s':>6} {'p95 s':>6} {'max s':>6}  round p50 range")

@@ -26,7 +26,7 @@ import SwiftUI
 }
 
 enum Page: String, CaseIterable, Identifiable {
-    case home, stats, dictation, microphone, dictionary, history
+    case home, stats, dictation, profiles, microphone, dictionary, history
 
     var id: Self { self }
     var title: String { rawValue.capitalized }
@@ -35,6 +35,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .home: "house"
         case .stats: "chart.bar"
         case .dictation: "keyboard"
+        case .profiles: "rectangle.stack"
         case .microphone: "mic"
         case .dictionary: "character.book.closed"
         case .history: "clock"

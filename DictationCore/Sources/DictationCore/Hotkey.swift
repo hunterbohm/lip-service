@@ -412,6 +412,14 @@ public enum HotkeyMachine: Equatable, Sendable {
     }
 
     public var isHandsFree: Bool { if case .handsFree = self { true } else { false } }
+
+    /// Whether a capture is recording, including the moments after key-down before the bar shows.
+    public var isCapturing: Bool {
+        switch self {
+        case .pressed, .tapped, .pressedAgain, .handsFree: true
+        case .idle, .awaitingRelease: false
+        }
+    }
 }
 
 /// A microphone level as a 0 to 1 loudness, on a decibel scale from quiet room to loud speech.
