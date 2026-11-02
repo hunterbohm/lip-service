@@ -1,0 +1,166 @@
+name: Bug report
+description: Report broken behavior, regressions, crashes, or reliability issues.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for broken behavior, regressions, crashes, or reliability problems.
+        Feature requests belong in [Discussions](https://github.com/hunterbohm/lip-service/discussions/categories/ideas).
+        Search existing issues first and keep the report focused on one problem.
+        Read any log or screenshot before you post it, and remove anything private.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I included enough detail to reproduce or investigate the problem.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Lip Service is affected?
+      options:
+        - Dictation (hold fn)
+        - Ghostwrite (fn + Control)
+        - Hand off (fn + Option)
+        - Setup window or permissions
+        - Install or update
+        - Stats
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal, deterministic repro. Name the app you were typing into.
+      placeholder: |
+        1. Open Notes and click into a note
+        2. Hold fn and say "send the report by Friday"
+        3. Let go
+        4. Watch the bar
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: The words appear at the cursor about 0.2 s after I let go.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: The bar shows my words, but nothing is typed and the text stays on the clipboard.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      description: How bad is this in practice?
+      options:
+        - Blocks work completely
+        - Major degradation or frequent failure
+        - Minor bug or occasional failure
+        - Cosmetic issue
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Lip Service version
+      description: Open the Lip Service window, then choose Lip Service > About Lip Service in the menu bar. Or run `defaults read "/Applications/Lip Service.app/Contents/Info" CFBundleShortVersionString` in Terminal.
+      placeholder: 1.0.5
+    validations:
+      required: true
+
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model and chip
+      description: Apple menu > About This Mac.
+      placeholder: MacBook Air, Apple M3
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu > About This Mac, or run `sw_vers -productVersion` in Terminal.
+      placeholder: macOS 26.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: microphone
+    attributes:
+      label: Microphone
+      description: The input you dictated into. The Microphone page in the Lip Service window shows it.
+      options:
+        - Built-in microphone
+        - AirPods or other Bluetooth headset
+        - USB microphone or headset
+        - Other
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      description: The agent you set up for Ghostwrite and Hand off. Choose No agent for plain dictation.
+      options:
+        - No agent (plain dictation)
+        - Hermes
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Another agent
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or stack traces
+      description: |
+        Reproduce the problem, then run this in Terminal and paste the output. Use `/usr/bin/log`, because plain `log` is a different command in zsh.
+
+        `/usr/bin/log show --last 10m --info --debug --predicate 'subsystem == "com.hunterbohm.dictation"'`
+
+        For a crash, zip the newest "Lip Service" or "Dictation" report from Console > Crash Reports and attach the zip below. Paste the most relevant output only. Redact secrets.
+      render: shell
+
+  - type: upload
+    id: attachments
+    attributes:
+      label: Screenshots, recordings, or supporting files
+      description: Upload screenshots, short screen recordings, zipped crash reports, or log files. Redact anything private before uploading.
+    validations:
+      required: false
+      accept: ".png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm,.log,.txt,.json,.zip"
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: If you found a temporary workaround, include it.
+      placeholder: Quitting Lip Service from the menu bar icon and opening it again clears it.

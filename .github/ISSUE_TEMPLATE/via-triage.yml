@@ -1,0 +1,120 @@
+name: Triage report
+description: Written by your own AI agent after it investigated your Mac. For hand-written reports use the bug report template instead.
+labels:
+  - via-triage
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep one problem per issue and redact secrets and home folder paths from anything you paste.
+
+        To have your agent investigate and write this report, paste this into Claude Code, Codex, Hermes, OpenCode, or another agent that can run commands on your Mac:
+
+            Investigate a problem with Lip Service on this Mac and write a bug report for
+            https://github.com/hunterbohm/lip-service. Only read things. Don't change
+            any settings or files, and ask me before you run anything that does.
+
+            1. Ask me what went wrong, in my words, which key I held (fn to dictate,
+               fn + Control for Ghostwrite, fn + Option for Hand off), and which app I
+               was typing into.
+            2. Collect these facts:
+               - Version: defaults read "/Applications/Lip Service.app/Contents/Info" CFBundleShortVersionString
+               - macOS: sw_vers -productVersion
+               - Mac model and chip: sysctl -n hw.model, and sysctl -n machdep.cpu.brand_string
+               - Logs, after I reproduce the problem: /usr/bin/log show --last 10m --info --debug --predicate 'subsystem == "com.hunterbohm.dictation"'
+               - If the version is 1.0.6 or later: "/Applications/Lip Service.app/Contents/MacOS/Dictation" setup show.
+                 Keep only the agents found, the default agent, and the keys. Leave out the voice notes, commands, and handles.
+               - Ask me: the microphone I used (built-in, AirPods or Bluetooth, USB, other), whether Microphone and Accessibility are on for Lip Service in System Settings > Privacy & Security, what Keyboard > "Press fn key to" is set to, and whether the Lip Service icon is in the menu bar.
+            3. Read the logs and find the first error or the step where it went wrong. Say what you found and what you couldn't tell.
+            4. Replace secrets, tokens, and my home folder path (use ~) with placeholders. Don't include anything I dictated unless I say so.
+            5. Write the report under the headings of this form: What happened, Diagnosis, Steps to reproduce, Version, Environment, Evidence, Related issues, Fix applied or workaround, Filed by. Search the open issues first and list any similar one under Related issues.
+            6. Show me the report. When I approve it, file it with gh issue create on hunterbohm/lip-service, with the title "[Triage]: " and a short summary, or give me the text to paste into this form.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Lip Service is affected?
+      options:
+        - Dictation (hold fn)
+        - Ghostwrite (fn + Control)
+        - Hand off (fn + Option)
+        - Setup window or permissions
+        - Install or update
+        - Stats
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The problem in the user's own words.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnosis
+    attributes:
+      label: Diagnosis
+      description: What the investigation found, grounded in logs. Say what could not be determined.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, deterministic repro if one was found.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Lip Service version the bug happened on, or unknown.
+      placeholder: 1.0.5
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Mac model and chip, macOS version, microphone, agent set up for Ghostwrite and Hand off (or none), and whether Microphone and Accessibility are on.
+      placeholder: |
+        MacBook Air, Apple M3, macOS 26.1
+        Microphone: AirPods
+        Agent: Claude Code
+        Microphone and Accessibility: both on
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: The most relevant log lines only. Redacted.
+      render: shell
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues
+      description: Existing issues that look similar, and why this is not a duplicate.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Fix applied or workaround
+      description: Anything that was run on the machine to unblock the user.
+
+  - type: input
+    id: agent
+    attributes:
+      label: Filed by
+      description: Which agent and model wrote this report.
+      placeholder: Claude Code (opus-5)
