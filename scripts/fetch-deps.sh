@@ -1,5 +1,5 @@
 #!/bin/bash
-# Vendors FluidAudio at a pinned commit into Vendor/FluidAudio and applies five patches. The first deletes the
+# Vendors FluidAudio at a pinned commit into Vendor/FluidAudio and applies six patches. The first deletes the
 # NemoTextProcessing binary target from the Swift 6.2+ manifest. The app never uses that text normalizer, and
 # SwiftPM downloads binary targets with URLSession, which traps (exit 133) when run from an SSH session. The
 # second builds the rescorer's character set once instead of on every word it compares, which was most of the
@@ -8,13 +8,17 @@
 # vocabulary change reads no file. The existing create loads it from a directory and now calls the new one. The
 # fourth keeps a word the decoder was sure of when a vocabulary term spelled differently would replace it, because
 # the CTC comparison passes nearly every such swap. The fifth scores a heard word against a term by sound as well
-# as spelling, so the commoner spelling of the same sounds counts as a near match. Safe to rerun.
+# as spelling, so the commoner spelling of the same sounds counts as a near match. The sixth stops a model download
+# from writing where a server says. ModelHub.allowedFiles, set by the app, names the files it reads in each
+# repository, and the download fetches only those. Whatever it fetches goes through DownloadGuard, which refuses a
+# path that is absolute, has an empty, . or .. component, or lands outside the model folder, before anything is
+# written. Safe to rerun.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tag=v0.17.7
 commit=503b4bd1bbf7220882de39fe8ae6716aae4132da
 dest="$root/Vendor/FluidAudio"
-patches=5
+patches=6
 stamp="$dest/.vendored-$commit-patches-$patches"
 [[ -f "$stamp" ]] && exit 0
 
@@ -30,9 +34,9 @@ if [[ "$actual" != "$commit" ]]; then
 fi
 rm -rf "$staging/FluidAudio/.git"
 
-python3 -I - "$staging/FluidAudio" <<'PATCH'
-import re, sys
-package = sys.argv[1]
+python3 -I - "$staging/FluidAudio" "$root/scripts/download-guard/DownloadGuard.swift" <<'PATCH'
+import re, shutil, sys
+package, guard = sys.argv[1], sys.argv[2]
 path = f"{package}/Package@swift-6.2.swift"
 text = open(path).read()
 patterns = [
@@ -261,6 +265,47 @@ patch(f"{base}/VocabularyRescorer+TokenRescoring.swift", [
  """                        let similarity = Self.soundAwareSimilarity(normalizedWord, form.normalized)""", 1),
 ("""                                let concatSimilarity = Self.stringSimilarity(concatenated, form.normalized)""",
  """                                let concatSimilarity = Self.soundAwareSimilarity(concatenated, form.normalized)""", 2),
+])
+
+download = f"{package}/Sources/FluidAudio/Shared/Download"
+shutil.copyfile(guard, f"{download}/DownloadGuard.swift")
+
+patch(f"{download}/ModelHub.swift", [
+("""    public static var offlineMode: Bool {
+        get { HFClient.offlineMode }
+        set { HFClient.offlineMode = newValue }
+    }
+""", """    public static var offlineMode: Bool {
+        get { HFClient.offlineMode }
+        set { HFClient.offlineMode = newValue }
+    }
+
+    /// The files a download may fetch, relative to the model folder, by upstream repository path like
+    /// `ModelRegistry.revisionOverrides`. A repository with an entry fetches nothing else, whatever the server lists.
+    nonisolated(unsafe) public static var allowedFiles: [String: Set<String>] = [:]
+""", 1),
+("""            includeRepoRootFiles: true, fetch: treeFetch)
+        try ModelCache.adoptLegacyCache(
+""", """            includeRepoRootFiles: true, fetch: treeFetch)
+        filesToDownload = try DownloadGuard.vet(
+            filesToDownload, allowed: allowedFiles[repo.remotePath], under: repoPath
+        ) { ModelCache.localPath(for: $0.path, subPath: subPath) }
+        try ModelCache.adoptLegacyCache(
+""", 1),
+("""            let destPath = repoPath.appendingPathComponent(localPath)
+""", """            let destPath = try DownloadGuard.destination(of: localPath, under: repoPath)
+""", 1),
+("""            includeRepoRootFiles: false, fetch: HFTreeLister.fetch(using: listingSession))
+        try ModelCache.adoptLegacyCache(
+""", """            includeRepoRootFiles: false, fetch: HFTreeLister.fetch(using: listingSession))
+        filesToDownload = try DownloadGuard.vet(
+            filesToDownload, allowed: allowedFiles[repo.remotePath], under: repoDirectory
+        ) { $0.path }
+        try ModelCache.adoptLegacyCache(
+""", 1),
+("""        let destPath = repoDirectory.appendingPathComponent(file.path)
+""", """        let destPath = try DownloadGuard.destination(of: file.path, under: repoDirectory)
+""", 1),
 ])
 PATCH
 
