@@ -4,7 +4,7 @@
     "errors": 0,
     "error_kinds": [],
     "rounds": 5,
-    "wer_pct": 2.393617021276596,
+    "wer_pct": 1.8716577540106951,
     "names_per_round": 19.0,
     "names_possible": 20.0,
     "missed_names": {
@@ -24,7 +24,7 @@
     "errors": 0,
     "error_kinds": [],
     "rounds": 5,
-    "wer_pct": 1.3297872340425532,
+    "wer_pct": 0.8021390374331551,
     "names_per_round": 19.0,
     "names_possible": 20.0,
     "missed_names": {
@@ -44,7 +44,7 @@
     "errors": 0,
     "error_kinds": [],
     "rounds": 5,
-    "wer_pct": 2.1808510638297873,
+    "wer_pct": 1.6577540106951871,
     "names_per_round": 20.0,
     "names_possible": 20.0,
     "missed_names": {},

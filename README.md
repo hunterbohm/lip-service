@@ -134,9 +134,9 @@ Every row is 5 rounds of the 15 clips. The Lip Service row comes from `ROUNDS=5 
 
 | | Text after you let go, median | Slowest 5% | Word error rate | Names spelled right |
 | --- | --- | --- | --- | --- |
-| Lip Service 1.0.0 | 0.21 s | 0.30 s | 1.3% | 19 of 20 |
-| Willow 2.6.9, Pro plan | 0.37 s | 0.53 s | 2.4% | 19 of 20 |
-| Wispr Flow 1.6.1264, Free plan | 0.39 s | 0.64 s | 2.2% | 20 of 20 |
+| Lip Service 1.0.0 | 0.21 s | 0.30 s | 0.8% | 19 of 20 |
+| Willow 2.6.9, Pro plan | 0.37 s | 0.53 s | 1.9% | 19 of 20 |
+| Wispr Flow 1.6.1264, Free plan | 0.39 s | 0.64 s | 1.7% | 20 of 20 |
 
 This test drives each app the way a person does. [RivalBench](bench/rivals) holds the app's key, plays each clip into a virtual microphone, lets go, and times the text landing in a text box. That time includes the paste, which the table above leaves out. Every row is 5 rounds of the 15 clips, with all three apps running at once on the same Mac mini. Most of the rivals' errors are formatting, such as turning a spoken list into a numbered one, so the accuracy columns are close to a tie. The setup and the raw results are in [bench/rivals/results/2026-10-27](bench/rivals/results/2026-10-27).
 
