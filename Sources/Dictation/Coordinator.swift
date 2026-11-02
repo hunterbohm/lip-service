@@ -84,6 +84,7 @@ import os
         microphone.onFailure = { [unowned self] error in
             stopPreviews()
             keyTap.abort()
+            endAgentCapture()
             show(.failed(error.localizedDescription))
         }
         microphone.onSource = { [unowned self] source in

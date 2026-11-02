@@ -19,6 +19,8 @@ import DictationCore
     private static let hermes = BarAgent(initial: "H", name: "Hermes")
     private static let said = "reply saying Tuesday at 3 works and I'll bring the latest cut"
     private static let draftText = "Hi Dana,\n\nTuesday at 3 works for me. I'll bring the latest cut so we can go through it together.\n\nHunter"
+    private static let longDraft = (1...14).map { "Step \($0): build the next part of the 3D chess set, with real detail on every piece and a board that renders smoothly in a browser viewer." }
+        .joined(separator: "\n\n")
 
     /// A draft card driven to a phase by the same events the app sends it.
     private static func draft(_ events: [DraftCard.Event]) -> DraftCard {
@@ -76,6 +78,11 @@ import DictationCore
                                   changeKey: "⌃ fn", keysLive: true)),
             Scene(name: "41-handoff-reply", state: BarState(body: .working(status: "Nothing typed", busy: false), agent: hermes),
                   card: cardModel(.handOff(handOff([.key(.returnKey), .chunk("Done. I'll text you at 4:55 to call Theo.")])), heading: "Hermes")),
+            Scene(name: "42-handoff-replied", state: BarState(body: .working(status: "Nothing typed", busy: false), agent: hermes),
+                  card: cardModel(.handOff(handOff([.key(.returnKey), .chunk("Done. I'll text you at 4:55 to call Theo."), .sent(note: "Hermes answered.")])),
+                                  heading: "Hermes")),
+            Scene(name: "43-card-long", state: BarState(body: .working(status: "Ready", busy: false), agent: hermes),
+                  card: cardModel(.draft(draft([.chunk(longDraft), .finished])))),
         ]
     }
 

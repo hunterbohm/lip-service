@@ -370,6 +370,44 @@ private struct Rig {
         #expect(prompt.request == request)
     }
 
+    @Test func aFailureWhileAChangeIsSaidKeepsTheChangeAndRetriesWithIt() {
+        var card = DraftCard(typesDirectly: false)
+        _ = card.handle(.released)
+        _ = card.handle(.heard("reply yes"))
+        _ = card.handle(DraftCard.Event.chunk("Yes."))
+        _ = card.handle(.listen)
+        _ = card.handle(.failed("Hermes stopped"))
+        _ = card.handle(.released)
+        #expect(card.handle(.heard("make it longer")) == [.send(words: "reply yes\nmake it longer", isChange: false)])
+
+        var cancelled = DraftCard(typesDirectly: false)
+        _ = cancelled.handle(.released)
+        _ = cancelled.handle(.heard("reply yes"))
+        _ = cancelled.handle(.listen)
+        _ = cancelled.handle(.failed("Hermes stopped"))
+        _ = cancelled.handle(.cancelled)
+        #expect(cancelled.phase == .failed("Hermes stopped"))
+    }
+
+    @Test func aChangeDeclinesEveryQuestionWaitingUnderIt() {
+        let first = PermissionRequest(rpcID: 6, session: "s", title: "Read a file", options: [
+            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
+        ])
+        let second = PermissionRequest(rpcID: 7, session: "s", title: "Run a command", options: [
+            .init(id: "allow", name: "Allow", kind: "allow_once"), .init(id: "no", name: "Reject", kind: "reject_once"),
+        ])
+        var card = DraftCard(typesDirectly: false)
+        _ = card.handle(.released)
+        _ = card.handle(.heard("reply yes"))
+        _ = card.handle(DraftCard.Event.chunk("Yes."))
+        _ = card.handle(.listen)
+        _ = card.handle(.asked(PermissionPrompt(first)))
+        _ = card.handle(.asked(PermissionPrompt(second)))
+        _ = card.handle(.released)
+        #expect(card.handle(.heard("shorter")) == [.answer(second, optionID: "no"), .answer(first, optionID: "no"),
+                                                   .send(words: "shorter", isChange: true)])
+    }
+
     @Test func anUnreachableAgentKeepsTheWordsForCopyAndRetry() {
         var card = DraftCard(typesDirectly: false)
         _ = card.handle(.released)

@@ -179,11 +179,14 @@ public struct DraftCard: Equatable, Sendable {
         case (_, .listen) where isChangeable:
             phase = .listening(over: phase)
             return []
-        // The draft underneath keeps going while a change is said over it, and a question it asks waits there.
-        case (.listening(let over?), .chunk), (.listening(let over?), .finished), (.listening(let over?), .asked):
+        // The draft underneath keeps going while a change is said over it, and what happens to it waits there: a
+        // question it asks, or its failure, which the change then retries.
+        case (.listening(let over?), .chunk), (.listening(let over?), .finished), (.listening(let over?), .asked),
+             (.listening(let over?), .failed):
             phase = .listening(over: continuing(over, with: event, at: now))
             return []
-        case (.transcribing(let over?), .chunk), (.transcribing(let over?), .finished), (.transcribing(let over?), .asked):
+        case (.transcribing(let over?), .chunk), (.transcribing(let over?), .finished), (.transcribing(let over?), .asked),
+             (.transcribing(let over?), .failed):
             phase = .transcribing(over: continuing(over, with: event, at: now))
             return []
         case (.listening(let over), .released):
@@ -200,8 +203,11 @@ public struct DraftCard: Equatable, Sendable {
             }
             requests.append(words)
             // A question still waiting under the change is declined, since the change replaces the turn that asked it.
-            var effects: [Effect] = []
-            if case .permission(let prompt, _) = over { effects.append(.answer(prompt.request, optionID: prompt.request.rejection?.id)) }
+            var effects: [Effect] = [], waiting = over
+            while case .permission(let prompt, let resume) = waiting {
+                effects.append(.answer(prompt.request, optionID: prompt.request.rejection?.id))
+                waiting = resume
+            }
             return effects + startThinking(draft: over.flatMap { DraftCard(phase: $0).text })
 
         case (.thinking, .chunk(let text)), (.streaming, .chunk(let text)):

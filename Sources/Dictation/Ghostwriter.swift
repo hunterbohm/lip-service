@@ -31,7 +31,18 @@ import os
         var handOff: HandOffCard?
         var session: (client: ACPClient, id: String)?
         var prompt: Task<Void, Never>?
-        var permission: CheckedContinuation<String?, Never>?
+        /// The agent's questions still waiting for an answer. An agent can ask a second before the first is answered.
+        var permissions: [(request: PermissionRequest, answer: CheckedContinuation<String?, Never>)] = []
+
+        func answer(_ request: PermissionRequest, with optionID: String?) {
+            guard let index = permissions.firstIndex(where: { $0.request == request }) else { return }
+            permissions.remove(at: index).answer.resume(returning: optionID)
+        }
+
+        func declineAll() {
+            for waiting in permissions { waiting.answer.resume(returning: nil) }
+            permissions = []
+        }
         var timer: Timer?
         var words = ""
         /// The release of the latest request, for the timing log.
@@ -232,9 +243,8 @@ import os
             run.turn += 1
             let turn = run.turn
             run.prompt = Task { await self.send(words, isChange: isChange, turn: turn, in: run) }
-        case .answer(_, let optionID):
-            run.permission?.resume(returning: optionID)
-            run.permission = nil
+        case .answer(let request, let optionID):
+            run.answer(request, with: optionID)
         case .type(let text):
             Task { await self.type(text, in: run) }
         case .copy(let text):
@@ -243,8 +253,7 @@ import os
         case .cancel:
             run.prompt?.cancel()
             if let session = run.session { Task { await session.client.cancel(session: session.id) } }
-            run.permission?.resume(returning: nil)
-            run.permission = nil
+            run.declineAll()
         }
     }
 
@@ -277,7 +286,7 @@ import os
                 await withCheckedContinuation { continuation in
                     Task { @MainActor in
                         guard let self, self.run === run, run.turn == turn else { return continuation.resume(returning: request.rejection?.id) }
-                        run.permission = continuation
+                        run.permissions.append((request, continuation))
                         self.event(.asked(PermissionPrompt(request)), in: run)
                     }
                 }
@@ -433,7 +442,7 @@ import os
         if let run {
             run.prompt?.cancel()
             if let session = run.session { Task { await session.client.cancel(session: session.id) } }
-            run.permission?.resume(returning: nil)
+            run.declineAll()
             run.timer?.invalidate()
         }
         run = nil

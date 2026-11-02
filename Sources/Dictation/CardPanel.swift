@@ -44,7 +44,7 @@ enum CardAction: Equatable {
         host.rootView = AnyView(CardView(model: model, onAction: { [weak self] in self?.onAction?($0) }))
         let size = host.fittingSize
         var frame = anchor.edge.placeToast(width: size.width, height: size.height, against: BarRect(anchor.frame), gap: 10)
-        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor.frame) }) ?? NSScreen.main {
+        if let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor.frame) }) {
             frame = frame.moved(into: BarRect(screen.visibleFrame))
         }
         panel.setFrame(NSRect(frame), display: true)
@@ -172,16 +172,34 @@ private struct CardView: View {
     }
 
     private func body(_ text: String, dimmed: Bool = false) -> some View {
-        Text(text.isEmpty ? " " : text)
+        let shown = Text(text.isEmpty ? " " : text)
             .font(.system(size: 14))
             .lineSpacing(4)
             .foregroundStyle(Theme.text.opacity(dimmed ? 0.55 : 1))
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
             .textSelection(.enabled)
+        return Group {
+            if Self.textHeight(text) > Self.maxBodyHeight {
+                ScrollView { shown }.frame(height: Self.maxBodyHeight)
+            } else {
+                shown
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    /// A long reply, such as a drafted prompt, scrolls inside the card instead of growing it past the screen.
+    static let maxBodyHeight: CGFloat = 320
+
+    private static func textHeight(_ text: String) -> CGFloat {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 4
+        return NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 14), .paragraphStyle: paragraph])
+            .boundingRect(with: NSSize(width: width - 32, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading])
+            .height
     }
 
     private func note(_ text: String) -> some View {
