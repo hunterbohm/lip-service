@@ -46,6 +46,7 @@ private let noon = Date(timeIntervalSince1970: 1_793_620_800)
     @Test func reportsAgainOnTheNextUTCDay() async {
         let rig = Rig(), reporter = rig.reporter()
         reporter.used(.dictation)
+        await reporter.finishSending()
         rig.box.time = noon.addingTimeInterval(86_400)
         reporter.used(.ghostwrite)
         await reporter.finishSending()

@@ -373,12 +373,11 @@ private struct GhostwriteStep: View {
             var agent: AgentConnection
             let typed = model.customCommand.trimmingCharacters(in: .whitespaces)
             if model.choice == "custom", let current = agents.current, current.presetID == "custom",
-               current.command.joined(separator: " ") == typed {
-                // Unchanged from what is saved, which keeps arguments that contain spaces whole.
+               current.command == ShellWords.split(typed) {
                 agent = current
             } else if model.choice == "custom" {
                 agent = AgentPreset.with(id: "custom")!.connection()
-                agent.command = typed.split(separator: " ").map(String.init)
+                agent.command = ShellWords.split(typed)
                 if let existing = agents.agents.first(where: { $0.presetID == "custom" && $0.command == agent.command }) { agent = existing }
             } else {
                 guard let preset = AgentPreset.with(id: model.choice) else { return }
@@ -439,7 +438,7 @@ private struct GhostwriteStep: View {
             if let current = services.preferences.current.settings.agents.current {
                 model.choice = current.presetID
                 if model.hermesHost.isEmpty, let host = current.hostName { model.hermesHost = host }
-                if model.customCommand.isEmpty, current.presetID == "custom" { model.customCommand = current.command.joined(separator: " ") }
+                if model.customCommand.isEmpty, current.presetID == "custom" { model.customCommand = ShellWords.join(current.command) }
             }
         }
     }

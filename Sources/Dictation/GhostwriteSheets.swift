@@ -155,9 +155,7 @@ struct AgentSheet: View {
         let update = update(agent)
         return VStack(alignment: .leading, spacing: 10) {
             LabeledField(title: "Name", text: Binding(get: { agent.name }, set: { value in update { $0.name = value } }))
-            LabeledField(title: "Command", text: Binding(get: { agent.command.joined(separator: " ") },
-                                                         set: { value in update { $0.command = value.split(separator: " ").map(String.init) } }),
-                         help: "Runs through your login shell, so it finds the same programs your terminal does.")
+            CommandField(command: agent.command) { words in update { $0.command = words } }
             LabeledField(title: "Runs on", text: Binding(get: { agent.remoteHost ?? "" }, set: { value in update { $0.remoteHost = value.isEmpty ? nil : value } }),
                          prompt: "This Mac", help: "Another Mac's ssh name, such as mini, to run the agent there over ssh.")
             LabeledField(title: "Also called", text: Binding(get: { agent.spokenNames.joined(separator: ", ") },
@@ -216,6 +214,23 @@ struct VoiceSheet: View {
                 if let problem = services.agents.buildProblem { Text(problem).font(.system(size: 13)).foregroundStyle(Theme.amber) }
             }
         }
+    }
+}
+
+/// The command exactly as typed, saved as shell words on every change. The field keeps the typed text, so a space or
+/// an unclosed quote isn't rewritten while typing; it reloads only when the saved command changes from elsewhere.
+private struct CommandField: View {
+    let command: [String]
+    let save: ([String]) -> Void
+    @State private var text = ""
+
+    var body: some View {
+        LabeledField(title: "Command", text: Binding(get: { text }, set: { value in
+            text = value
+            save(ShellWords.split(value))
+        }), help: "Runs through your login shell, so it finds the same programs your terminal does. Quote a path that has spaces.")
+        .onAppear { text = ShellWords.join(command) }
+        .onChange(of: command) { if ShellWords.split(text) != command { text = ShellWords.join(command) } }
     }
 }
 

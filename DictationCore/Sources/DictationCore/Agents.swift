@@ -119,6 +119,47 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
     }
 }
 
+/// A typed command line split into words the way a shell splits it: spaces separate words, single quotes keep
+/// everything inside, double quotes keep spaces, and a backslash keeps the next character. The inverse of quoting
+/// each word with `ShellQuote`.
+public enum ShellWords {
+    public static func split(_ line: String) -> [String] {
+        var words: [String] = [], word = "", inWord = false, escaped = false
+        var quote: Character?
+        for character in line {
+            if escaped {
+                word.append(character)
+                escaped = false
+                continue
+            }
+            if let open = quote {
+                if character == open { quote = nil } else if character == "\\" && open == "\"" { escaped = true } else { word.append(character) }
+                continue
+            }
+            switch character {
+            case "'", "\"":
+                quote = character
+                inWord = true
+            case "\\":
+                escaped = true
+                inWord = true
+            case " ", "\t", "\n":
+                if inWord { words.append(word) }
+                word = ""
+                inWord = false
+            default:
+                word.append(character)
+                inWord = true
+            }
+        }
+        if inWord { words.append(word) }
+        return words
+    }
+
+    /// Words joined so `split` gives them back, for showing a command in a text field.
+    public static func join(_ words: [String]) -> String { words.map(ShellQuote.quote).joined(separator: " ") }
+}
+
 public enum ShellQuote {
     /// Single quotes, with any single quote inside closed, escaped and reopened. Plain words stay bare.
     public static func quote(_ word: String) -> String {

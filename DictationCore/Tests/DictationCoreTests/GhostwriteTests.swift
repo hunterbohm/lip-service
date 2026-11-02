@@ -423,6 +423,14 @@ private struct Rig {
         #expect(!PermissionRequest(rpcID: 9, session: "s", title: "Edit a file", options: request.options).isSameQuestion(as: request))
     }
 
+    @Test func aTypedCommandSplitsLikeAShellAndJoinsBack() {
+        #expect(ShellWords.split(#"python3 "/Users/Shared/My Agent/acp.py""#) == ["python3", "/Users/Shared/My Agent/acp.py"])
+        #expect(ShellWords.split(#"run 'it is' a\ b  "say \"hi\"" ''"#) == ["run", "it is", "a b", #"say "hi""#, ""])
+        #expect(ShellWords.split("  hermes   acp ") == ["hermes", "acp"])
+        let words = ["/opt/My Tools/agent", "--name", "it's", "acp"]
+        #expect(ShellWords.split(ShellWords.join(words)) == words)
+    }
+
     @Test func commonSetupErrorsGetAPlainNextStep() {
         var hermes = AgentPreset.with(id: "hermes")!.connection()
         hermes.remoteHost = "mini"
