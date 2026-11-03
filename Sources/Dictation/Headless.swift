@@ -26,9 +26,11 @@ enum Mode {
                    --clip locates the clip when the binary runs outside the app bundle.
                    --models reads the models from DIR instead of FluidAudio's folder.
                Dictation --bench [--rounds N] [--hold-cap S] [--gap S] [--warm on|off] [--preview on|off]
-                         [--vocabulary PATH] [--screen-names PATH] [--models DIR] CLIP.wav...
+                         [--vocabulary PATH] [--screen-names PATH] [--models DIR] [--format-app GROUP] CLIP.wav...
                    Prints one JSON line per clip and round. Round 0 warms up on the first clip.
                    --screen-names boosts the names in PATH, one per line, as names from the screen at each key-down.
+                   With the smart formatting model installed, each line also has the formatted text and its time.
+                   --format-app formats for one app group: messages, workChat, email, aiAndCode or everythingElse.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
                Dictation --render-bar DIR
@@ -85,6 +87,12 @@ enum Mode {
                     case "--gap": options.gap = try Self.number(of: argument, from: &rest, Double.init, in: 0...600)
                     case "--warm": options.warm = try Self.switchValue(of: argument, from: &rest)
                     case "--preview": options.preview = try Self.switchValue(of: argument, from: &rest)
+                    case "--format-app":
+                        let name = try Self.value(of: argument, from: &rest)
+                        guard let group = ProfileGroup(rawValue: name) else {
+                            throw DictationError("--format-app is one of \(ProfileGroup.allCases.map(\.rawValue).joined(separator: ", "))")
+                        }
+                        options.formatApp = group
                     case "--vocabulary": options.vocabulary = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case "--screen-names": options.screenNames = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case "--models": options.models = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
@@ -211,6 +219,8 @@ enum Headless {
         var warm = true
         /// Previews while the simulated key is held, as the app runs them.
         var preview = true
+        /// The app group smart formatting formats for, when its model is installed.
+        var formatApp: ProfileGroup?
         /// The bakeoff's unless given.
         var vocabulary: URL?
         /// Names boosted at each key-down the way names from the screen are.
@@ -299,6 +309,9 @@ enum Headless {
         }
 
         let engine = SpeechEngine(vocabulary: vocabulary, options: .init(models: store))
+        let formatter = SmartFormatter()
+        await formatter.load()
+        log("bench: smart formatting \(await formatter.state)")
         guard let boosting = await waitUntilReady(engine, printProgress: false) else { return 1 }
         log("bench: model ready, boosting \(describe(boosting)), \(clips.count) clips, \(options.rounds) rounds, "
             + "hold cap \(options.holdCap) s, gap \(options.gap) s, warm \(options.warm ? "on" : "off"), "
@@ -330,10 +343,16 @@ enum Headless {
                 do {
                     let dictation = try await dictating.value
                     row["release_to_text_s"] = Instant.now - released
+                    if let formatted = await formatter.format(dictation, app: options.formatApp) {
+                        row["formatted"] = formatted.text
+                        row["format_s"] = formatted.seconds
+                        row["release_to_formatted_s"] = Instant.now - released
+                    }
                     row.merge(["raw": dictation.raw, "boosted": dictation.boosted ?? NSNull(), "text": dictation.text,
                                "waited_s": dictation.waited, "decode_s": dictation.decode,
                                "rescore_s": dictation.rescore, "finish_s": dictation.finish,
-                               "screen_terms": dictation.screenTerms]) { old, _ in old }
+                               "screen_terms": dictation.screenTerms,
+                               "tokens": dictation.tokens.map { [$0.text, $0.start, $0.end] as [Any] }]) { old, _ in old }
                 } catch {
                     failures += 1
                     row["error"] = error.localizedDescription

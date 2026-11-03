@@ -232,13 +232,15 @@ public struct Insertion: Equatable, Sendable {
     public var again: Insertion { Insertion(text: text, source: source == .snippet ? .snippet : .pasteLast) }
 
     /// The cleaned dictation for the app it goes into: a snippet when the dictation is its cue, otherwise the text in
-    /// its group's style, and whether to press Return.
-    public static func make(_ cleaned: String, app bundleID: String?, configuration: Configuration) -> Insertion {
+    /// its group's style, and whether to press Return. `formatted` is the cleaned text with smart formatting, when it ran.
+    /// The snippet cue is matched on the cleaned text, so formatting never hides one.
+    public static func make(_ cleaned: String, formatted: String? = nil, app bundleID: String?,
+                            configuration: Configuration) -> Insertion {
         let rules = configuration.settings.profiles.rules(for: bundleID)
         if let snippet = Snippets.match(cleaned, in: configuration.settings.snippets) {
             return Insertion(text: snippet.text, pressReturn: rules.pressReturn, source: .snippet)
         }
-        return Insertion(text: rules.style.apply(cleaned, keeping: configuration.vocabulary.terms.map(\.text)),
+        return Insertion(text: rules.style.apply(formatted ?? cleaned, keeping: configuration.vocabulary.terms.map(\.text)),
                          pressReturn: rules.pressReturn, source: .dictation)
     }
 }

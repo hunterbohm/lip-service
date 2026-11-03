@@ -13,6 +13,14 @@ public struct Recording: Sendable {
     public var seconds: Double { Double(samples.count) / Self.sampleRate }
 }
 
+/// One piece of the speech model's output and when it was heard, in seconds from the start of the audio.
+public struct TimedToken: Equatable, Sendable {
+    public var text: String
+    public var start: Double
+    public var end: Double
+    public init(text: String, start: Double, end: Double) { (self.text, self.start, self.end) = (text, start, end) }
+}
+
 public struct Dictation: Equatable, Sendable {
     /// The only thing inserted.
     public var text: String
@@ -26,12 +34,15 @@ public struct Dictation: Equatable, Sendable {
     public var finish: Double
     /// Names from the screen boosted on top of the vocabulary.
     public var screenTerms: Int
+    /// The decoder's pieces of `raw`, with their times. Empty when the model gave none.
+    public var tokens: [TimedToken]
 
     public init(text: String, raw: String, boosted: String?, waited: Double, decode: Double, rescore: Double,
-                finish: Double, screenTerms: Int = 0) {
+                finish: Double, screenTerms: Int = 0, tokens: [TimedToken] = []) {
         (self.text, self.raw, self.boosted) = (text, raw, boosted)
         (self.waited, self.decode, self.rescore, self.finish) = (waited, decode, rescore, finish)
         self.screenTerms = screenTerms
+        self.tokens = tokens
     }
 }
 
@@ -184,6 +195,8 @@ public struct Settings: Equatable, Codable, Sendable {
     public var screenNames = true
     /// Adds a word to the dictionary when the user corrects one word of a dictation.
     public var learnFixes = true
+    /// Adds paragraphs, lists and quotes with the formatting model, when it is installed.
+    public var smartFormatting = true
     /// Held, the agent writes a draft from what you say. Nil turns Ghostwrite off.
     public var ghostwriteKey: Shortcut? = Shortcut(key: 63, modifiers: [.control])
     /// Held, what you say goes to the agent's own app as a task. Nil turns Hand off off.
@@ -229,6 +242,7 @@ public struct Settings: Equatable, Codable, Sendable {
         muteWhileDictating = value(.muteWhileDictating, defaults.muteWhileDictating)
         screenNames = value(.screenNames, defaults.screenNames)
         learnFixes = value(.learnFixes, defaults.learnFixes)
+        smartFormatting = value(.smartFormatting, defaults.smartFormatting)
         // A dictation key saved before the agent keys existed may be one of their defaults. It stays a dictation key.
         ghostwriteKey = (container.contains(.ghostwriteKey) ? value(.ghostwriteKey, Shortcut?.none) : defaults.ghostwriteKey)
             .flatMap { hotkeys.contains($0) ? nil : $0 }
@@ -241,7 +255,7 @@ public struct Settings: Equatable, Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
-        case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, ghostwriteKey, handOffKey, agents
+        case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, smartFormatting, ghostwriteKey, handOffKey, agents
         case sendUsageCount, checkForUpdates
     }
 
@@ -264,6 +278,7 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(muteWhileDictating, forKey: .muteWhileDictating)
         try container.encode(screenNames, forKey: .screenNames)
         try container.encode(learnFixes, forKey: .learnFixes)
+        try container.encode(smartFormatting, forKey: .smartFormatting)
         try container.encode(ghostwriteKey, forKey: .ghostwriteKey)
         try container.encode(handOffKey, forKey: .handOffKey)
         try container.encode(agents, forKey: .agents)

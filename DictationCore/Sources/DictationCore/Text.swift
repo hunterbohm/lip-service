@@ -283,6 +283,12 @@ struct Pattern: @unchecked Sendable {
         return pieces + [source.substring(from: cursor)]
     }
 
+    /// Every match, in order.
+    func all(_ text: String) -> [String] {
+        let source = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: source.length)).map { source.substring(with: $0.range) }
+    }
+
     func matches(_ text: String) -> Bool {
         regex.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
     }
