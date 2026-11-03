@@ -168,7 +168,7 @@ public enum ModelCheck {
     }
 
     /// Nil when the file cannot be read, which never equals a listed hash.
-    static func sha256(of url: URL) -> String? {
+    public static func sha256(of url: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         var hasher = SHA256()

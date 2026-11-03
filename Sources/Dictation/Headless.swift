@@ -12,6 +12,7 @@ enum Mode {
     case renderBar(URL)
     case renderWindow(URL)
     case importWillowDryRun(URL)
+    case installFormatter(URL)
     case agentBench(AgentBench.Options)
     case handOffTest(HandOffTest.Options)
     case t3Connect(home: String?, code: String)
@@ -60,6 +61,8 @@ enum Mode {
                    Asks the agent (the default one unless given) to answer, and prints how long it took or why it did not.
                Dictation --import-willow-dry-run WILLOW_FOLDER
                    Prints what Import from Willow would add and change. Writes nothing.
+               Dictation --install-formatter ARCHIVE
+                   Checks a copy of the published smart formatting archive the way a download is checked, and installs it.
         """
 
     /// Anything that is not a headless flag runs the app, since LaunchServices can pass its own arguments.
@@ -108,6 +111,8 @@ enum Mode {
                 self = .renderBar(URL(fileURLWithPath: try Self.value(of: "--render-bar", from: &rest)))
             case "--render-window":
                 self = .renderWindow(URL(fileURLWithPath: try Self.value(of: "--render-window", from: &rest)))
+            case "--install-formatter":
+                self = .installFormatter(URL(fileURLWithPath: try Self.value(of: "--install-formatter", from: &rest)))
             case "--import-willow-dry-run":
                 self = .importWillowDryRun(URL(fileURLWithPath: try Self.value(of: "--import-willow-dry-run", from: &rest)))
             case "--agent-bench":
@@ -310,7 +315,7 @@ enum Headless {
 
         let engine = SpeechEngine(vocabulary: vocabulary, options: .init(models: store))
         let formatter = SmartFormatter()
-        await formatter.load()
+        await formatter.load(download: false)
         log("bench: smart formatting \(await formatter.state)")
         guard let boosting = await waitUntilReady(engine, printProgress: false) else { return 1 }
         log("bench: model ready, boosting \(describe(boosting)), \(clips.count) clips, \(options.rounds) rounds, "

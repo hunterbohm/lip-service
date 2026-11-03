@@ -14,7 +14,7 @@ Download it at [uselipservice.com](https://uselipservice.com), or [install it wi
 
 - A Mac with Apple silicon. The app is built for arm64 only, so it does not run on Intel Macs.
 - macOS 26 or later.
-- About 460 MB of disk space for the speech model, and about 100 MB more once you add a word to the dictionary.
+- About 460 MB of disk space for the speech model, about 240 MB more for smart formatting, and about 100 MB more once you add a word to the dictionary.
 - English. The speech model understands English only.
 - For Ghostwrite and Hand off only: an agent that speaks the Agent Client Protocol, such as Claude Code, Codex, Hermes, or OpenCode. Dictation needs none.
 
@@ -55,7 +55,7 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.8.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.9.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
@@ -89,6 +89,7 @@ From 1.0.8, Lip Service says in its menu bar menu and on the Home page when a ne
 - To paste your last dictation again, press Control+Command+V.
 - While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far, with a ring of blue dots around it that glows as you talk. Drag it to the top or to either side of the screen.
 - Lip Service removes filler words such as "um" and fixes capitals and punctuation.
+- **Smart formatting** adds paragraphs, numbered and bulleted lists, and quotation marks where they fit, without you saying "new paragraph" or "quote". Say "first… second… third…" and you get a numbered list. A model on your Mac reads what you said, your pauses, and the kind of app the text goes into. It only adds breaks, list markers and quotes, fixes punctuation, and drops counting words such as "first", so every other word goes in as you said it. To turn it off, clear **Smart formatting** on the **Dictation** page.
 - To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.
 - When you correct one word it typed, Lip Service adds your spelling to the dictionary and says so on the bar, with **Undo**.
 - Names shown in the window you're dictating into, such as the people in a chat, come out spelled the way the screen shows them. Lip Service reads them on your Mac when you start talking and keeps nothing.
@@ -116,8 +117,9 @@ The [reference](docs/reference.md) describes every feature and setting.
 ## Privacy
 
 - Speech becomes text on your Mac, with models that run on its chip. The audio stays in memory and is never written to disk or sent anywhere.
-- Lip Service goes online by itself for three things, each described below: the speech models, the usage count, and the update check. Ghostwrite and Hand off send only to the agent and apps you set up. It has no account.
+- Lip Service goes online by itself for four things, each described below: the speech models, the formatting model, the usage count, and the update check. Ghostwrite and Hand off send only to the agent and apps you set up. It has no account.
 - **Speech models.** On first launch it downloads its speech models from huggingface.co, at fixed versions and with no account token. It fetches only the files the app expects, refuses to write anywhere outside its model folder, and checks every file against a SHA-256 hash built into the app before it uses it.
+- **Formatting model.** With **Smart formatting** on, Lip Service downloads its formatting model once, about 110 MB, from this repository's GitHub releases, at a fixed version, with no cookies and no account. It checks the archive against a SHA-256 hash built into the app, and every file in it, before it uses it. The model runs on your Mac. It was trained only on made-up dictations, none of them real.
 - **Usage count.** Once a day, the first time you finish a dictation, a Ghostwrite or a Hand off, Lip Service sends one small report to a Cloudflare Worker that its author runs, so the author can see how many people use it. The report holds exactly five things: a SHA-256 hash of a random ID made on your Mac (the ID itself never leaves it), the Lip Service version, the macOS version, the UTC date, and which of dictation, Ghostwrite and Hand off you used first that day. It never holds your voice, your words, the names of your apps or windows, what is on your screen, or which agent you use. The server stores those five things and nothing else, with no IP address. It ignores a report it can't read and a second one for the same day. To turn it off, clear **Send an anonymous daily usage count** on the **Dictation** page, and nothing is sent. The code for the report is in `DictationCore/Sources/DictationCore/UsageCount.swift` and the server is in `usage-worker/`.
 - **Update check.** Once a day, Lip Service asks GitHub which release is newest and tells you in the menu bar menu and on the Home page when yours is older. The request carries no ID and no cookies, and the app installs nothing by itself. To turn it off, clear **Check for updates** on the **Dictation** page, and nothing is sent.
 - Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file. The Stats page is counted from this file on your Mac, and its share image holds totals and a calendar, never your words or the apps.
@@ -143,6 +145,10 @@ The test clips are 15 chat messages, emails, notes, and prompts for AI agents, r
 | Whisper large-v3-turbo, through whisper.cpp | 3.2% | 13 of 20 | 1.24 s |
 
 Every row is 5 rounds of the 15 clips. The Lip Service row comes from `ROUNDS=5 scripts/e2e.sh`, which runs the built app on each clip. 1.0.6 changed how names are matched, and that work was tuned while looking at these clips, so expect more misses on speech it has not seen. The other rows come from the bakeoff that picked the speech engine, in [bench/bakeoff-2026-10-25.txt](bench/bakeoff-2026-10-25.txt), where the two Apple engines are `dt-vocab` and `sa-vocab`, Parakeet is `pk`, and Whisper is `wh`. Lip Service spells the 13 names right because the test puts them in its dictionary. Your own names need to go in your dictionary in the same way.
+
+### Smart formatting
+
+The test is 400 of the author's own dictations that the formatting model never saw, run through the app, with Willow's formatting of the same recordings as the answer key. Of the 322 that Willow left without paragraphs, lists or quotes, Lip Service left 98% alone too. It found 9 of Willow's 11 list items and 11 of its 37 quotes, and 69% of the quotes it added are in Willow's text as well. Where to break a paragraph is partly taste, so those scores stay low for any formatter: Claude Sonnet, asked to format the same text, put 60% of its breaks where Willow did. The formatting step took a median 4.8 ms per dictation on a MacBook Pro with an M4 Pro, on top of the times below.
 
 ### Against Willow and Wispr Flow
 

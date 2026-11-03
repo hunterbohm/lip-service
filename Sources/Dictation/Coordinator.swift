@@ -67,7 +67,9 @@ import os
     }
 
     func start() {
-        Task { [formatter] in await formatter.load() }
+        Task { [formatter, preferences] in
+            await formatter.load(download: SettingsStore.isReal && preferences.current.settings.smartFormatting)
+        }
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
         keyTap.onPasteLast = { [unowned self] in pasteLast() }
         keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
@@ -298,6 +300,9 @@ import os
         usageCount.used(.dictation)
         let configuration = preferences.current
         var formatted: String?
+        if configuration.settings.smartFormatting, SettingsStore.isReal {
+            Task { [formatter] in await formatter.load(download: true) }
+        }
         if configuration.settings.smartFormatting,
            let result = await formatter.format(dictation, app: configuration.settings.profiles.group(for: target.app?.bundleID)) {
             formatted = result.text

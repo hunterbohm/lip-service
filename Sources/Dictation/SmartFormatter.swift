@@ -3,11 +3,14 @@ import DictationCore
 import Foundation
 import os
 
-/// Runs the smart formatting model from `Formatter/` in the support folder: `Formatter.mlpackage`, RoBERTa's
-/// `vocab.json` and `merges.txt`, and `formatter.json`. Without the folder, dictation goes in as before. The package
-/// is compiled once and the compiled copy kept beside it, so later launches only load it.
+/// Runs the smart formatting model: `Formatter.mlpackage`, RoBERTa's `vocab.json` and `merges.txt`, and
+/// `formatter.json`. The published model goes in `Formatter/` in the support folder, downloaded from the GitHub release
+/// that `PinnedFormatter` names and checked file by file against its table before Core ML reads it. A model you
+/// trained yourself goes in `Formatter-local/` and is used as it is. Without either, dictation goes in as before. The
+/// package is compiled once and the compiled copy kept beside it, so later launches only load it.
 actor SmartFormatter {
-    static let folder = SupportFolder.url.appending(path: "Formatter", directoryHint: .isDirectory)
+    static let pinnedFolder = SupportFolder.url.appending(path: "Formatter", directoryHint: .isDirectory)
+    static let localFolder = SupportFolder.url.appending(path: "Formatter-local", directoryHint: .isDirectory)
     private static let log = Logger(subsystem: "com.hunterbohm.dictation", category: "formatting")
 
     enum State: Equatable {
@@ -20,22 +23,48 @@ actor SmartFormatter {
     private(set) var state = State.loading
     private var model: MLModel?
     private var formatter: LayoutFormatter?
-    private var loaded: Task<Void, Never>?
+    private var loading: Task<Void, Never>?
+    private var lastDownloadFailure: Instant?
 
-    func load() async {
-        if let loaded { return await loaded.value }
-        let task = Task { await loadOnce() }
-        loaded = task
+    /// Loads the model, downloading the published one first when `download` is on and it is missing or damaged.
+    /// A later call with `download` on retries after a failure or a load that was not allowed to download.
+    func load(download: Bool) async {
+        if let loading { await loading.value }
+        switch state {
+        case .ready: return
+        case .loading where loading != nil: return
+        case .notInstalled where !download, .failed where !download: return
+        default: break
+        }
+        if let failed = lastDownloadFailure, Instant.now - failed < 3600 { return }
+        let task = Task { await loadOnce(download: download) }
+        loading = task
         await task.value
+        loading = nil
     }
 
-    private func loadOnce() async {
-        let folder = Self.folder
-        let package = folder.appending(path: "Formatter.mlpackage")
-        guard FileManager.default.fileExists(atPath: package.path) else {
-            state = .notInstalled
-            return
+    private func loadOnce(download: Bool) async {
+        state = .loading
+        let fm = FileManager.default
+        var folder = Self.localFolder
+        if !fm.fileExists(atPath: folder.appending(path: "Formatter.mlpackage").path) {
+            folder = Self.pinnedFolder
+            if !ModelCheck.problems(in: folder, for: PinnedFormatter.model).isEmpty {
+                guard download else {
+                    state = .notInstalled
+                    return
+                }
+                do {
+                    try await Self.downloadPinned()
+                } catch {
+                    lastDownloadFailure = .now
+                    state = .failed(error.localizedDescription)
+                    Self.log.error("smart formatting download failed: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+            }
         }
+        let package = folder.appending(path: "Formatter.mlpackage")
         do {
             let config = try JSONDecoder().decode(FormatterConfig.self, from: Data(contentsOf: folder.appending(path: "formatter.json")))
             let vocab = try JSONDecoder().decode([String: Int].self, from: Data(contentsOf: folder.appending(path: "vocab.json")))
@@ -55,6 +84,53 @@ actor SmartFormatter {
             state = .failed(error.localizedDescription)
             Self.log.error("smart formatting failed to load: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// One archive from the GitHub release, with no cookies, no cache and no credentials. It must have the pinned size and
+    /// hash, and after unpacking every file must match the table, before it replaces the folder.
+    private static func downloadPinned() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 3600
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.urlCredentialStorage = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.httpAdditionalHeaders = ["User-Agent": "Lip-Service"]
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        log.info("smart formatting: downloading \(PinnedFormatter.archive.absoluteString, privacy: .public)")
+        let (archive, response) = try await session.download(from: PinnedFormatter.archive)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw DictationError("The formatting model download answered \((response as? HTTPURLResponse)?.statusCode ?? 0).")
+        }
+        try install(archive)
+    }
+
+    /// Checks a copy of the published archive and unpacks it into place, the same way a download is.
+    static func install(_ archive: URL) throws {
+        let fm = FileManager.default
+        let size = (try? fm.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? -1
+        guard size == PinnedFormatter.archiveSize, ModelCheck.sha256(of: archive) == PinnedFormatter.archiveSHA256 else {
+            throw DictationError("The formatting model download is not the published file.")
+        }
+        let staging = SupportFolder.url.appending(path: "Formatter.partial", directoryHint: .isDirectory)
+        try? fm.removeItem(at: staging)
+        let ditto = Process()
+        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        ditto.arguments = ["-x", "-k", archive.path, staging.path]
+        try ditto.run()
+        ditto.waitUntilExit()
+        guard ditto.terminationStatus == 0 else { throw DictationError("The formatting model archive would not unpack.") }
+        let problems = ModelCheck.problems(in: staging, for: PinnedFormatter.model)
+        guard problems.isEmpty else {
+            try? fm.removeItem(at: staging)
+            throw DictationError("The formatting model differs from the published one: \(problems[0]).")
+        }
+        try? fm.removeItem(at: pinnedFolder)
+        try fm.moveItem(at: staging, to: pinnedFolder)
     }
 
     /// Recompiles when the package is newer than the compiled copy.
