@@ -259,8 +259,8 @@ public enum SmartLayout {
         guard j >= 0, labels[j].item == 0, counting.contains(keys[j]) else { return nil }
         func afterEnd(_ k: Int) -> Bool { k == 0 || [".", "?", "!", ":", ";"].contains(split(words[k - 1]).mark) }
         func startsPhrase(_ k: Int) -> Bool { afterEnd(k) || (leadIns.contains(keys[k - 1]) && afterEnd(k - 1)) }
-        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1]) && startsPhrase(j - 1)
-        guard open(j) || led else { return nil }
+        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1])
+        guard open(j) || (led && startsPhrase(j - 1)) else { return nil }
         let start = led ? j - 1 : j
         return SpokenCount(word: j, start: start, leadIn: open(start - 1) && leadIns.contains(keys[start - 1]) ? start - 1 : nil)
     }
