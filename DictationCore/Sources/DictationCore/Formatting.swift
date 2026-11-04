@@ -160,7 +160,7 @@ public enum SmartLayout {
             i > 0 && (keys[i - 1] == "bullet" || (keys[i - 1] == "point" && i > 1 && keys[i - 2] == "bullet"))
         }
         for i in labels.indices where labels[i].item == 2 && scores[i].item[2] < cut.bullet ?? 0 && !saidBullet(i) {
-            if let count = spokenCount(before: i, keys: keys, words: words, labels: labels), numbers[keys[count.word]] != nil {
+            if spokenCount(before: i, keys: keys, words: words, labels: labels)?.number != nil {
                 labels[i].item = 1
             } else {
                 labels[i].item = 0
@@ -192,7 +192,7 @@ public enum SmartLayout {
                 continue
             }
             let counts = run.map { spokenCount(before: $0, keys: keys, words: words, labels: labels) }
-            let said = counts.map { count in count.flatMap { numbers[keys[$0.word]] } }
+            let said = counts.map { $0?.number }
             if let first = said[0], first != 1, listedUpTo.map({ first != $0 + 1 }) ?? true {
                 for (i, count) in zip(run, counts) { keepCountAsParagraph(at: i, count: count, labels: &labels) }
                 continue
@@ -229,18 +229,19 @@ public enum SmartLayout {
     static let leadIns: Set<String> = ["and", "then", "next", "finally", "lastly", "also", "for"]
 
     static let countLeads: Set<String> = ["number", "step", "question"]
+    static let units = "one two three four five six seven eight nine".split(separator: " ").map(String.init)
+    static let tens = "twenty thirty forty fifty sixty seventy eighty ninety".split(separator: " ").map(String.init)
     static let numbers: [String: Int] = {
         var table: [String: Int] = [:]
         for (i, word) in "one two three four five six seven eight nine ten".split(separator: " ").enumerated() { table[String(word)] = i + 1 }
         for (i, word) in "first second third fourth fifth sixth seventh eighth ninth tenth".split(separator: " ").enumerated() { table[String(word)] = i + 1 }
         for n in 1..<100 { table[String(n)] = n }
-        let units = "one two three four five six seven eight nine".split(separator: " ").map(String.init)
         for (i, word) in "eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(separator: " ").enumerated() {
             table[String(word)] = i + 11
         }
-        for (i, tens) in "twenty thirty forty fifty sixty seventy eighty ninety".split(separator: " ").map(String.init).enumerated() {
-            table[tens] = 20 + 10 * i
-            for (n, unit) in units.enumerated() { table[tens + unit] = 20 + 10 * i + n + 1 }
+        for (i, ten) in tens.enumerated() {
+            table[ten] = 20 + 10 * i
+            for (n, unit) in units.enumerated() { table[ten + unit] = 20 + 10 * i + n + 1 }
         }
         return table
     }()
@@ -249,7 +250,7 @@ public enum SmartLayout {
     /// with "number", "step" or "question" before that (`start`), and a lead-in such as "and" before that. A count that
     /// ends a sentence ("order two.") belongs to the item before, unless a lead word that starts a phrase makes it a
     /// phrase of its own ("Number four.", but not "Order number two.").
-    struct SpokenCount { var word: Int, start: Int, leadIn: Int? }
+    struct SpokenCount { var word: Int, start: Int, leadIn: Int?, number: Int? }
 
     private static func spokenCount(before item: Int, keys: [String], words: [String], labels: [LayoutLabel]) -> SpokenCount? {
         func open(_ k: Int) -> Bool {
@@ -259,10 +260,13 @@ public enum SmartLayout {
         guard j >= 0, labels[j].item == 0, counting.contains(keys[j]) else { return nil }
         func afterEnd(_ k: Int) -> Bool { k == 0 || [".", "?", "!", ":", ";"].contains(split(words[k - 1]).mark) }
         func startsPhrase(_ k: Int) -> Bool { afterEnd(k) || (leadIns.contains(keys[k - 1]) && afterEnd(k - 1)) }
-        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1])
-        guard open(j) || (led && startsPhrase(j - 1)) else { return nil }
-        let start = led ? j - 1 : j
-        return SpokenCount(word: j, start: start, leadIn: open(start - 1) && leadIns.contains(keys[start - 1]) ? start - 1 : nil)
+        // "twenty one" is one count.
+        let first = units.contains(keys[j]) && open(j - 1) && tens.contains(keys[j - 1]) ? j - 1 : j
+        let led = !countLeads.contains(keys[j]) && open(first - 1) && countLeads.contains(keys[first - 1])
+        guard open(j) || (led && startsPhrase(first - 1)) else { return nil }
+        let start = led ? first - 1 : first
+        return SpokenCount(word: j, start: start, leadIn: open(start - 1) && leadIns.contains(keys[start - 1]) ? start - 1 : nil,
+                           number: numbers[first < j ? keys[first] + keys[j] : keys[j]])
     }
 
     /// Drops the spoken count in front of a list item, and its lead-in.
@@ -298,7 +302,10 @@ public enum SmartLayout {
             let heardAfterStop = [".", "?", "!"].contains(previousHeardMark)
             previousHeardMark = parts.mark
             if label.drop {
-                spokenNumber = numbers[key(parts.core)] ?? spokenNumber
+                if let value = numbers[key(parts.core)] {
+                    let afterTens = spokenNumber.map { (20...90).contains($0) && $0 % 10 == 0 } ?? false
+                    spokenNumber = afterTens && value < 10 ? spokenNumber! + value : value
+                }
                 continue
             }
             if parts.core.isEmpty { continue }
