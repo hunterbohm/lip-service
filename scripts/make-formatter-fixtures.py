@@ -2,7 +2,7 @@
 """Regenerates the smart formatting parity fixtures from the training code, so the Swift port is checked against
 the Python the model was trained and scored with.
 
-usage: make-formatter-fixtures.py TRAINING_DIR MODEL_DIR FORMATTER_DIR
+usage: make-formatter-fixtures.py TRAINING_DIR MODEL_DIR
 
 Run it with the training environment's Python (it needs torch and transformers). Only made-up example text goes
 into the fixtures: the made-up test set, and fixed tricky words.
@@ -12,7 +12,7 @@ import os
 import random
 import sys
 
-training, model_dir, formatter = sys.argv[1], sys.argv[2], sys.argv[3]
+training, model_dir = sys.argv[1], sys.argv[2]
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, training)
 sys.path.insert(0, os.path.join(root, "bench"))
@@ -20,7 +20,7 @@ import torch  # noqa: E402
 import train  # noqa: E402
 from build_data2 import gaps_for  # noqa: E402
 from cleanup import deterministic  # noqa: E402
-from labels import decide, render  # noqa: E402
+from labels import PUNCT, decide, key, render, split_word  # noqa: E402
 
 meta = json.load(open(f"{model_dir}/meta.json"))
 tok = train.tokenizer_for(model_dir)
@@ -28,8 +28,8 @@ train.FEATURES = set(meta["features"])
 model = train.Tagger(meta["base"], meta["vocab_size"])
 model.load_state_dict(torch.load(f"{model_dir}/tagger.pt", map_location="cpu"))
 model.eval()
-c = json.load(open(f"{formatter}/formatter.json"))["cut"]
-cut = {"brk": c["brk"], "item": c["item"], "quote": c["quote"], "drop": c["drop"], "min_words_for_breaks": c["minWordsForBreaks"]}
+# The cut FormatterTests.swift scores the fixtures with, so the fixtures don't change with each release's cut.
+cut = dict(brk=.7, item=.25, quote=.7, drop=.5, min_words_for_breaks=60)
 rows = json.load(open(f"{training}/data2/test_synth2.json"))
 rnd = random.Random(5)
 rnd.shuffle(rows)
@@ -78,6 +78,42 @@ for r in picked:
     probs = [{name: row[o:o + n] for (name, n), o in zip(train.HEADS, [0, 3, 6, 8, 10, 12, 19])} for row in flat]
     expected = render(r["words"], decide(r["words"], probs, cut))
     out.append(f"    ([{', '.join(s(w) for w in r['words'])}], {flat}, {s(expected)}),")
+out.append("]")
+out.append("")
+
+# Hand-built scores for the list rules: numbered items (1) and bulleted ones (2) at chosen words, each word's mark
+# and capital as heard. Scored with the cut below, which has the bullet bar.
+rule_cut = dict(cut, bullet=1.01, min_words_for_breaks=0)
+rule_cases = [
+    ("Number one yes do it. Number two no. Number eleven maybe later.", {2: 1, 7: 1, 10: 1}),
+    ("Yes we should do number two. Number three. Yes do that. Number four. Go over it together.", {8: 1, 13: 1}),
+    ("Number two, yes I have that. Number three it exists. Number four done.", {2: 1, 8: 1, 12: 1}),
+    ("Question thirty-one not sure. Question thirty-two skip it.", {2: 1, 6: 1}),
+    ("For question one yes and do this. Question two yes do that.", {3: 1, 9: 1}),
+    ("Do that. Number one. Go over it. Number two. Fine.", {4: 1, 9: 1}),
+    ("We need eggs, milk, and bread from the store.", {3: 2, 4: 2, 6: 2}),
+    ("Bullet point eggs. Bullet point milk.", {2: 2, 5: 2}),
+    ("One I do both. Two Sunday night. Three strict.", {1: 1, 5: 2, 8: 1}),
+    ("Number one yes. Number two fine. So anyway. Number three no. Number four sure.", {2: 1, 5: 1, 10: 1, 13: 1}, {6: 2}),
+]
+out.append("let ruleFixtures: [(words: [String], scores: [[Double]], expected: String)] = [")
+for text, items, *breaks in rule_cases:
+    ws = text.split()
+    flat = []
+    for i, w in enumerate(ws):
+        mark = split_word(w)[2]
+        row = [1, 0, 0] + [0] * 3 + [1, 0, 1, 0, 1, 0] + [0] * 7 + ([0, 1] if w[0].isupper() else [1, 0])
+        row[3 + items.get(i, 0)] = 1
+        if breaks and i in breaks[0]:
+            row[0:3] = [0, 0, 1]
+        if key(split_word(w)[1]) in ("bullet", "point"):
+            row[10:12] = [0, 1]
+        row[12 + PUNCT.index(mark)] = 1
+        flat.append(row)
+    probs = [{name: row[o:o + n] for (name, n), o in zip(train.HEADS, [0, 3, 6, 8, 10, 12, 19])} for row in flat]
+    expected = render(ws, decide(ws, probs, rule_cut))
+    out.append(f"    ([{', '.join(s(w) for w in ws)}], {flat}, {s(expected)}),")
+    print(repr(expected))
 out.append("]")
 out.append("")
 

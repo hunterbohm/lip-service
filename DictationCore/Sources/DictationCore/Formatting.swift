@@ -16,16 +16,19 @@ public struct FormatterConfig: Codable, Equatable, Sendable {
         public var id: Int
     }
 
-    /// The confidence each change needs, and the shortest dictation that may get breaks other than list items.
+    /// The confidence each change needs, and the shortest dictation that may get breaks other than list items. A
+    /// bulleted item also needs `bullet`, unless "bullet" was said before it; a model without one has no extra bar.
     public struct Cut: Codable, Equatable, Sendable {
         public var brk: Double
         public var item: Double
         public var quote: Double
         public var drop: Double
         public var minWordsForBreaks: Int
+        public var bullet: Double?
 
-        public init(brk: Double, item: Double, quote: Double, drop: Double, minWordsForBreaks: Int) {
+        public init(brk: Double, item: Double, quote: Double, drop: Double, minWordsForBreaks: Int, bullet: Double? = nil) {
             (self.brk, self.item, self.quote, self.drop, self.minWordsForBreaks) = (brk, item, quote, drop, minWordsForBreaks)
+            self.bullet = bullet
         }
     }
 
@@ -108,6 +111,7 @@ public enum SmartLayout {
     public static let marks = ["", ",", ".", "?", "!", ":", ";"]
     static let counting: Set<String> = Set(("number one two three four five six seven eight nine ten first second third fourth "
         + "fifth sixth seventh eighth ninth tenth step 1 2 3 4 5 6 7 8 9 10").split(separator: " ").map(String.init))
+        .union(numbers.keys)
     private static let openQuotes: Set<Character> = ["\"", "“"]
     private static let closeQuotes: Set<Character> = ["\"", "”"]
     private static let markSet: Set<Character> = [".", ",", "?", "!", ":", ";"]
@@ -152,6 +156,15 @@ public enum SmartLayout {
             for i in labels.indices where labels[i].item == 0 { labels[i].brk = 0 }
         }
         let keys = words.map { key(split($0).core) }
+        for i in labels.indices where labels[i].item == 2 && scores[i].item[2] < cut.bullet ?? 0
+            && (i == 0 || !["bullet", "point"].contains(keys[i - 1])) {
+            if i > 0, numbers[keys[i - 1]] != nil {
+                labels[i].item = 1
+            } else {
+                labels[i].item = 0
+                labels[i].brk = 0
+            }
+        }
         for i in labels.indices where labels[i].drop {
             let next = i + 1 < keys.count ? keys[i + 1] : "", previous = i > 0 ? keys[i - 1] : ""
             labels[i].drop = commandWords.contains(keys[i]) || commandPairs.contains([keys[i], next])
@@ -168,13 +181,21 @@ public enum SmartLayout {
             }
         }
         if !run.isEmpty { runs.append(run) }
+        // A count that starts partway answers numbered questions, unless it carries on the list before it.
+        var listedUpTo: Int?
         for run in runs {
             if run.count < 2 {
                 labels[run[0]].item = 0
                 labels[run[0]].brk = 0
                 continue
             }
+            let said = run.map { $0 > 0 ? numbers[keys[$0 - 1]] : nil }
+            if let first = said[0], first != 1, listedUpTo.map({ first != $0 + 1 }) ?? true {
+                for i in run { keepCountAsParagraph(at: i, keys: keys, labels: &labels) }
+                continue
+            }
             for i in run { dropCountingWords(before: i, keys: keys, words: words, labels: &labels) }
+            listedUpTo = said[said.count - 1]
         }
         for i in labels.indices where labels[i].drop {
             labels[i].quoteOpens = false
@@ -202,21 +223,57 @@ public enum SmartLayout {
     static let commandWords: Set<String> = ["unquote", "bullet"]
     static let commandPairs: Set<[String]> = [["new", "line"], ["new", "paragraph"], ["next", "line"], ["end", "quote"],
                                               ["close", "quote"], ["open", "quote"], ["bullet", "point"]]
-    static let leadIns: Set<String> = ["and", "then", "next", "finally", "lastly", "also"]
+    static let leadIns: Set<String> = ["and", "then", "next", "finally", "lastly", "also", "for"]
+
+    static let countLeads: Set<String> = ["number", "step", "question"]
+    static let numbers: [String: Int] = {
+        var table: [String: Int] = [:]
+        for (i, word) in "one two three four five six seven eight nine ten".split(separator: " ").enumerated() { table[String(word)] = i + 1 }
+        for (i, word) in "first second third fourth fifth sixth seventh eighth ninth tenth".split(separator: " ").enumerated() { table[String(word)] = i + 1 }
+        for n in 1..<100 { table[String(n)] = n }
+        let units = "one two three four five six seven eight nine".split(separator: " ").map(String.init)
+        for (i, word) in "eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(separator: " ").enumerated() {
+            table[String(word)] = i + 11
+        }
+        for (i, tens) in "twenty thirty forty fifty sixty seventy eighty ninety".split(separator: " ").map(String.init).enumerated() {
+            table[tens] = 20 + 10 * i
+            for (n, unit) in units.enumerated() { table[tens + unit] = 20 + 10 * i + n + 1 }
+        }
+        return table
+    }()
 
     /// The spoken count in front of a list item: the word just before it when it is a number or ordinal ("Second,"),
-    /// with "number" or "step" before that, and then a lead-in such as "and". A word that ends a sentence before the
-    /// count belongs to the previous item and stays.
+    /// with "number", "step" or "question" before that, and then a lead-in such as "and". A count that ends a sentence
+    /// ("order two.") belongs to the item before and stays, unless a lead word makes it a phrase of its own ("Number four.").
     private static func dropCountingWords(before item: Int, keys: [String], words: [String], labels: inout [LayoutLabel]) {
-        func open(_ k: Int) -> Bool { k >= 0 && labels[k].item == 0 && ![".", "?", "!", ":", ";"].contains(split(words[k]).mark) }
+        func free(_ k: Int) -> Bool { k >= 0 && labels[k].item == 0 }
+        func open(_ k: Int) -> Bool { free(k) && ![".", "?", "!", ":", ";"].contains(split(words[k]).mark) }
         var j = item - 1
-        guard open(j), counting.contains(keys[j]) else { return }
+        guard free(j), counting.contains(keys[j]) else { return }
+        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1])
+        guard open(j) || led else { return }
         labels[j].drop = true
-        if !["number", "step"].contains(keys[j]), open(j - 1), ["number", "step"].contains(keys[j - 1]) {
+        if led {
             j -= 1
             labels[j].drop = true
         }
         if open(j - 1), leadIns.contains(keys[j - 1]) { labels[j - 1].drop = true }
+    }
+
+    /// Counting that starts partway ("Number four ... Number five") answers numbered questions: the spoken count stays,
+    /// as "Number four:", and starts a paragraph.
+    private static func keepCountAsParagraph(at item: Int, keys: [String], labels: inout [LayoutLabel]) {
+        labels[item].item = 0
+        labels[item].brk = 0
+        labels[item].capital = true
+        var j = item - 1
+        guard j >= 0, counting.contains(keys[j]) else {
+            labels[item].brk = 2
+            return
+        }
+        if labels[j].punct <= 1 { labels[j].punct = marks.firstIndex(of: ":")! }
+        if j > 0, countLeads.contains(keys[j - 1]), !countLeads.contains(keys[j]) { j -= 1 }
+        labels[j].brk = 2
     }
 
     public static func render(words: [String], labels: [LayoutLabel]) -> String {
@@ -226,16 +283,21 @@ public enum SmartLayout {
         var first = true
         var previousMark = ""
         var previousHeardMark = "."
+        var spokenNumber: Int?
         for (word, label) in zip(words, labels) {
             let parts = split(word)
             let heardAfterStop = [".", "?", "!"].contains(previousHeardMark)
             previousHeardMark = parts.mark
-            if label.drop || parts.core.isEmpty { continue }
+            if label.drop {
+                spokenNumber = numbers[key(parts.core)] ?? spokenNumber
+                continue
+            }
+            if parts.core.isEmpty { continue }
             var brk = label.brk
             if label.item > 0, !first, brk == 0 { brk = 1 }
             var separator = first ? "" : [" ", "\n", "\n\n"][brk]
             if label.item > 0 {
-                number = inList ? number + 1 : 1
+                number = spokenNumber ?? (inList ? number + 1 : 1)
                 inList = true
                 separator += label.item == 1 ? "\(number). " : "- "
             } else if brk > 0 {
@@ -255,6 +317,7 @@ public enum SmartLayout {
             previousMark = mark
             out += separator + (label.quoteOpens ? "\"" : "") + core + mark + (label.quoteCloses ? "\"" : "")
             first = false
+            spokenNumber = nil
         }
         return out
     }

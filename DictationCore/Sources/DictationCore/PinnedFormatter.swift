@@ -3,14 +3,14 @@ import Foundation
 
 /// The published smart formatting model: one archive on a GitHub release, and every file it unpacks to.
 public enum PinnedFormatter {
-    public static let archive = URL(string: "https://github.com/hunterbohm/lip-service/releases/download/v1.0.9/Formatter-v1.0.9.zip")!
-    public static let archiveSize = 111356449
-    public static let archiveSHA256 = "cb326102f4cbc9bd4c84b3e01a0e12996eda93d6ab8783f35250960614f18084"
-    public static let model = PinnedModel(repo: "hunterbohm/lip-service", commit: "v1.0.9", folder: "Formatter", files: [
-        ModelFile("Formatter.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 625830, sha256: "6b684202a5b5c183ea23b9562c4cd9833a09056197722cc1bd55887a076ff097"),
-        ModelFile("Formatter.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 124688362, sha256: "2d33b98a002bf8a563f62349a7fffc48384e633e540363acac52b7dcce4e3855"),
-        ModelFile("Formatter.mlpackage/Manifest.json", size: 617, sha256: "9df0853404948d4a1b394aed522ba041f79ef71bb99ede5a48669a28fe4e26c2"),
-        ModelFile("formatter.json", size: 660, sha256: "2fa691f25fc5ee1936612f2a7b3c1c8c142e8eb3feb0fd743c1641fb6158d626"),
+    public static let archive = URL(string: "https://github.com/hunterbohm/lip-service/releases/download/v1.0.10/Formatter-v1.0.10.zip")!
+    public static let archiveSize = 111353880
+    public static let archiveSHA256 = "2acab77b1ec2bea771622f7b159638714a5ce53506480e408cd3b75e1c0217ac"
+    public static let model = PinnedModel(repo: "hunterbohm/lip-service", commit: "v1.0.10", folder: "Formatter", files: [
+        ModelFile("Formatter.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 625830, sha256: "548fb37fac4bba6fc68faafe2054866b54c2351d0680166a8fc5d451d785e355"),
+        ModelFile("Formatter.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 124688362, sha256: "7d8062b28e42acb2769c7e8d035124376e99d034470ea8c81e810c61e1504657"),
+        ModelFile("Formatter.mlpackage/Manifest.json", size: 617, sha256: "5f3cefcfd26c6338176fb8ca8a92a62ec5cb6bd800aa32303fa52e461f3bf6bd"),
+        ModelFile("formatter.json", size: 678, sha256: "221685a0faae1aec058cafca1b0a153c7fad6cd235c5baed4624509800e2db8b"),
         ModelFile("merges.txt", size: 456304, sha256: "ac33235097fe06d4a8fff0feac994644809e6eb6ab70669e1e9fd40ae032428e"),
         ModelFile("vocab.json", size: 1042454, sha256: "babf5099d5a7cfc65e5fa18b47b2fc026868b8e05408cf6659c2d2bf1a58c791"),
     ])

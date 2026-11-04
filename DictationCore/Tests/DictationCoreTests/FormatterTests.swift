@@ -36,6 +36,15 @@ private func scores(_ flat: [Double]) -> WordScores {
         #expect(SmartLayout.render(words: fixture.words, labels: labels) == fixture.expected)
     }
 
+    @Test("list rules match the training code: counts partway stay as paragraphs, numbers past ten, bullets need a bar",
+          arguments: ruleFixtures.indices)
+    func ruleParity(_ i: Int) {
+        let fixture = ruleFixtures[i]
+        let bulletCut = FormatterConfig.Cut(brk: 0.7, item: 0.25, quote: 0.7, drop: 0.5, minWordsForBreaks: 0, bullet: 1.01)
+        let labels = SmartLayout.decide(words: fixture.words, scores: fixture.scores.map(scores), cut: bulletCut)
+        #expect(SmartLayout.render(words: fixture.words, labels: labels) == fixture.expected)
+    }
+
     @Test("pauses match the training code", arguments: pauseFixtures.indices)
     func pauseParity(_ i: Int) {
         let fixture = pauseFixtures[i]
