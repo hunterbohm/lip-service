@@ -208,10 +208,10 @@ public enum SmartLayout {
     /// with "number" or "step" before that, and then a lead-in such as "and". A word that ends a sentence before the
     /// count belongs to the previous item and stays.
     private static func dropCountingWords(before item: Int, keys: [String], words: [String], labels: inout [LayoutLabel]) {
-        var j = item - 1
-        guard j >= 0, labels[j].item == 0, counting.contains(keys[j]) else { return }
-        labels[j].drop = true
         func open(_ k: Int) -> Bool { k >= 0 && labels[k].item == 0 && ![".", "?", "!", ":", ";"].contains(split(words[k]).mark) }
+        var j = item - 1
+        guard open(j), counting.contains(keys[j]) else { return }
+        labels[j].drop = true
         if !["number", "step"].contains(keys[j]), open(j - 1), ["number", "step"].contains(keys[j - 1]) {
             j -= 1
             labels[j].drop = true

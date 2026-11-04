@@ -100,6 +100,11 @@ private func scores(_ flat: [Double]) -> WordScores {
         for i in [1, 4] { flat[i][3] = 0; flat[i][4] = 1 }
         let labels = SmartLayout.decide(words: words, scores: flat.map(scores), cut: cut)
         #expect(SmartLayout.render(words: words, labels: labels) == "1. Order two\n2. Call Sam")
+        let ended = ["Order", "two.", "Call", "Sam."]
+        var endedScores = plain(ended.count)
+        for i in [0, 2] { endedScores[i][3] = 0; endedScores[i][4] = 1 }
+        let endedLabels = SmartLayout.decide(words: ended, scores: endedScores.map(scores), cut: cut)
+        #expect(SmartLayout.render(words: ended, labels: endedLabels) == "1. Order two\n2. Call Sam")
     }
 
     @Test("a drop score alone never removes a word that is not a spoken command")
