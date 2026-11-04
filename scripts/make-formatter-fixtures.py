@@ -97,6 +97,8 @@ rule_cases = [
     ("At this point we agree. At that point we leave.", {3: 2, 8: 2}),
     ("There are two. Buy milk. Buy eggs.", {3: 1, 5: 1}),
     ("There are two. Buy milk for two. Buy eggs.", {3: 2, 7: 2}),
+    ("Order number two. Call Sam.", {0: 1, 3: 1}),
+    ("Done. And number two. Call Sam. Number three. Rest.", {4: 1, 8: 1}),
     ("First, buy eggs. Buy milk. So anyway. Number three call Sam. Number four rest.", {1: 1, 3: 1, 9: 1, 13: 1}, {5: 2}),
     ("Number one yes. Number two fine. So anyway. Number three no. Number four sure.", {2: 1, 5: 1, 10: 1, 13: 1}, {6: 2}),
 ]

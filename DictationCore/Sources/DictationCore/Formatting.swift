@@ -247,8 +247,8 @@ public enum SmartLayout {
 
     /// The spoken count in front of a list item: the word just before it when it is a number or ordinal ("Second,"),
     /// with "number", "step" or "question" before that (`start`), and a lead-in such as "and" before that. A count that
-    /// ends a sentence ("order two.") belongs to the item before, unless a lead word makes it a phrase of its own
-    /// ("Number four.").
+    /// ends a sentence ("order two.") belongs to the item before, unless a lead word that starts a phrase makes it a
+    /// phrase of its own ("Number four.", but not "Order number two.").
     struct SpokenCount { var word: Int, start: Int, leadIn: Int? }
 
     private static func spokenCount(before item: Int, keys: [String], words: [String], labels: [LayoutLabel]) -> SpokenCount? {
@@ -257,7 +257,9 @@ public enum SmartLayout {
         }
         let j = item - 1
         guard j >= 0, labels[j].item == 0, counting.contains(keys[j]) else { return nil }
-        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1])
+        func afterEnd(_ k: Int) -> Bool { k == 0 || [".", "?", "!", ":", ";"].contains(split(words[k - 1]).mark) }
+        func startsPhrase(_ k: Int) -> Bool { afterEnd(k) || (leadIns.contains(keys[k - 1]) && afterEnd(k - 1)) }
+        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1]) && startsPhrase(j - 1)
         guard open(j) || led else { return nil }
         let start = led ? j - 1 : j
         return SpokenCount(word: j, start: start, leadIn: open(start - 1) && leadIns.contains(keys[start - 1]) ? start - 1 : nil)
@@ -280,7 +282,7 @@ public enum SmartLayout {
             return
         }
         if labels[count.word].punct <= 1 { labels[count.word].punct = marks.firstIndex(of: ":")! }
-        labels[count.start].brk = 2
+        labels[count.leadIn ?? count.start].brk = 2
     }
 
     public static func render(words: [String], labels: [LayoutLabel]) -> String {
