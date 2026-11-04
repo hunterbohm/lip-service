@@ -160,7 +160,7 @@ public enum SmartLayout {
             i > 0 && (keys[i - 1] == "bullet" || (keys[i - 1] == "point" && i > 1 && keys[i - 2] == "bullet"))
         }
         for i in labels.indices where labels[i].item == 2 && scores[i].item[2] < cut.bullet ?? 0 && !saidBullet(i) {
-            if i > 0, numbers[keys[i - 1]] != nil {
+            if let count = spokenCount(before: i, keys: keys, words: words, labels: labels), numbers[keys[count.word]] != nil {
                 labels[i].item = 1
             } else {
                 labels[i].item = 0
