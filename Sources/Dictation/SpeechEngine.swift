@@ -378,7 +378,8 @@ private struct Worker {
         let text = finisher.finish(raw: result.text, boosted: boosted)
         let finished = Instant.now
         return Dictation(text: text, raw: result.text, boosted: boosted, waited: started - recording.releasedAt,
-                         decode: decoded - started, rescore: rescored - decoded, finish: finished - rescored, screenTerms: screenTerms)
+                         decode: decoded - started, rescore: rescored - decoded, finish: finished - rescored, screenTerms: screenTerms,
+                         tokens: (result.tokenTimings ?? []).map { TimedToken(text: $0.token, start: $0.startTime, end: $0.endTime) })
     }
 
     private static func padded(_ samples: [Float]) -> [Float] {

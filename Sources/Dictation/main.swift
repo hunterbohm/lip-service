@@ -52,6 +52,16 @@ case .handOffTest(let options):
     dispatchMain()
 case .importWillowDryRun(let folder):
     exit(WillowImporter.dryRun(folder))
+case .installFormatter(let archive):
+    do {
+        SupportFolder.makePrivate()
+        try SmartFormatter.install(archive)
+        print("installed \(SmartFormatter.pinnedFolder.path)")
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+        exit(1)
+    }
 case .usage(let message):
     FileHandle.standardError.write(Data((message + "\n").utf8))
     exit(2)

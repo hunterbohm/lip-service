@@ -24,6 +24,7 @@ import os
     private let menu: StatusMenu
     let agents = AgentPool()
     let timing = DictationTiming()
+    private let formatter = SmartFormatter()
     private var setupObserver: (any NSObjectProtocol)?
     private var ghostwriter: Ghostwriter!
     /// What the running capture is for, and whether it goes to the agent rather than the cursor: a Ghostwrite or Hand
@@ -66,6 +67,9 @@ import os
     }
 
     func start() {
+        Task { [formatter, preferences] in
+            await formatter.load(download: SettingsStore.isReal && preferences.current.settings.smartFormatting)
+        }
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
         keyTap.onPasteLast = { [unowned self] in pasteLast() }
         keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
@@ -294,7 +298,17 @@ import os
             """)
         guard !dictation.text.isEmpty else { return }
         usageCount.used(.dictation)
-        let insertion = Insertion.make(dictation.text, app: target.app?.bundleID, configuration: preferences.current)
+        let configuration = preferences.current
+        var formatted: String?
+        if configuration.settings.smartFormatting, SettingsStore.isReal {
+            Task { [formatter] in await formatter.load(download: true) }
+        }
+        if configuration.settings.smartFormatting,
+           let result = await formatter.format(dictation, app: configuration.settings.profiles.group(for: target.app?.bundleID)) {
+            formatted = result.text
+            log.info("smart formatting \(result.seconds, format: .fixed(precision: 3)) s")
+        }
+        let insertion = Insertion.make(dictation.text, formatted: formatted, app: target.app?.bundleID, configuration: configuration)
         last = insertion
         menu.remember(insertion.text)
         if preferences.current.settings.keepHistory { history.add(HistoryEntry(text: insertion.text, audioSeconds: recording.seconds, app: target.app)) }

@@ -39,6 +39,8 @@ struct DictationPage: View {
                 .padding(.bottom, 30)
                 TileGroup(kind: .toggles, items: [
                     toggle("Sounds", "speaker.wave.2", \.sounds, help: "A short sound when dictation starts, ends and is cancelled."),
+                    toggle("Smart formatting", "text.alignleft", \.smartFormatting,
+                           help: "Adds paragraphs, lists and quotes where they fit, on your Mac."),
                     toggle("Smart spacing", "space", \.smartSpacing,
                            help: "Adds a space after the word before the cursor and keeps a sentence you continue lowercase."),
                     toggle("Vocabulary boost", "sparkles", \.vocabularyEnabled, help: "Spells the words in your Dictionary your way."),
