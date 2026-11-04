@@ -156,8 +156,10 @@ public enum SmartLayout {
             for i in labels.indices where labels[i].item == 0 { labels[i].brk = 0 }
         }
         let keys = words.map { key(split($0).core) }
-        for i in labels.indices where labels[i].item == 2 && scores[i].item[2] < cut.bullet ?? 0
-            && (i == 0 || !["bullet", "point"].contains(keys[i - 1])) {
+        func saidBullet(_ i: Int) -> Bool {
+            i > 0 && (keys[i - 1] == "bullet" || (keys[i - 1] == "point" && i > 1 && keys[i - 2] == "bullet"))
+        }
+        for i in labels.indices where labels[i].item == 2 && scores[i].item[2] < cut.bullet ?? 0 && !saidBullet(i) {
             if i > 0, numbers[keys[i - 1]] != nil {
                 labels[i].item = 1
             } else {
@@ -195,7 +197,7 @@ public enum SmartLayout {
                 continue
             }
             for i in run { dropCountingWords(before: i, keys: keys, words: words, labels: &labels) }
-            listedUpTo = said[said.count - 1]
+            listedUpTo = said.reduce(0) { last, number in number ?? last + 1 }
         }
         for i in labels.indices where labels[i].drop {
             labels[i].quoteOpens = false

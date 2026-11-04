@@ -94,6 +94,8 @@ rule_cases = [
     ("We need eggs, milk, and bread from the store.", {3: 2, 4: 2, 6: 2}),
     ("Bullet point eggs. Bullet point milk.", {2: 2, 5: 2}),
     ("One I do both. Two Sunday night. Three strict.", {1: 1, 5: 2, 8: 1}),
+    ("At this point we agree. At that point we leave.", {3: 2, 8: 2}),
+    ("First, buy eggs. Buy milk. So anyway. Number three call Sam. Number four rest.", {1: 1, 3: 1, 9: 1, 13: 1}, {5: 2}),
     ("Number one yes. Number two fine. So anyway. Number three no. Number four sure.", {2: 1, 5: 1, 10: 1, 13: 1}, {6: 2}),
 ]
 out.append("let ruleFixtures: [(words: [String], scores: [[Double]], expected: String)] = [")
