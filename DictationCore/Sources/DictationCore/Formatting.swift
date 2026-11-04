@@ -191,12 +191,13 @@ public enum SmartLayout {
                 labels[run[0]].brk = 0
                 continue
             }
-            let said = run.map { $0 > 0 ? numbers[keys[$0 - 1]] : nil }
+            let counts = run.map { spokenCount(before: $0, keys: keys, words: words, labels: labels) }
+            let said = counts.map { count in count.flatMap { numbers[keys[$0.word]] } }
             if let first = said[0], first != 1, listedUpTo.map({ first != $0 + 1 }) ?? true {
-                for i in run { keepCountAsParagraph(at: i, keys: keys, labels: &labels) }
+                for (i, count) in zip(run, counts) { keepCountAsParagraph(at: i, count: count, labels: &labels) }
                 continue
             }
-            for i in run { dropCountingWords(before: i, keys: keys, words: words, labels: &labels) }
+            for count in counts { if let count { drop(count, labels: &labels) } }
             listedUpTo = said.reduce(0) { last, number in number ?? last + 1 }
         }
         for i in labels.indices where labels[i].drop {
@@ -245,37 +246,41 @@ public enum SmartLayout {
     }()
 
     /// The spoken count in front of a list item: the word just before it when it is a number or ordinal ("Second,"),
-    /// with "number", "step" or "question" before that, and then a lead-in such as "and". A count that ends a sentence
-    /// ("order two.") belongs to the item before and stays, unless a lead word makes it a phrase of its own ("Number four.").
-    private static func dropCountingWords(before item: Int, keys: [String], words: [String], labels: inout [LayoutLabel]) {
-        func free(_ k: Int) -> Bool { k >= 0 && labels[k].item == 0 }
-        func open(_ k: Int) -> Bool { free(k) && ![".", "?", "!", ":", ";"].contains(split(words[k]).mark) }
-        var j = item - 1
-        guard free(j), counting.contains(keys[j]) else { return }
-        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1])
-        guard open(j) || led else { return }
-        labels[j].drop = true
-        if led {
-            j -= 1
-            labels[j].drop = true
+    /// with "number", "step" or "question" before that (`start`), and a lead-in such as "and" before that. A count that
+    /// ends a sentence ("order two.") belongs to the item before, unless a lead word makes it a phrase of its own
+    /// ("Number four.").
+    struct SpokenCount { var word: Int, start: Int, leadIn: Int? }
+
+    private static func spokenCount(before item: Int, keys: [String], words: [String], labels: [LayoutLabel]) -> SpokenCount? {
+        func open(_ k: Int) -> Bool {
+            k >= 0 && labels[k].item == 0 && ![".", "?", "!", ":", ";"].contains(split(words[k]).mark)
         }
-        if open(j - 1), leadIns.contains(keys[j - 1]) { labels[j - 1].drop = true }
+        let j = item - 1
+        guard j >= 0, labels[j].item == 0, counting.contains(keys[j]) else { return nil }
+        let led = !countLeads.contains(keys[j]) && open(j - 1) && countLeads.contains(keys[j - 1])
+        guard open(j) || led else { return nil }
+        let start = led ? j - 1 : j
+        return SpokenCount(word: j, start: start, leadIn: open(start - 1) && leadIns.contains(keys[start - 1]) ? start - 1 : nil)
+    }
+
+    /// Drops the spoken count in front of a list item, and its lead-in.
+    private static func drop(_ count: SpokenCount, labels: inout [LayoutLabel]) {
+        for k in count.start...count.word { labels[k].drop = true }
+        if let leadIn = count.leadIn { labels[leadIn].drop = true }
     }
 
     /// Counting that starts partway ("Number four ... Number five") answers numbered questions: the spoken count stays,
     /// as "Number four:", and starts a paragraph.
-    private static func keepCountAsParagraph(at item: Int, keys: [String], labels: inout [LayoutLabel]) {
+    private static func keepCountAsParagraph(at item: Int, count: SpokenCount?, labels: inout [LayoutLabel]) {
         labels[item].item = 0
         labels[item].brk = 0
         labels[item].capital = true
-        var j = item - 1
-        guard j >= 0, counting.contains(keys[j]) else {
+        guard let count else {
             labels[item].brk = 2
             return
         }
-        if labels[j].punct <= 1 { labels[j].punct = marks.firstIndex(of: ":")! }
-        if j > 0, countLeads.contains(keys[j - 1]), !countLeads.contains(keys[j]) { j -= 1 }
-        labels[j].brk = 2
+        if labels[count.word].punct <= 1 { labels[count.word].punct = marks.firstIndex(of: ":")! }
+        labels[count.start].brk = 2
     }
 
     public static func render(words: [String], labels: [LayoutLabel]) -> String {
