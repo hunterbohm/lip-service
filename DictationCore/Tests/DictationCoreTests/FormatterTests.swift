@@ -89,6 +89,42 @@ private func scores(_ flat: [Double]) -> WordScores {
         #expect(SmartLayout.render(words: words, labels: labels) == "He said no way first call Sam")
     }
 
+    private func plain(_ count: Int) -> [[Double]] {
+        [[Double]](repeating: [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0], count: count)
+    }
+
+    @Test("the count before a list item goes, and a number ending the previous item stays")
+    func countingStaysInItsItem() {
+        let words = ["First,", "order", "two.", "Second,", "call", "Sam."]
+        var flat = plain(words.count)
+        for i in [1, 4] { flat[i][3] = 0; flat[i][4] = 1 }
+        let labels = SmartLayout.decide(words: words, scores: flat.map(scores), cut: cut)
+        #expect(SmartLayout.render(words: words, labels: labels) == "1. Order two\n2. Call Sam")
+    }
+
+    @Test("a drop score alone never removes a word that is not a spoken command")
+    func onlyCommandsDrop() {
+        let words = ["Do", "not", "send", "it", "new", "line", "today."]
+        var flat = plain(words.count)
+        for i in [1, 4, 5] { flat[i][10] = 0; flat[i][11] = 1 }
+        let labels = SmartLayout.decide(words: words, scores: flat.map(scores), cut: cut)
+        #expect(SmartLayout.render(words: words, labels: labels) == "Do not send it today")
+    }
+
+    @Test("a quote on a dropped word leaves no stray quote mark")
+    func quotesOnDroppedWords() {
+        let words = ["He", "said", "hello", "end", "quote"]
+        var flat = plain(words.count)
+        flat[1][6] = 0; flat[1][7] = 1
+        flat[2][8] = 0; flat[2][9] = 1
+        flat[3][8] = 0; flat[3][9] = 1
+        for i in [3, 4] { flat[i][10] = 0; flat[i][11] = 1 }
+        let labels = SmartLayout.decide(words: words, scores: flat.map(scores), cut: cut)
+        let text = SmartLayout.render(words: words, labels: labels)
+        #expect(text.filter { $0 == "\"" }.count % 2 == 0)
+        #expect(text == "He \"said hello\"")
+    }
+
     @Test("formatting only drops words, never adds or changes them", arguments: layoutFixtures.indices)
     func keepsWords(_ i: Int) {
         let fixture = layoutFixtures[i]

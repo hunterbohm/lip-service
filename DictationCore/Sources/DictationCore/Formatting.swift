@@ -151,21 +151,12 @@ public enum SmartLayout {
         if words.count < cut.minWordsForBreaks {
             for i in labels.indices where labels[i].item == 0 { labels[i].brk = 0 }
         }
-        var openAt: Int?
-        for i in labels.indices {
-            if labels[i].brk > 0, let open = openAt {
-                labels[open].quoteOpens = false
-                openAt = nil
-            }
-            if labels[i].quoteOpens {
-                if let open = openAt { labels[open].quoteOpens = false }
-                openAt = i
-            }
-            if labels[i].quoteCloses {
-                if openAt == nil { labels[i].quoteCloses = false } else { openAt = nil }
-            }
+        let keys = words.map { key(split($0).core) }
+        for i in labels.indices where labels[i].drop {
+            let next = i + 1 < keys.count ? keys[i + 1] : "", previous = i > 0 ? keys[i - 1] : ""
+            labels[i].drop = commandWords.contains(keys[i]) || commandPairs.contains([keys[i], next])
+                || commandPairs.contains([previous, keys[i]])
         }
-        if let open = openAt { labels[open].quoteOpens = false }
         var runs: [[Int]] = []
         var run: [Int] = []
         for i in labels.indices {
@@ -183,15 +174,49 @@ public enum SmartLayout {
                 labels[run[0]].brk = 0
                 continue
             }
-            for i in run {
-                var j = i - 1
-                while j >= 0, counting.contains(key(split(words[j]).core)), labels[j].item == 0 {
-                    labels[j].drop = true
-                    j -= 1
-                }
+            for i in run { dropCountingWords(before: i, keys: keys, words: words, labels: &labels) }
+        }
+        for i in labels.indices where labels[i].drop {
+            labels[i].quoteOpens = false
+            labels[i].quoteCloses = false
+        }
+        var openAt: Int?
+        for i in labels.indices where !labels[i].drop {
+            if labels[i].brk > 0 || labels[i].item > 0, let open = openAt {
+                labels[open].quoteOpens = false
+                openAt = nil
+            }
+            if labels[i].quoteOpens {
+                if let open = openAt { labels[open].quoteOpens = false }
+                openAt = i
+            }
+            if labels[i].quoteCloses {
+                if openAt == nil { labels[i].quoteCloses = false } else { openAt = nil }
             }
         }
+        if let open = openAt { labels[open].quoteOpens = false }
         return labels
+    }
+
+    /// Spoken formatting commands the model may drop. Everything else stays, whatever its drop score.
+    static let commandWords: Set<String> = ["unquote", "bullet"]
+    static let commandPairs: Set<[String]> = [["new", "line"], ["new", "paragraph"], ["next", "line"], ["end", "quote"],
+                                              ["close", "quote"], ["open", "quote"], ["bullet", "point"]]
+    static let leadIns: Set<String> = ["and", "then", "next", "finally", "lastly", "also"]
+
+    /// The spoken count in front of a list item: the word just before it when it is a number or ordinal ("Second,"),
+    /// with "number" or "step" before that, and then a lead-in such as "and". A word that ends a sentence before the
+    /// count belongs to the previous item and stays.
+    private static func dropCountingWords(before item: Int, keys: [String], words: [String], labels: inout [LayoutLabel]) {
+        var j = item - 1
+        guard j >= 0, labels[j].item == 0, counting.contains(keys[j]) else { return }
+        labels[j].drop = true
+        func open(_ k: Int) -> Bool { k >= 0 && labels[k].item == 0 && ![".", "?", "!", ":", ";"].contains(split(words[k]).mark) }
+        if !["number", "step"].contains(keys[j]), open(j - 1), ["number", "step"].contains(keys[j - 1]) {
+            j -= 1
+            labels[j].drop = true
+        }
+        if open(j - 1), leadIns.contains(keys[j - 1]) { labels[j - 1].drop = true }
     }
 
     public static func render(words: [String], labels: [LayoutLabel]) -> String {

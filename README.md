@@ -148,7 +148,7 @@ Every row is 5 rounds of the 15 clips. The Lip Service row comes from `ROUNDS=5 
 
 ### Smart formatting
 
-The test is 400 of the author's own dictations that the formatting model never saw, run through the app, with Willow's formatting of the same recordings as the answer key. Of the 322 that Willow left without paragraphs, lists or quotes, Lip Service left 98% alone too. It found 9 of Willow's 11 list items and 11 of its 37 quotes, and 69% of the quotes it added are in Willow's text as well. Where to break a paragraph is partly taste, so those scores stay low for any formatter: Claude Sonnet, asked to format the same text, put 60% of its breaks where Willow did. The formatting step took a median 4.8 ms per dictation on a MacBook Pro with an M4 Pro, on top of the times below.
+The test is 400 of the author's own dictations that the formatting model never saw, run through the app, with Willow's formatting of the same recordings as the answer key. Of the 322 that Willow left without paragraphs, lists or quotes, Lip Service left 98% alone too. It found 9 of Willow's 11 list items and 11 of its 37 quotes, and 69% of the quotes it added are in Willow's text as well. Where to break a paragraph is partly taste, so those scores stay low for any formatter: Claude Sonnet, asked to format the same text, put 60% of its breaks where Willow did. The formatting step took a median 5.5 ms per dictation on a MacBook Pro with an M4 Pro, on top of the times below.
 
 ### Against Willow and Wispr Flow
 
