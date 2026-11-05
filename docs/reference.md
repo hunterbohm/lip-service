@@ -126,7 +126,7 @@ A model reads each finished dictation once and scores every word: a break before
 
 The model is RoBERTa-base, fine-tuned for this, and runs on the Mac's Neural Engine through Core ML. It takes about 5 ms per dictation on an M4 Pro. It was trained on made-up dictations written by Claude models, with spoken counting words and commands, and their formatted versions. No real dictation is in its training data.
 
-The formatting model downloads after the speech model, the first time Smart formatting is on, from the `v1.0.9` release of this repository, about 110 MB, and takes about 240 MB on disk once prepared. The app checks the archive's size and SHA-256 hash against the values built into it, unpacks it, and checks every file against its table, before Core ML reads anything. A download that fails is tried again an hour later, at the next dictation. Until the model is ready, and with Smart formatting off, dictation goes in as before.
+The formatting model downloads after the speech model, the first time Smart formatting is on, from the `v1.0.10` release of this repository, about 110 MB, and takes about 240 MB on disk once prepared. The app checks the archive's size and SHA-256 hash against the values built into it, unpacks it, and checks every file against its table, before Core ML reads anything. A download that fails is tried again an hour later, at the next dictation. Until the model is ready, and with Smart formatting off, dictation goes in as before.
 
 Snippets match before formatting, so a snippet's cue still works. The group's style from the Profiles page applies after it, so **Casual** still drops the final period and **Very casual** still lowercases. History keeps the text as it was inserted.
 
@@ -305,9 +305,9 @@ The first release build of FluidAudio takes several minutes. Later builds take s
 
 The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio third-party licenses that cover code in the FluidAudio product: fastcluster, VBx, and the Japanese text frontend. FluidAudio's other third-party licenses cover the binary target that `fetch-deps.sh` removes and text-to-speech model files the app never downloads. The build stops if FluidAudio adds a third-party license that `build-app.sh` does not list yet.
 
-To make a release zip, name it after the version in `Info.plist`:
+To make a release zip, name it after the version in `Info.plist`. Sign a release with the certificate whose fingerprint the README lists, or the README's check fails for everyone who downloads it:
 
-	ditto -c -k --sequesterRsrc --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.9.zip
+	ditto -c -k --norsrc --noextattr --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.11.zip
 
 ## Speech models
 
