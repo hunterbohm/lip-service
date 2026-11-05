@@ -1,5 +1,6 @@
 import AudioToolbox
 import AVFoundation
+import CatchException
 import CoreAudio
 import DictationCore
 import Synchronization
@@ -167,7 +168,7 @@ private final class InputDevice: @unchecked Sendable {
         // engine opened with, and a tap in that format fails to start. SampleSink converts from each buffer's format.
         let format = input.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw DictationError("No microphone is available.") }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format, block: sink.tapBlock())
+        try input.installTapOrThrow(bufferSize: 1024, format: format, block: sink.tapBlock())
         engine.prepare()
         do { try engine.start() } catch {
             input.removeTap(onBus: 0)
@@ -195,6 +196,16 @@ private final class InputDevice: @unchecked Sendable {
         let same = picked.flatMap { AudioDevices.current(of: engine) == $0.device && engine.inputNode.inputFormat(forBus: 0) == $0.format ? $0.device : nil }
         end()
         if let same { try? run(sink, on: same) } else { try? begin(sink) }
+    }
+}
+
+extension AVAudioNode {
+    /// AVAudioEngine raises an Objective-C exception when the tap's format no longer matches the hardware. A Bluetooth
+    /// headset switching its microphone between 48 and 24 kHz does that between reading the format and this call.
+    func installTapOrThrow(bufferSize: AVAudioFrameCount, format: AVAudioFormat?, block: @escaping AVAudioNodeTapBlock) throws {
+        guard LSCatchException({ installTap(onBus: 0, bufferSize: bufferSize, format: format, block: block) }) == nil else {
+            throw DictationError("The microphone changed while starting. Dictate again.")
+        }
     }
 }
 

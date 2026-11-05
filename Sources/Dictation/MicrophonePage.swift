@@ -188,13 +188,15 @@ private final class LevelTap: @unchecked Sendable {
             let node = engine.inputNode
             let format = node.outputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else { return }
-            node.installTap(onBus: 0, bufferSize: 2048, format: nil) { buffer, _ in
-                guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
-                let count = Int(buffer.frameLength)
-                var sum: Float = 0
-                for index in 0..<count { sum += samples[index] * samples[index] }
-                report(Loudness.fraction(rms: (sum / Float(count)).squareRoot()))
-            }
+            do {
+                try node.installTapOrThrow(bufferSize: 2048, format: nil) { buffer, _ in
+                    guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+                    let count = Int(buffer.frameLength)
+                    var sum: Float = 0
+                    for index in 0..<count { sum += samples[index] * samples[index] }
+                    report(Loudness.fraction(rms: (sum / Float(count)).squareRoot()))
+                }
+            } catch { return }
             engine.prepare()
             do {
                 try engine.start()

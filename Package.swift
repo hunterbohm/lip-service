@@ -11,7 +11,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Dictation",
-            dependencies: ["DictationCore", .product(name: "FluidAudio", package: "FluidAudio")]
+            dependencies: ["CatchException", "DictationCore", .product(name: "FluidAudio", package: "FluidAudio")]
         ),
+        .target(name: "CatchException"),
     ]
 )
