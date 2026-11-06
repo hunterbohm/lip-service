@@ -406,12 +406,7 @@ enum Headless {
         microphone.onFailure = { failure = $0 }
         microphone.onSource = { source = $0 }
         microphone.prepare(choice)
-        func cue(_ name: String) -> NSSound? {
-            let sound = Bundle.main.url(forResource: name, withExtension: "wav").flatMap { NSSound(contentsOf: $0, byReference: false) }
-            if let device = ProcessInfo.processInfo.environment["LS_SOUND_DEVICE"] { sound?.playbackDeviceIdentifier = device }
-            return sound
-        }
-        let startCue = cue("start"), stopCue = cue("stop")
+        let sounds = Sounds()
         for round in 1...options.rounds {
             try? await Task.sleep(for: .seconds(options.gap))
             failure = nil
@@ -422,11 +417,11 @@ enum Headless {
                 return 1
             }
             try? await Task.sleep(for: .seconds(0.12))
-            startCue?.stop(); startCue?.play()
+            sounds.play(.start)
             try? await Task.sleep(for: .seconds(max(0, options.hold - 0.12)))
             let ready = microphone.firstAudio.map { $0 - started }
             let audio = microphone.stop(releasedAt: .now)?.seconds ?? 0
-            stopCue?.stop(); stopCue?.play()
+            sounds.play(.stop)
             let held = Instant.now - started
             var row: [String: Any] = ["round": round, "held": held, "audio": audio, "lost": held - audio,
                                       "source": source.map { String(describing: $0) } ?? "none"]
