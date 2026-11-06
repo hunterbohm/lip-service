@@ -36,10 +36,15 @@ import Synchronization
         return status == .denied || status == .restricted
     }
 
+    /// Posted when the user allows the microphone, so the engine can be readied before the first dictation.
+    nonisolated static let accessGranted = Notification.Name("com.hunterbohm.dictation.microphoneAccessGranted")
+
     /// Asks at launch, so the first dictation is not spent on the permission prompt.
     static func requestAccessIfNeeded() {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
-        Task { _ = await AVCaptureDevice.requestAccess(for: .audio) }
+        Task {
+            if await AVCaptureDevice.requestAccess(for: .audio) { NotificationCenter.default.post(name: accessGranted, object: nil) }
+        }
     }
 
     /// Readies the device `choice` records from, so the next start only starts it. Each stop readies it again.
@@ -138,11 +143,16 @@ private final class InputDevice: @unchecked Sendable {
     private var choice: MicrophoneChoice?
     private var selected: (@Sendable (MicrophoneSource) -> Void)?
     private var observer: (any NSObjectProtocol)?
+    private var accessObserver: (any NSObjectProtocol)?
 
     init(feeding sink: SampleSink) {
         self.sink = sink
         AudioDevices.onDeviceListChange(queue: queue) { [weak self] in self?.prepareIfIdle() }
         AudioDevices.onDefaultInputChange(queue: queue) { [weak self] in self?.prepareIfIdle() }
+        accessObserver = NotificationCenter.default.addObserver(forName: Microphone.accessGranted, object: nil, queue: nil) { [weak self] _ in
+            guard let self else { return }
+            queue.async { self.prepareIfIdle() }
+        }
     }
 
     func prepare(_ choice: MicrophoneChoice) {
@@ -273,7 +283,8 @@ private final class InputDevice: @unchecked Sendable {
 
     /// A configuration change stops the engine, and a headset connecting posts one even to an engine on another device.
     /// A capture restarts on the device it started on and keeps appending to the same samples. It moves only when that
-    /// device is gone, and if the restart fails, `stop` still returns what was captured. A change that leaves the device
+    /// device is gone. If the restart fails while the device is still there, the capture ends there rather than moving,
+    /// and `stop` still returns what was captured. A change that leaves the device
     /// and its format as they were, such as the one picking a device posts when it comes after `settleAfterPicking` gave
     /// up, rearms the same engine. A fresh engine would select the device again, post another change, and never settle.
     private func configurationChanged() {
@@ -283,8 +294,10 @@ private final class InputDevice: @unchecked Sendable {
         if unchanged, (try? arm(binding, start: running)) != nil { return }
         guard running else { return prepareIfIdle() }
         let inputs = AudioDevices.inputs()
-        if let same = inputs.first(where: { $0.uid == binding.input.uid }), case let (moved, bound)? = try? point(at: same, among: inputs),
-           bound, (try? arm(moved, start: true)) != nil { return }
+        if let same = inputs.first(where: { $0.uid == binding.input.uid }) {
+            if case let (moved, bound)? = try? point(at: same, among: inputs), bound { try? arm(moved, start: true) }
+            return
+        }
         try? begin()
     }
 }
