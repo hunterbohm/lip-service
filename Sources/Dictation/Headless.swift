@@ -9,6 +9,7 @@ enum Mode {
     case selfTest(Headless.SelfTestOptions)
     case bench(Headless.BenchOptions)
     case listInputs
+    case micStart(Headless.MicStartOptions)
     case renderBar(URL)
     case renderWindow(URL)
     case importWillowDryRun(URL)
@@ -34,6 +35,9 @@ enum Mode {
                    --format-app formats for one app group: messages, workChat, email, aiAndCode or everythingElse.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
+               Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone automatic|default|UID]
+                   Starts and stops the microphone as dictation does, and prints one JSON line per round with how long
+                   the first audio took and how much of the hold was recorded. Uses the saved microphone unless given.
                Dictation --render-bar DIR
                    Writes a PNG of every bar state into DIR. Needs a logged-in GUI session.
                Dictation --render-window DIR
@@ -107,6 +111,24 @@ enum Mode {
                 self = .bench(options)
             case "--list-inputs":
                 self = .listInputs
+            case "--mic-start":
+                var options = Headless.MicStartOptions()
+                while let flag = rest.popFirst() {
+                    switch flag {
+                    case "--rounds": options.rounds = try Self.number(of: flag, from: &rest, Int.init, in: 1...1000)
+                    case "--hold": options.hold = try Self.number(of: flag, from: &rest, Double.init, in: 0.1...60)
+                    case "--gap": options.gap = try Self.number(of: flag, from: &rest, Double.init, in: 0...600)
+                    case "--microphone":
+                        let uid = try Self.value(of: flag, from: &rest)
+                        options.microphone = switch uid {
+                        case "automatic": .automatic
+                        case "default": .systemDefault
+                        default: .device(uid: uid, name: AudioDevices.input(uid: uid)?.name ?? uid)
+                        }
+                    default: throw DictationError("unknown option \(flag)")
+                    }
+                }
+                self = .micStart(options)
             case "--render-bar":
                 self = .renderBar(URL(fileURLWithPath: try Self.value(of: "--render-bar", from: &rest)))
             case "--render-window":
@@ -212,6 +234,14 @@ enum Headless {
         var clip: URL?
         var models: URL?
         var allowDownload = false
+    }
+
+    struct MicStartOptions {
+        var rounds = 10
+        var hold = 1.0
+        /// Idle time before each start, as between dictations.
+        var gap = 2.0
+        var microphone: MicrophoneChoice?
     }
 
     struct BenchOptions {
@@ -366,6 +396,36 @@ enum Headless {
             }
         }
         return failures == 0 ? 0 : 1
+    }
+
+    @MainActor static func micStart(_ options: MicStartOptions) async -> Int32 {
+        let choice = options.microphone ?? (SettingsStore.read(SettingsStore.defaults) ?? Settings()).microphone
+        let microphone = Microphone()
+        var failure: (any Error)?
+        var source: MicrophoneSource?
+        microphone.onFailure = { failure = $0 }
+        microphone.onSource = { source = $0 }
+        microphone.prepare(choice)
+        for round in 1...options.rounds {
+            try? await Task.sleep(for: .seconds(options.gap))
+            failure = nil
+            source = nil
+            let started = Instant.now
+            do { try microphone.start(from: choice) } catch {
+                log(error.localizedDescription)
+                return 1
+            }
+            try? await Task.sleep(for: .seconds(options.hold))
+            let ready = microphone.firstAudio.map { $0 - started }
+            let audio = microphone.stop(releasedAt: .now)?.seconds ?? 0
+            let held = Instant.now - started
+            var row: [String: Any] = ["round": round, "held": held, "audio": audio, "lost": held - audio,
+                                      "source": source.map { String(describing: $0) } ?? "none"]
+            if let ready { row["ready"] = ready }
+            if let failure { row["error"] = failure.localizedDescription }
+            emit(row)
+        }
+        return 0
     }
 
     static func listInputs() -> Int32 {

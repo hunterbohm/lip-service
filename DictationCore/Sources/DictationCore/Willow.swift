@@ -132,6 +132,7 @@ public enum Willow {
             if let hideBarWhenIdle { lines.append("Hide bar when idle: \(onOff(hideBarWhenIdle))") }
             if let smartSpacing { lines.append("Smart spacing: \(onOff(smartSpacing))") }
             switch microphone {
+            case .automatic: lines.append("Microphone: Automatic")
             case .systemDefault: lines.append("Microphone: System Default")
             case .device(let uid, let name): lines.append("Microphone: \(name) (\(uid))")
             case nil: break

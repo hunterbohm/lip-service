@@ -3,6 +3,7 @@ import AVFoundation
 import CoreAudio
 import DictationCore
 import Foundation
+import IOKit
 
 /// Devices as CoreAudio reports them. Read fresh on each call, since devices come and go.
 enum AudioDevices {
@@ -11,6 +12,28 @@ enum AudioDevices {
         let uid: String
         let name: String
         let deviceID: AudioDeviceID
+        var kind = MicrophoneInput.Kind.other
+
+        var choiceInput: MicrophoneInput { MicrophoneInput(uid: uid, kind: kind) }
+    }
+
+    /// Where `choice` records from now, among `inputs`.
+    static func source(for choice: MicrophoneChoice, among inputs: [Input]) -> MicrophoneSource {
+        choice.source(among: inputs.map(\.choiceInput), systemDefault: defaultInput(among: inputs)?.uid, lidClosed: lidClosed())
+    }
+
+    /// The input `source` records from: the chosen one, or the system default.
+    static func input(for source: MicrophoneSource, among inputs: [Input]) -> Input? {
+        if case .device(let uid) = source { inputs.first { $0.uid == uid } } else { defaultInput(among: inputs) }
+    }
+
+    /// True while a MacBook's lid is closed, which disconnects its microphone in hardware.
+    static func lidClosed() -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return false }
+        defer { IOObjectRelease(root) }
+        let state = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)
+        return (state?.takeRetainedValue() as? Bool) ?? false
     }
 
     static func inputs() -> [Input] {
@@ -20,18 +43,43 @@ enum AudioDevices {
             guard inputChannelCount(id) > 0, let uid = stringProperty(id, kAudioDevicePropertyDeviceUID),
                   let name = stringProperty(id, kAudioObjectPropertyName)
             else { return nil }
-            return Input(uid: uid, name: name, deviceID: id)
+            return Input(uid: uid, name: name, deviceID: id, kind: kind(of: id))
         }
     }
 
-    static func defaultInput() -> Input? {
+    static func defaultInput() -> Input? { defaultInput(among: inputs()) }
+
+    static func defaultInput(among inputs: [Input]) -> Input? {
+        defaultInputID().flatMap { id in inputs.first { $0.deviceID == id } }
+    }
+
+    private static func defaultInputID() -> AudioDeviceID? {
         var id = AudioDeviceID(0)
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
-                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var address = defaultInputAddress
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id) == noErr,
               id != 0 else { return nil }
-        return inputs().first { $0.deviceID == id }
+        return id
+    }
+
+    private static let defaultInputAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                                                                        mScope: kAudioObjectPropertyScopeGlobal,
+                                                                        mElement: kAudioObjectPropertyElementMain)
+
+    private static func kind(of id: AudioDeviceID) -> MicrophoneInput.Kind {
+        var transport = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &transport) == noErr else { return .other }
+        return switch transport {
+        case kAudioDeviceTransportTypeBuiltIn: .builtIn
+        case kAudioDeviceTransportTypeUSB, kAudioDeviceTransportTypeThunderbolt, kAudioDeviceTransportTypeFireWire,
+             kAudioDeviceTransportTypePCI, kAudioDeviceTransportTypeDisplayPort, kAudioDeviceTransportTypeHDMI,
+             kAudioDeviceTransportTypeAVB: .wired
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE: .bluetooth
+        default: .other
+        }
     }
 
     static func input(uid: String) -> Input? { inputs().first { $0.uid == uid } }
@@ -79,6 +127,12 @@ enum AudioDevices {
     static func onDeviceListChange(queue: DispatchQueue, _ handler: @escaping @Sendable () -> Void) {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue) { _, _ in handler() }
+    }
+
+    /// Calls `handler` on `queue` whenever the system default input changes, for as long as the app runs.
+    static func onDefaultInputChange(queue: DispatchQueue, _ handler: @escaping @Sendable () -> Void) {
+        var address = defaultInputAddress
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue) { _, _ in handler() }
     }
 

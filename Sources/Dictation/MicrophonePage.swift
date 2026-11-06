@@ -40,16 +40,23 @@ struct MicrophonePage: View {
         }
         .onAppear { services.level.start(choice) }
         .onDisappear { services.level.stop() }
-        .onChange(of: choice) { _, next in services.level.start(next) }
+        // The device, not the choice, because Automatic and System Default move to another device as they come and go.
+        .onChange(of: source.uid) { services.level.start(choice) }
     }
 
     private func options(_ choice: MicrophoneChoice, _ inputs: Inputs) -> [Option] {
         let defaultName = inputs.systemDefault?.name
-        var options = [Option(choice: .systemDefault, name: "System Default",
-                              detail: defaultName.map { "Follows your Mac's sound settings, now \($0)" } ?? "Follows your Mac's sound settings")]
+        var options = [
+            Option(choice: .automatic, name: "Automatic",
+                   detail: "A wired mic, then your Mac's, then Bluetooth. Now \(inputs.inUse(.automatic).name)"),
+            Option(choice: .systemDefault, name: "System Default",
+                   detail: defaultName.map { "Follows your Mac's sound settings, now \($0)" } ?? "Follows your Mac's sound settings"),
+        ]
         options += inputs.all.map { input in
-            Option(choice: .device(uid: input.uid, name: input.name), name: input.name,
-                   detail: input.uid == inputs.systemDefault?.uid ? "Your Mac's default" : nil)
+            let detail: String? = if input.kind == .bluetooth {
+                "Slow to start, and lowers your headphones' sound while it records"
+            } else if input.uid == inputs.systemDefault?.uid { "Your Mac's default" } else { nil }
+            return Option(choice: .device(uid: input.uid, name: input.name), name: input.name, detail: detail)
         }
         if case .device(let uid, let name) = choice, !inputs.all.contains(where: { $0.uid == uid }) {
             options.append(Option(choice: choice, name: name, detail: "Not connected", missing: true))
@@ -59,7 +66,13 @@ struct MicrophonePage: View {
 }
 
 private struct Option: Identifiable {
-    var id: String { if case .device(let uid, _) = choice { uid } else { "" } }
+    var id: String {
+        switch choice {
+        case .automatic: "automatic"
+        case .systemDefault: ""
+        case .device(let uid, _): uid
+        }
+    }
     let choice: MicrophoneChoice
     let name: String
     let detail: String?
@@ -115,10 +128,12 @@ private struct LevelMeter: View {
 @MainActor @Observable final class Inputs {
     private(set) var all: [AudioDevices.Input] = []
     private(set) var systemDefault: AudioDevices.Input?
-    @ObservationIgnored private let read: @MainActor () -> (all: [AudioDevices.Input], systemDefault: AudioDevices.Input?)
+    private(set) var lidClosed = false
+    @ObservationIgnored private let read: @MainActor () -> (all: [AudioDevices.Input], systemDefault: AudioDevices.Input?, lidClosed: Bool)
 
-    init(read: @escaping @MainActor () -> (all: [AudioDevices.Input], systemDefault: AudioDevices.Input?) = {
-        (AudioDevices.inputs(), AudioDevices.defaultInput())
+    init(read: @escaping @MainActor () -> (all: [AudioDevices.Input], systemDefault: AudioDevices.Input?, lidClosed: Bool) = {
+        let all = AudioDevices.inputs()
+        return (all, AudioDevices.defaultInput(among: all), AudioDevices.lidClosed())
     }) {
         self.read = read
         refresh()
@@ -128,15 +143,16 @@ private struct LevelMeter: View {
         let next = read()
         if next.all != all { all = next.all }
         if next.systemDefault != systemDefault { systemDefault = next.systemDefault }
+        if next.lidClosed != lidClosed { lidClosed = next.lidClosed }
     }
 
     /// The device a dictation would record from now, and the chosen one when it is missing.
-    func inUse(_ choice: MicrophoneChoice) -> (name: String, missing: String?) {
+    func inUse(_ choice: MicrophoneChoice) -> (name: String, uid: String?, missing: String?) {
         let fallback = systemDefault?.name ?? "no microphone"
-        return switch choice.source(connected: all.map(\.uid)) {
-        case .systemDefault: (fallback, nil)
-        case .device(let uid): (all.first { $0.uid == uid }?.name ?? fallback, nil)
-        case .fallback(let missing): (fallback, missing)
+        return switch choice.source(among: all.map(\.choiceInput), systemDefault: systemDefault?.uid, lidClosed: lidClosed) {
+        case .systemDefault: (fallback, systemDefault?.uid, nil)
+        case .device(let uid): (all.first { $0.uid == uid }?.name ?? fallback, uid, nil)
+        case .fallback(let missing): (fallback, systemDefault?.uid, missing)
         }
     }
 }
@@ -182,7 +198,9 @@ private final class LevelTap: @unchecked Sendable {
         queue.async { [self] in
             end()
             let engine = AVAudioEngine()
-            if case .device(let uid, _) = choice, let input = AudioDevices.input(uid: uid) {
+            // Bound to the device even on System Default, so the page restarts the meter when the device in use changes.
+            let inputs = AudioDevices.inputs()
+            if let input = AudioDevices.input(for: AudioDevices.source(for: choice, among: inputs), among: inputs) {
                 _ = AudioDevices.select(input.deviceID, for: engine)
             }
             let node = engine.inputNode

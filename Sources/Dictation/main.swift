@@ -24,6 +24,9 @@ case .bench(let options):
     dispatchMain()
 case .listInputs:
     exit(Headless.listInputs())
+case .micStart(let options):
+    Task { @MainActor in exit(await Headless.micStart(options)) }
+    dispatchMain()
 case .renderBar(let directory):
     MainActor.assumeIsolated { exit(RenderBar.run(into: directory)) }
 case .renderWindow(let directory):

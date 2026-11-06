@@ -131,20 +131,59 @@ public struct BarRect: Equatable, Sendable {
 }
 
 public enum MicrophoneChoice: Equatable, Codable, Sendable {
+    /// The best microphone connected now, by kind. The order follows what records soonest and best: a wired one, then
+    /// the Mac's own, then a Bluetooth headset, whose microphone takes a second or more to start.
+    case automatic
     case systemDefault
     /// A CoreAudio device UID, which survives unplugging and reboots. The name is for display while it is absent.
     case device(uid: String, name: String)
 
-    /// Where to capture from, given the UIDs of the inputs connected now.
-    public func source(connected: [String]) -> MicrophoneSource {
+    /// Automatic's order. A kind not listed is never picked automatically.
+    static let automaticOrder: [MicrophoneInput.Kind] = [.wired, .builtIn, .bluetooth]
+
+    /// Where to capture from, given the inputs connected now, the system default's UID, and whether the lid is closed,
+    /// which disconnects a MacBook's own microphone.
+    public func source(among inputs: [MicrophoneInput], systemDefault: String?, lidClosed: Bool) -> MicrophoneSource {
         switch self {
-        case .systemDefault: .systemDefault
-        case .device(let uid, let name): connected.contains(uid) ? .device(uid: uid) : .fallback(missing: name)
+        case .systemDefault:
+            return .systemDefault
+        case .device(let uid, let name):
+            return inputs.contains { $0.uid == uid } ? .device(uid: uid) : .fallback(missing: name)
+        case .automatic:
+            // Among inputs of one kind, the system default first, then the order CoreAudio lists them in.
+            let ranked = inputs.enumerated().compactMap { index, input -> (rank: [Int], uid: String)? in
+                guard let kind = Self.automaticOrder.firstIndex(of: input.kind), !(lidClosed && input.kind == .builtIn) else { return nil }
+                return ([kind, input.uid == systemDefault ? 0 : 1, index], input.uid)
+            }
+            return ranked.min { $0.rank.lexicographicallyPrecedes($1.rank) }.map { .device(uid: $0.uid) } ?? .systemDefault
         }
     }
 }
 
+/// An input as the microphone choice sees it.
+public struct MicrophoneInput: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        /// USB, Thunderbolt, FireWire, PCI and display microphones.
+        case wired
+        /// The Mac's own microphone.
+        case builtIn
+        /// A Bluetooth headset. Recording from it drops its playback to call quality.
+        case bluetooth
+        /// Virtual and aggregate devices and iPhone microphones.
+        case other
+    }
+
+    public let uid: String
+    public let kind: Kind
+
+    public init(uid: String, kind: Kind) {
+        self.uid = uid
+        self.kind = kind
+    }
+}
+
 public enum MicrophoneSource: Equatable, Sendable {
+    /// The Mac's default input: System Default, or Automatic with no microphone it would pick.
     case systemDefault
     case device(uid: String)
     /// The chosen device is not connected, so capture uses the system default.
@@ -178,7 +217,7 @@ public struct Settings: Equatable, Codable, Sendable {
     /// Pastes the last dictation again. Nil turns it off.
     public var pasteLast: Shortcut? = .pasteLast
     public var vocabularyEnabled = true
-    public var microphone = MicrophoneChoice.systemDefault
+    public var microphone = MicrophoneChoice.automatic
     public var sounds = true
     public var barEdge = BarEdge.bottom
     public var hideBarWhenIdle = true

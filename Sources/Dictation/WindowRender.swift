@@ -45,9 +45,9 @@ private final class RenderWindow: NSWindow {
         let willow = WillowImporter(folder: scratch.appending(path: "willow"), defaults: defaults, history: history,
                                     preferences: preferences)
         let state = WindowState()
-        let builtIn = AudioDevices.Input(uid: "BuiltInMicrophoneDevice", name: "MacBook Pro Microphone", deviceID: 91)
-        let phone = AudioDevices.Input(uid: "C63FE4BD-iPhone", name: "iPhone Microphone", deviceID: 92)
-        let inputs = Inputs { ([builtIn, phone], builtIn) }
+        let builtIn = AudioDevices.Input(uid: "BuiltInMicrophoneDevice", name: "MacBook Pro Microphone", deviceID: 91, kind: .builtIn)
+        let airPods = AudioDevices.Input(uid: "F8-1E-49-9B-27-6C:input", name: "AirPods Pro", deviceID: 92, kind: .bluetooth)
+        let inputs = Inputs { ([builtIn, airPods], builtIn, false) }
         let agentServices = AgentServices(pool: AgentPool(), preferences: preferences, history: history)
         agentServices.isStatic = true
         let timing = DictationTiming()
@@ -178,7 +178,7 @@ private final class RenderWindow: NSWindow {
         let timing = DictationTiming()
         let services = WindowServices(preferences: preferences, history: history, setup: SetupStatus { checks },
                                       willow: WillowImporter(folder: scratch.appending(path: "willow"), defaults: defaults, history: history, preferences: preferences),
-                                      loginItem: LoginItem(), inputs: Inputs { ([], nil) }, level: InputLevel(fixed: 0), shortcuts: .unavailable,
+                                      loginItem: LoginItem(), inputs: Inputs { ([], nil, false) }, level: InputLevel(fixed: 0), shortcuts: .unavailable,
                                       copy: { _ in }, agents: agentServices, timing: timing, updates: .sample, openSetup: { _ in })
         let model = OnboardingModel()
         let window = RenderWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
