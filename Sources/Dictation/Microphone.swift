@@ -3,6 +3,7 @@ import AVFoundation
 import CatchException
 import CoreAudio
 import DictationCore
+import os
 import Synchronization
 
 /// The single owner of the input device. Audio lives in memory only. The engine starts and stops on its own
@@ -12,6 +13,8 @@ import Synchronization
     private let sink = SampleSink()
     private var capturing = false
     private var generation = 0
+    private var startedAt = Instant.now
+    private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "microphone")
     /// A start that failed after `start(from:)` returned.
     var onFailure: ((any Error) -> Void)?
     /// Where this capture records from, when it starts and again when a device change restarts it.
@@ -22,6 +25,9 @@ import Synchronization
 
     /// The capture in progress, for previews while the key is held.
     var audio: any LiveAudio { sink }
+
+    /// When the first sample of the capture in progress was recorded.
+    var firstAudio: Instant? { sink.firstAudio }
 
     static var accessDenied: Bool {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -48,6 +54,7 @@ import Synchronization
         generation += 1
         let current = generation
         capturing = true
+        startedAt = .now
         sink.open()
         device.start(feeding: sink, from: choice, failed: { error in
             DispatchQueue.main.async { [weak self] in
@@ -64,6 +71,7 @@ import Synchronization
     func stop(releasedAt: Instant) -> Recording? {
         guard capturing else { return nil }
         capturing = false
+        if let ready = sink.firstAudio { log.info("microphone ready \(ready - self.startedAt, format: .fixed(precision: 3)) s after key-down") }
         let samples = sink.close()
         device.stop()
         return samples.isEmpty ? nil : Recording(samples: samples, releasedAt: releasedAt)
@@ -217,11 +225,14 @@ final class SampleSink: LiveAudio {
         var converter: SampleConverter?
         var samples: [Float] = []
         var level: Float = 0
+        var firstAudio: Instant?
     }
 
     private let state = Mutex(State())
 
     var level: Float { state.withLock { $0.level } }
+
+    var firstAudio: Instant? { state.withLock { $0.firstAudio } }
 
     var count: Int { state.withLock { $0.samples.count } }
 
@@ -242,16 +253,19 @@ final class SampleSink: LiveAudio {
     /// Formed here rather than in Microphone, because a closure formed inside a @MainActor method is inferred
     /// main-actor and traps when the audio thread calls it.
     func tapBlock() -> AVAudioNodeTapBlock {
-        { [self] buffer, _ in append(buffer) }
+        { [self] buffer, when in append(buffer, at: when) }
     }
 
-    private func append(_ buffer: AVAudioPCMBuffer) {
+    private func append(_ buffer: AVAudioPCMBuffer, at when: AVAudioTime) {
         state.withLock { state in
             guard state.open else { return }
             if state.converter?.inputFormat != buffer.format {
                 state.converter = try? SampleConverter(from: buffer.format)
             }
             guard let chunk = try? state.converter?.convert(buffer), !chunk.isEmpty else { return }
+            if state.firstAudio == nil {
+                state.firstAudio = when.isHostTimeValid ? Instant(seconds: AVAudioTime.seconds(forHostTime: when.hostTime)) : .now
+            }
             state.samples += chunk
             state.level = (chunk.reduce(0) { $0 + $1 * $1 } / Float(chunk.count)).squareRoot()
         }
