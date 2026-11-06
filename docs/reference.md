@@ -37,7 +37,7 @@ The bar sits at the bottom center of the screen that has the mouse. To move it, 
 
 When **Hide bar when idle** is off, a small dark pill stays at the bar's place between dictations. It is on by default, so the bar shows only while you dictate.
 
-A short sound plays when the bar appears, another when the text is on its way, and a third when you cancel. A shortcut such as fn+Delete ends before the bar appears, so it makes no sound. **Interaction sounds** in Settings turns them off.
+A short sound plays when the bar appears, another when the text is on its way, and a third when you cancel. A shortcut such as fn+Delete ends before the bar appears, so it makes no sound. **Interaction sounds** in Settings turns them off. They play as system sounds, at the alert volume, through the output that Sound settings picks for sound effects. macOS treats an app that plays sound while it records as a call, and moves your AirPods from your iPhone to the Mac. A system sound comes from macOS itself, so it doesn't count.
 
 With **Smart spacing** on, the pasted text fits the text before the cursor:
 
