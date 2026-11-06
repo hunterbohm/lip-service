@@ -9,8 +9,8 @@ import Synchronization
 /// The single owner of the input device. Audio lives in memory only. The engine starts and stops on its own
 /// queue, because a start can block for hundreds of milliseconds and the key tap shares the main thread.
 @MainActor final class Microphone {
-    private let device = InputDevice()
     private let sink = SampleSink()
+    private let device: InputDevice
     private var capturing = false
     private var generation = 0
     private var startedAt = Instant.now
@@ -29,6 +29,8 @@ import Synchronization
     /// When the first sample of the capture in progress was recorded.
     var firstAudio: Instant? { sink.firstAudio }
 
+    init() { device = InputDevice(feeding: sink) }
+
     static var accessDenied: Bool {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         return status == .denied || status == .restricted
@@ -39,6 +41,9 @@ import Synchronization
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
         Task { _ = await AVCaptureDevice.requestAccess(for: .audio) }
     }
+
+    /// Readies the device `choice` records from, so the next start only starts it. Each stop readies it again.
+    func prepare(_ choice: MicrophoneChoice) { device.prepare(choice) }
 
     /// Throws without permission. A missing input device or an engine error arrives later, through `onFailure`.
     func start(from choice: MicrophoneChoice) throws {
@@ -56,7 +61,7 @@ import Synchronization
         capturing = true
         startedAt = .now
         sink.open()
-        device.start(feeding: sink, from: choice, failed: { error in
+        device.start(from: choice, failed: { error in
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated { self?.startFailed(error, generation: current) }
             }
@@ -96,61 +101,149 @@ import Synchronization
     }
 }
 
-/// AVAudioEngine, touched only on `queue`. Every start builds a fresh engine, because a stopped engine keeps the input
-/// format it first read, and the next start fails once the default or chosen device changes rate or is replaced. A
-/// fresh engine follows the system default input. A chosen device is set on it before its first use.
+/// AVAudioEngine, touched only on `queue`. An engine serves one device: a stopped engine keeps the input format it first
+/// read, and its next start fails once that device changes rate or is replaced. So the engine for the next capture is
+/// built while idle, pointed at the device it will record from, with its tap installed and prepared, and a key-down only
+/// starts it, which takes about 40 ms on the Mac's microphone and 60 ms on a USB one. Building it at key-down took 75 ms
+/// more. A Bluetooth microphone is built at key-down, because a prepared one holds the headset in call quality. A capture
+/// stays on the device it started on until that device is gone.
 private final class InputDevice: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "com.hunterbohm.dictation.microphone", qos: .userInteractive)
-    private var engine = AVAudioEngine()
-    private var sink: SampleSink?
-    private var choice = MicrophoneChoice.systemDefault
-    private var selected: (@Sendable (MicrophoneSource) -> Void)?
-    private var observer: (any NSObjectProtocol)?
-    /// The chosen device the running engine was pointed at, and the format its tap takes. Nil on the system default.
-    private var picked: (device: AudioDeviceID, format: AVAudioFormat)?
+    /// The device an engine points at and the format its tap takes. A device plugged back in has a new ID, so a ready
+    /// engine is kept only for an equal input.
+    private struct Binding {
+        let input: AudioDevices.Input
+        let format: AVAudioFormat
+    }
 
-    init() { observe(engine) }
+    private enum Phase {
+        case idle
+        /// Prepared with the tap installed, not started.
+        case ready(Binding)
+        case running(Binding)
 
-    func start(feeding sink: SampleSink, from choice: MicrophoneChoice, failed: @escaping @Sendable (any Error) -> Void,
-               selected: @escaping @Sendable (MicrophoneSource) -> Void) {
-        queue.async { [self] in
-            (self.choice, self.selected) = (choice, selected)
-            do { try begin(sink) } catch { failed(error) }
+        var binding: (binding: Binding, running: Bool)? {
+            switch self {
+            case .idle: nil
+            case .ready(let binding): (binding, false)
+            case .running(let binding): (binding, true)
+            }
         }
     }
 
-    func stop() { queue.async { [self] in end() } }
+    private let queue = DispatchQueue(label: "com.hunterbohm.dictation.microphone", qos: .userInteractive)
+    private let sink: SampleSink
+    private var engine = AVAudioEngine()
+    private var phase = Phase.idle
+    /// What the next start records from. Nil until the first prepare or start.
+    private var choice: MicrophoneChoice?
+    private var selected: (@Sendable (MicrophoneSource) -> Void)?
+    private var observer: (any NSObjectProtocol)?
+
+    init(feeding sink: SampleSink) {
+        self.sink = sink
+        AudioDevices.onDeviceListChange(queue: queue) { [weak self] in self?.prepareIfIdle() }
+        AudioDevices.onDefaultInputChange(queue: queue) { [weak self] in self?.prepareIfIdle() }
+    }
+
+    func prepare(_ choice: MicrophoneChoice) {
+        queue.async { [self] in
+            self.choice = choice
+            prepareIfIdle()
+        }
+    }
+
+    func start(from choice: MicrophoneChoice, failed: @escaping @Sendable (any Error) -> Void,
+               selected: @escaping @Sendable (MicrophoneSource) -> Void) {
+        queue.async { [self] in
+            (self.choice, self.selected) = (choice, selected)
+            do { try begin() } catch { failed(error) }
+        }
+    }
+
+    /// Stops recording and readies the engine for the next start.
+    func stop() {
+        queue.async { [self] in
+            end()
+            prepareIfIdle()
+        }
+    }
 
     private func observe(_ engine: AVAudioEngine) {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
                                                           queue: nil) { [weak self] _ in
             guard let self else { return }
-            queue.async { self.restartAfterDeviceChange() }
+            queue.async { self.configurationChanged() }
         }
     }
 
-    /// Runs before every start and restart, so a device plugged in or out since is seen. Returns the chosen device
-    /// the engine now points at, or nil on the system default.
-    private func selectDevice() -> AudioDeviceID? {
+    /// Reads the devices again, so one plugged in or out since is seen.
+    private func begin() throws {
         let inputs = AudioDevices.inputs()
-        let source = choice.source(connected: inputs.map(\.uid))
+        let source = choice.map { AudioDevices.source(for: $0, among: inputs) } ?? .systemDefault
         selected?(source)
-        engine = AVAudioEngine()
-        guard case .device(let uid) = source, let chosen = inputs.first(where: { $0.uid == uid }) else { return nil }
-        guard AudioDevices.select(chosen.deviceID, for: engine) else {
-            selected?(.fallback(missing: chosen.name))
-            return nil
+        let target = Self.target(of: source, among: inputs)
+        if case .ready(let binding) = phase, binding.input == target, isCurrent(binding), (try? engine.start()) != nil {
+            phase = .running(binding)
+            return
         }
-        return chosen.deviceID
+        end()
+        let (binding, bound) = try point(at: target, among: inputs)
+        if !bound, case .device = source, let target { selected?(.fallback(missing: target.name)) }
+        try arm(binding, start: true)
     }
 
-    private func begin(_ sink: SampleSink) throws {
+    /// Readies an engine for the next start when nothing records, the app may record, and the choice resolves to a wired
+    /// or built-in microphone. Every device change calls it again, and a ready engine that still fits is kept.
+    private func prepareIfIdle() {
+        guard let choice, phase.binding?.running != true, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        else { return }
+        let inputs = AudioDevices.inputs()
+        let target = Self.target(of: AudioDevices.source(for: choice, among: inputs), among: inputs)
+        if case .ready(let binding) = phase, binding.input == target, isCurrent(binding) { return }
         end()
-        let device = selectDevice()
-        if device != nil { settleAfterPicking() }
+        guard let target, target.kind != .bluetooth, case let (binding, bound)? = try? point(at: target, among: inputs), bound
+        else { return }
+        try? arm(binding, start: false)
+    }
+
+    /// The input a source records from: the chosen one, or the system default.
+    private static func target(of source: MicrophoneSource, among inputs: [AudioDevices.Input]) -> AudioDevices.Input? {
+        if case .device(let uid) = source { inputs.first { $0.uid == uid } } else { AudioDevices.defaultInput(among: inputs) }
+    }
+
+    /// A fresh engine pointed at `target`, or left on the system default when CoreAudio refuses it. True when it points at
+    /// `target`.
+    private func point(at target: AudioDevices.Input?, among inputs: [AudioDevices.Input]) throws -> (Binding, Bool) {
+        engine = AVAudioEngine()
+        let bound = target.map { AudioDevices.select($0.deviceID, for: engine) } ?? false
+        if bound { settleAfterPicking() }
         observe(engine)
-        try run(sink, on: device)
+        let device = bound ? target : AudioDevices.current(of: engine).flatMap { id in inputs.first { $0.deviceID == id } }
+        // The hardware format, because a chosen device leaves the node's output format at the rate of the device the
+        // engine opened with, and a tap in that format fails to start. SampleSink converts from each buffer's format.
+        let format = engine.inputNode.inputFormat(forBus: 0)
+        guard let device, format.sampleRate > 0, format.channelCount > 0 else { throw DictationError("No microphone is available.") }
+        return (Binding(input: device, format: format), bound)
+    }
+
+    /// Installs the tap and prepares the engine, then starts it or leaves it ready.
+    private func arm(_ binding: Binding, start: Bool) throws {
+        let input = engine.inputNode
+        try input.installTapOrThrow(bufferSize: 1024, format: binding.format, block: sink.tapBlock())
+        engine.prepare()
+        if start {
+            do { try engine.start() } catch {
+                input.removeTap(onBus: 0)
+                throw error
+            }
+        }
+        phase = start ? .running(binding) : .ready(binding)
+    }
+
+    /// The engine still points at the binding's device, in the format its tap takes.
+    private func isCurrent(_ binding: Binding) -> Bool {
+        AudioDevices.current(of: engine) == binding.input.deviceID && engine.inputNode.inputFormat(forBus: 0) == binding.format
     }
 
     /// The longest a start waits for the change that picking a device posts.
@@ -170,40 +263,29 @@ private final class InputDevice: @unchecked Sendable {
         NotificationCenter.default.removeObserver(observer)
     }
 
-    private func run(_ sink: SampleSink, on device: AudioDeviceID?) throws {
-        let input = engine.inputNode
-        // The hardware format, because a chosen device leaves the node's output format at the rate of the device the
-        // engine opened with, and a tap in that format fails to start. SampleSink converts from each buffer's format.
-        let format = input.inputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { throw DictationError("No microphone is available.") }
-        try input.installTapOrThrow(bufferSize: 1024, format: format, block: sink.tapBlock())
-        engine.prepare()
-        do { try engine.start() } catch {
-            input.removeTap(onBus: 0)
-            throw error
-        }
-        self.sink = sink
-        picked = device.map { ($0, format) }
-    }
-
+    /// Stops the engine, ready or running, and removes its tap.
     private func end() {
-        guard sink != nil else { return }
+        guard phase.binding != nil else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        sink = nil
-        picked = nil
+        phase = .idle
     }
 
-    /// A headset connected mid-capture stops the engine. Restart on the new device and keep appending to the
-    /// same samples. If the restart fails, `stop` still returns what was captured. A change that leaves the chosen
-    /// device and its format as they were, such as the one picking a device posts when it comes after
-    /// `settleAfterPicking` gave up, starts the same engine again. A fresh engine would select the device again, post
-    /// another change, and never settle.
-    private func restartAfterDeviceChange() {
-        guard let sink else { return }
-        let same = picked.flatMap { AudioDevices.current(of: engine) == $0.device && engine.inputNode.inputFormat(forBus: 0) == $0.format ? $0.device : nil }
+    /// A configuration change stops the engine, and a headset connecting posts one even to an engine on another device.
+    /// A capture restarts on the device it started on and keeps appending to the same samples. It moves only when that
+    /// device is gone, and if the restart fails, `stop` still returns what was captured. A change that leaves the device
+    /// and its format as they were, such as the one picking a device posts when it comes after `settleAfterPicking` gave
+    /// up, rearms the same engine. A fresh engine would select the device again, post another change, and never settle.
+    private func configurationChanged() {
+        guard case let (binding, running)? = phase.binding else { return }
+        let unchanged = isCurrent(binding)
         end()
-        if let same { try? run(sink, on: same) } else { try? begin(sink) }
+        if unchanged, (try? arm(binding, start: running)) != nil { return }
+        guard running else { return prepareIfIdle() }
+        let inputs = AudioDevices.inputs()
+        if let same = inputs.first(where: { $0.uid == binding.input.uid }), case let (moved, bound)? = try? point(at: same, among: inputs),
+           bound, (try? arm(moved, start: true)) != nil { return }
+        try? begin()
     }
 }
 

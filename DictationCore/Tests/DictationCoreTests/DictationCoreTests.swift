@@ -697,11 +697,51 @@ private final class FakePasteboard: Pasteboard {
 }
 
 @Suite("Microphone choice") struct MicrophoneChoiceTests {
+    let shure = MicrophoneInput(uid: "AppleUSBAudioEngine:Shure", kind: .wired)
+    let builtIn = MicrophoneInput(uid: "BuiltInMicrophoneDevice", kind: .builtIn)
+    let airPods = MicrophoneInput(uid: "F8-1E-49-9B-27-6C:input", kind: .bluetooth)
+    let blackHole = MicrophoneInput(uid: "BlackHole2ch_UID", kind: .other)
+    let webcam = MicrophoneInput(uid: "AppleUSBAudioEngine:Webcam", kind: .wired)
+
+    private func automatic(_ inputs: [MicrophoneInput], systemDefault: MicrophoneInput? = nil, lidClosed: Bool = false) -> MicrophoneSource {
+        MicrophoneChoice.automatic.source(among: inputs, systemDefault: systemDefault?.uid, lidClosed: lidClosed)
+    }
+
     @Test func aChosenDeviceIsUsedWhenConnectedAndFallsBackByNameWhenNot() {
-        let shure = MicrophoneChoice.device(uid: "AppleUSBAudioEngine:Shure", name: "Shure MV7+")
-        #expect(shure.source(connected: ["BuiltInMic", "AppleUSBAudioEngine:Shure"]) == .device(uid: "AppleUSBAudioEngine:Shure"))
-        #expect(shure.source(connected: ["BuiltInMic"]) == .fallback(missing: "Shure MV7+"))
-        #expect(MicrophoneChoice.systemDefault.source(connected: []) == .systemDefault)
+        let chosen = MicrophoneChoice.device(uid: shure.uid, name: "Shure MV7+")
+        #expect(chosen.source(among: [builtIn, shure], systemDefault: builtIn.uid, lidClosed: false) == .device(uid: shure.uid))
+        #expect(chosen.source(among: [builtIn], systemDefault: builtIn.uid, lidClosed: false) == .fallback(missing: "Shure MV7+"))
+        #expect(MicrophoneChoice.systemDefault.source(among: [], systemDefault: nil, lidClosed: false) == .systemDefault)
+    }
+
+    @Test func automaticPrefersAWiredMicrophoneThenTheMacsOwnThenBluetooth() {
+        #expect(automatic([airPods, builtIn, shure], systemDefault: airPods) == .device(uid: shure.uid))
+        #expect(automatic([airPods, builtIn], systemDefault: airPods) == .device(uid: builtIn.uid))
+        #expect(automatic([airPods, blackHole], systemDefault: blackHole) == .device(uid: airPods.uid))
+    }
+
+    @Test func automaticSkipsTheMacsOwnMicrophoneWithTheLidClosed() {
+        #expect(automatic([builtIn, airPods], systemDefault: builtIn, lidClosed: true) == .device(uid: airPods.uid))
+        #expect(automatic([builtIn, shure], lidClosed: true) == .device(uid: shure.uid))
+    }
+
+    @Test func automaticNeverPicksAVirtualDeviceAndFollowsTheDefaultWhenNothingElseIsThere() {
+        #expect(automatic([blackHole], systemDefault: blackHole) == .systemDefault)
+        #expect(automatic([builtIn, blackHole], systemDefault: builtIn, lidClosed: true) == .systemDefault)
+        #expect(automatic([]) == .systemDefault)
+    }
+
+    @Test func automaticBreaksATieWithTheSystemDefaultThenListOrder() {
+        #expect(automatic([webcam, shure], systemDefault: shure) == .device(uid: shure.uid))
+        #expect(automatic([webcam, shure], systemDefault: builtIn) == .device(uid: webcam.uid))
+    }
+
+    @Test func newInstallsStartOnAutomaticAndAStoredChoiceIsKept() throws {
+        #expect(Settings().microphone == .automatic)
+        var stored = Settings()
+        stored.microphone = .systemDefault
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(stored))
+        #expect(decoded.microphone == .systemDefault)
     }
 
     @Test func anUnpluggedMicrophoneIsMentionedOnceUntilItIsSeenAgain() {

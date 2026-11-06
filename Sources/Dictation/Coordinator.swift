@@ -121,6 +121,7 @@ import os
         }
         // First-run setup asks for these from its Permissions step, one at a time.
         if !preferences.needsOnboarding { Microphone.requestAccessIfNeeded() }
+        microphone.prepare(preferences.current.settings.microphone)
         keyTap.start(prompting: !preferences.needsOnboarding)
         render()
     }
@@ -144,6 +145,7 @@ import os
         for agent in old.settings.agents.agents where new.settings.agents.agent(id: agent.id)?.shellCommand != agent.shellCommand {
             agents.stop(agent.id)
         }
+        if old.settings.microphone != new.settings.microphone { microphone.prepare(new.settings.microphone) }
         keyTap.pasteLast = new.settings.pasteLast
         if !new.settings.muteWhileDictating { muter.stop() }
         render()

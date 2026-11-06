@@ -97,10 +97,16 @@ import DictationCore
         menu.addItem(NSMenuItem(title: "Quit Lip Service", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
-    /// System Default, then each input connected now. A chosen device that is unplugged stays listed and checked.
+    /// Automatic, System Default, then each input connected now. A chosen device that is unplugged stays listed and checked.
     private func microphoneMenu(chosen: MicrophoneChoice) -> NSMenu {
         let microphones = NSMenu()
         let inputs = AudioDevices.inputs()
+        let automaticPick = if case .device(let uid) = AudioDevices.source(for: .automatic, among: inputs) {
+            inputs.first { $0.uid == uid }?.name
+        } else { AudioDevices.defaultInput(among: inputs)?.name }
+        microphones.addItem(ActionItem(automaticPick.map { "Automatic (\($0))" } ?? "Automatic", checked: chosen == .automatic) {
+            [preferences] in preferences.change { $0.microphone = .automatic }
+        })
         let defaultTitle = AudioDevices.defaultInput().map { "System Default (\($0.name))" } ?? "System Default"
         microphones.addItem(ActionItem(defaultTitle, checked: chosen == .systemDefault) { [preferences] in
             preferences.change { $0.microphone = .systemDefault }

@@ -35,7 +35,7 @@ enum Mode {
                    --format-app formats for one app group: messages, workChat, email, aiAndCode or everythingElse.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
-               Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone default|UID]
+               Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone automatic|default|UID]
                    Starts and stops the microphone as dictation does, and prints one JSON line per round with how long
                    the first audio took and how much of the hold was recorded. Uses the saved microphone unless given.
                Dictation --render-bar DIR
@@ -120,8 +120,11 @@ enum Mode {
                     case "--gap": options.gap = try Self.number(of: flag, from: &rest, Double.init, in: 0...600)
                     case "--microphone":
                         let uid = try Self.value(of: flag, from: &rest)
-                        options.microphone = uid == "default" ? .systemDefault
-                            : .device(uid: uid, name: AudioDevices.input(uid: uid)?.name ?? uid)
+                        options.microphone = switch uid {
+                        case "automatic": .automatic
+                        case "default": .systemDefault
+                        default: .device(uid: uid, name: AudioDevices.input(uid: uid)?.name ?? uid)
+                        }
                     default: throw DictationError("unknown option \(flag)")
                     }
                 }
@@ -402,6 +405,7 @@ enum Headless {
         var source: MicrophoneSource?
         microphone.onFailure = { failure = $0 }
         microphone.onSource = { source = $0 }
+        microphone.prepare(choice)
         for round in 1...options.rounds {
             try? await Task.sleep(for: .seconds(options.gap))
             failure = nil
