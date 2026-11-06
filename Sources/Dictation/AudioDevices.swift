@@ -22,6 +22,11 @@ enum AudioDevices {
         choice.source(among: inputs.map(\.choiceInput), systemDefault: defaultInput(among: inputs)?.uid, lidClosed: lidClosed())
     }
 
+    /// The input `source` records from: the chosen one, or the system default.
+    static func input(for source: MicrophoneSource, among inputs: [Input]) -> Input? {
+        if case .device(let uid) = source { inputs.first { $0.uid == uid } } else { defaultInput(among: inputs) }
+    }
+
     /// True while a MacBook's lid is closed, which disconnects its microphone in hardware.
     static func lidClosed() -> Bool {
         let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))

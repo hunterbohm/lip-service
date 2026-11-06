@@ -198,8 +198,9 @@ private final class LevelTap: @unchecked Sendable {
         queue.async { [self] in
             end()
             let engine = AVAudioEngine()
+            // Bound to the device even on System Default, so the page restarts the meter when the device in use changes.
             let inputs = AudioDevices.inputs()
-            if case .device(let uid) = AudioDevices.source(for: choice, among: inputs), let input = inputs.first(where: { $0.uid == uid }) {
+            if let input = AudioDevices.input(for: AudioDevices.source(for: choice, among: inputs), among: inputs) {
                 _ = AudioDevices.select(input.deviceID, for: engine)
             }
             let node = engine.inputNode

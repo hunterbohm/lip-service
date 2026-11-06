@@ -192,7 +192,7 @@ private final class InputDevice: @unchecked Sendable {
         let inputs = AudioDevices.inputs()
         let source = choice.map { AudioDevices.source(for: $0, among: inputs) } ?? .systemDefault
         selected?(source)
-        let target = Self.target(of: source, among: inputs)
+        let target = AudioDevices.input(for: source, among: inputs)
         if case .ready(let binding) = phase, binding.input == target, isCurrent(binding), (try? engine.start()) != nil {
             phase = .running(binding)
             return
@@ -209,17 +209,12 @@ private final class InputDevice: @unchecked Sendable {
         guard let choice, phase.binding?.running != true, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         else { return }
         let inputs = AudioDevices.inputs()
-        let target = Self.target(of: AudioDevices.source(for: choice, among: inputs), among: inputs)
+        let target = AudioDevices.input(for: AudioDevices.source(for: choice, among: inputs), among: inputs)
         if case .ready(let binding) = phase, binding.input == target, isCurrent(binding) { return }
         end()
         guard let target, target.kind != .bluetooth, case let (binding, bound)? = try? point(at: target, among: inputs), bound
         else { return }
         try? arm(binding, start: false)
-    }
-
-    /// The input a source records from: the chosen one, or the system default.
-    private static func target(of source: MicrophoneSource, among inputs: [AudioDevices.Input]) -> AudioDevices.Input? {
-        if case .device(let uid) = source { inputs.first { $0.uid == uid } } else { AudioDevices.defaultInput(among: inputs) }
     }
 
     /// A fresh engine pointed at `target`, or left on the system default when CoreAudio refuses it. True when it points at
