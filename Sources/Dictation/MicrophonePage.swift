@@ -40,7 +40,8 @@ struct MicrophonePage: View {
         }
         .onAppear { services.level.start(choice) }
         .onDisappear { services.level.stop() }
-        .onChange(of: choice) { _, next in services.level.start(next) }
+        // The device, not the choice, because Automatic and System Default move to another device as they come and go.
+        .onChange(of: source.uid) { services.level.start(choice) }
     }
 
     private func options(_ choice: MicrophoneChoice, _ inputs: Inputs) -> [Option] {
@@ -146,12 +147,12 @@ private struct LevelMeter: View {
     }
 
     /// The device a dictation would record from now, and the chosen one when it is missing.
-    func inUse(_ choice: MicrophoneChoice) -> (name: String, missing: String?) {
+    func inUse(_ choice: MicrophoneChoice) -> (name: String, uid: String?, missing: String?) {
         let fallback = systemDefault?.name ?? "no microphone"
         return switch choice.source(among: all.map(\.choiceInput), systemDefault: systemDefault?.uid, lidClosed: lidClosed) {
-        case .systemDefault: (fallback, nil)
-        case .device(let uid): (all.first { $0.uid == uid }?.name ?? fallback, nil)
-        case .fallback(let missing): (fallback, missing)
+        case .systemDefault: (fallback, systemDefault?.uid, nil)
+        case .device(let uid): (all.first { $0.uid == uid }?.name ?? fallback, uid, nil)
+        case .fallback(let missing): (fallback, systemDefault?.uid, missing)
         }
     }
 }
