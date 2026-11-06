@@ -138,6 +138,8 @@ private final class InputDevice: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.hunterbohm.dictation.microphone", qos: .userInteractive)
     private let sink: SampleSink
     private var engine = AVAudioEngine()
+    /// Engines replaced in the last few seconds; see `replaceEngine`.
+    private var retired: [AVAudioEngine] = []
     private var phase = Phase.idle
     /// What the next start records from. Nil until the first prepare or start.
     private var choice: MicrophoneChoice?
@@ -220,7 +222,7 @@ private final class InputDevice: @unchecked Sendable {
     /// A fresh engine pointed at `target`, or left on the system default when CoreAudio refuses it. True when it points at
     /// `target`.
     private func point(at target: AudioDevices.Input?, among inputs: [AudioDevices.Input]) throws -> (Binding, Bool) {
-        engine = AVAudioEngine()
+        replaceEngine()
         let bound = target.map { AudioDevices.select($0.deviceID, for: engine) } ?? false
         if bound { settleAfterPicking() }
         observe(engine)
@@ -244,6 +246,15 @@ private final class InputDevice: @unchecked Sendable {
             }
         }
         phase = start ? .running(binding) : .ready(binding)
+    }
+
+    /// An engine stopped a moment ago still gets property callbacks from its I/O unit on AVFAudio's own queue, and
+    /// freeing it then crashes there. Readying the next engine right after a stop did that within 30 fast dictations,
+    /// so a replaced engine lives a few seconds more.
+    private func replaceEngine() {
+        retired.append(engine)
+        engine = AVAudioEngine()
+        queue.asyncAfter(deadline: .now() + 5) { [self] in retired.removeFirst() }
     }
 
     /// The engine still points at the binding's device, in the format its tap takes.
