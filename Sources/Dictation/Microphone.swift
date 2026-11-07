@@ -10,9 +10,13 @@ import Synchronization
 /// queue, because a start can block for hundreds of milliseconds and the key tap shares the main thread.
 @MainActor final class Microphone {
     private let sink = SampleSink()
-    private let device: InputDevice
+    private var device: InputDevice
     private var capturing = false
     private var generation = 0
+    /// The capture whose stuck device was already replaced once, so a second stall ends it instead.
+    private var replacedFor: Int?
+    /// Replaced devices, kept so freeing one never races AVFAudio's callbacks once its stuck call returns.
+    private var stuck: [InputDevice] = []
     private var startedAt = Instant.now
     private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "microphone")
     /// A start that failed after `start(from:)` returned.
@@ -66,7 +70,14 @@ import Synchronization
         capturing = true
         startedAt = .now
         sink.open()
-        device.start(from: choice, failed: { error in
+        startDevice(from: choice, generation: current)
+    }
+
+    /// A start the device's queue has not begun by then is behind a call into CoreAudio that never returns.
+    private static let stallLimit = 1.0
+
+    private func startDevice(from choice: MicrophoneChoice, generation current: Int) {
+        device.start(from: choice, generation: current, failed: { error in
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated { self?.startFailed(error, generation: current) }
             }
@@ -75,6 +86,26 @@ import Synchronization
                 MainActor.assumeIsolated { self?.selected(source, generation: current) }
             }
         })
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stallLimit) { [weak self] in
+            MainActor.assumeIsolated { self?.checkStall(from: choice, generation: current) }
+        }
+    }
+
+    /// After an AirPods route change, AVAudioEngine can spin inside CoreAudio reading a format and never return, and
+    /// every later start waits behind it on the device's queue. A fresh process reads the same microphone fine, so the
+    /// capture moves to a fresh device and engine, and the stuck one is left to finish on its own.
+    private func checkStall(from choice: MicrophoneChoice, generation checked: Int) {
+        guard capturing, checked == generation, !device.began(checked) else { return }
+        device.abandon()
+        stuck.append(device)
+        device = InputDevice(feeding: sink)
+        guard replacedFor != checked else {
+            log.error("microphone still stuck after replacing it")
+            return startFailed(DictationError("The microphone stopped responding. Dictate again."), generation: checked)
+        }
+        log.error("microphone stuck \(Self.stallLimit, format: .fixed(precision: 1)) s after key-down, replacing it")
+        replacedFor = checked
+        startDevice(from: choice, generation: checked)
     }
 
     /// Nil when not capturing or nothing arrived.
@@ -146,6 +177,10 @@ private final class InputDevice: @unchecked Sendable {
     private var selected: (@Sendable (MicrophoneSource) -> Void)?
     private var observer: (any NSObjectProtocol)?
     private var accessObserver: (any NSObjectProtocol)?
+    /// The newest capture the queue has begun to start, read from main to tell a stuck queue.
+    private let begun = Atomic(0)
+    /// Set from main once a replacement took over. Whatever was queued behind the stuck call then only stops.
+    private let abandoned = Atomic(false)
 
     init(feeding sink: SampleSink) {
         self.sink = sink
@@ -164,13 +199,19 @@ private final class InputDevice: @unchecked Sendable {
         }
     }
 
-    func start(from choice: MicrophoneChoice, failed: @escaping @Sendable (any Error) -> Void,
+    func start(from choice: MicrophoneChoice, generation: Int, failed: @escaping @Sendable (any Error) -> Void,
                selected: @escaping @Sendable (MicrophoneSource) -> Void) {
         queue.async { [self] in
+            begun.store(generation, ordering: .relaxed)
+            guard !abandoned.load(ordering: .relaxed) else { return }
             (self.choice, self.selected) = (choice, selected)
             do { try begin() } catch { failed(error) }
         }
     }
+
+    func began(_ generation: Int) -> Bool { begun.load(ordering: .relaxed) >= generation }
+
+    func abandon() { abandoned.store(true, ordering: .relaxed) }
 
     /// Stops recording and readies the engine for the next start.
     func stop() {
@@ -208,7 +249,8 @@ private final class InputDevice: @unchecked Sendable {
     /// Readies an engine for the next start when nothing records, the app may record, and the choice resolves to a wired
     /// or built-in microphone. Every device change calls it again, and a ready engine that still fits is kept.
     private func prepareIfIdle() {
-        guard let choice, phase.binding?.running != true, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        guard let choice, !abandoned.load(ordering: .relaxed), phase.binding?.running != true,
+              AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         else { return }
         let inputs = AudioDevices.inputs()
         let target = AudioDevices.input(for: AudioDevices.source(for: choice, among: inputs), among: inputs)
@@ -295,6 +337,7 @@ private final class InputDevice: @unchecked Sendable {
     /// up, rearms the same engine. A fresh engine would select the device again, post another change, and never settle.
     private func configurationChanged() {
         guard case let (binding, running)? = phase.binding else { return }
+        guard !abandoned.load(ordering: .relaxed) else { return end() }
         let unchanged = isCurrent(binding)
         end()
         if unchanged, (try? arm(binding, start: running)) != nil { return }
