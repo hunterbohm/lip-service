@@ -113,11 +113,11 @@ struct FocusTarget {
         let span: PastedSpan
     }
 
-    /// `pasted` is set only for a dictation that Learn from your fixes may watch: pasted, seen in its field, and not
-    /// sent with Return.
     /// `onPaste` gets the moment the paste keystroke went out, before the clipboard settle, for timing.
+    /// `onLanded` gets a dictation that Learn from your fixes may watch, pasted, seen in its field, and not sent with
+    /// Return, as soon as it is seen, so the watch does not wait out the clipboard settle.
     func insert(_ insertion: Insertion, target: FocusTarget, releasedAt: Instant,
-                onPaste: (Instant) -> Void = { _ in }) async -> (outcome: InsertOutcome, pasted: Pasted?) {
+                onPaste: (Instant) -> Void = { _ in }, onLanded: (Pasted) -> Void = { _ in }) async -> InsertOutcome {
         exposeAccessibility(pid: target.pid)
         let focus = FocusTarget.current()
         let conditions = InsertConditions(trusted: AXIsProcessTrusted(), secureInput: IsSecureEventInputEnabled(),
@@ -125,7 +125,7 @@ struct FocusTarget {
         switch InsertDecision.decide(conditions) {
         case .copyOnly(let reason):
             transaction.copy(insertion.text, on: pasteboard)
-            return (.copied(reason), nil)
+            return .copied(reason)
         case .paste:
             let configuration = preferences.current
             let fitted = configuration.settings.smartSpacing && insertion.source != .snippet && insertion.source != .agentDraft
@@ -134,7 +134,7 @@ struct FocusTarget {
                 : insertion.text
             let pasted = Instant.now
             guard let ticket = transaction.paste(fitted, on: pasteboard, post: { Self.post(kVK_ANSI_V, flags: .maskCommand) }) else {
-                return (.copied(.keystrokeFailed), nil)
+                return .copied(.keystrokeFailed)
             }
             onPaste(Instant.now)
             let field = focus.isReadable ? focus.element.map(Field.init) : nil
@@ -153,12 +153,17 @@ struct FocusTarget {
                 }
             } else if learns {
                 landed = await field?.waitForText(fitted, until: pasted + Self.landingWait)
+                if let field, let landed {
+                    Self.log.info("fix watch started")
+                    onLanded(Pasted(field: field, span: PastedSpan(value: landed.value, location: landed.cursor - fitted.utf16.count,
+                                                                   inserted: fitted)))
+                } else {
+                    Self.log.info("fix watch skipped: \(field == nil ? "field unreadable" : "paste not seen in field", privacy: .public)")
+                }
             }
             try? await Task.sleep(for: settle - .seconds(Instant.now - pasted))
             transaction.restore(ticket, on: pasteboard)
-            guard learns, let field, let landed else { return (.pasted, nil) }
-            return (.pasted, Pasted(field: field, span: PastedSpan(value: landed.value, location: landed.cursor - fitted.utf16.count,
-                                                                    inserted: fitted)))
+            return .pasted
         }
     }
 

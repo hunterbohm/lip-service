@@ -12,6 +12,31 @@ public struct PastedSpan: Equatable, Sendable {
     }
 }
 
+/// A field followed from the paste until the dictation is sent or cleared. A chat app empties its field on send,
+/// so the fix is the text the field held just before, not what it holds a minute later. Only text that stayed the
+/// same for `steady` seconds counts, so a word caught half typed is never taken for the fix.
+public struct FixWatch: Sendable {
+    public static let steady = 1.0
+
+    public let span: PastedSpan
+    /// The last text that held still. The pasted text until the user's edit settles.
+    public private(set) var settled: String
+    private var latest: String
+    private var since: Double
+
+    public init(span: PastedSpan, at time: Double) {
+        (self.span, settled, latest, since) = (span, span.value, span.value, time)
+    }
+
+    /// Takes one read of the field. False once the field is blank, as after a message is sent: the watch is over.
+    public mutating func read(_ value: String, at time: Double) -> Bool {
+        if value.allSatisfy(\.isWhitespace) { return false }
+        if value != latest { (latest, since) = (value, time) }
+        if time - since >= Self.steady { settled = latest }
+        return true
+    }
+}
+
 /// Learns a word from the user's own fix: when exactly one word of a dictation was replaced by another that looks or
 /// sounds like it, the new word goes into the dictionary, with the old one as a misheard spelling unless it is a real
 /// word.

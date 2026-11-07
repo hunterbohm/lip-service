@@ -90,3 +90,33 @@ import Testing
         #expect(!BarNotice.copied(.focusMoved).outlastsNextDictation)
     }
 }
+
+@Suite("Watches a field until it is sent") struct FixWatchTests {
+    private static let span = PastedSpan(value: "Ask Shivon about the launch.", location: 0, inserted: "Ask Shivon about the launch.")
+    private static let fixed = "Ask Siobhan about the launch."
+
+    private static func learned(after reads: [(String, Double)]) -> (term: Vocabulary.Term?, open: Bool) {
+        var watch = FixWatch(span: span, at: 0)
+        var open = true
+        for (value, time) in reads where open { open = watch.read(value, at: time) }
+        return (FixLearning.learn(from: span, now: watch.settled, vocabulary: Vocabulary(terms: []), isWord: { _ in false }), open)
+    }
+
+    @Test func aFixMadeBeforeSendingIsLearnedAfterTheFieldEmpties() {
+        let result = Self.learned(after: [(Self.fixed, 2), (Self.fixed, 2.5), (Self.fixed, 3), ("\n", 3.25)])
+        #expect(!result.open)
+        #expect(result.term == .init(text: "Siobhan", aliases: ["shivon"]))
+    }
+
+    @Test func aWordStillBeingTypedWhenTheMessageIsSentIsNotLearned() {
+        let result = Self.learned(after: [("Ask Siob about the launch.", 2), ("Ask Siobh about the launch.", 2.9),
+                                          (Self.fixed, 3.2), ("", 3.6)])
+        #expect(result.term == nil)
+    }
+
+    @Test func aFieldThatKeepsItsTextStaysWatched() {
+        let result = Self.learned(after: [(Self.fixed, 2), (Self.fixed, 30)])
+        #expect(result.open)
+        #expect(result.term == .init(text: "Siobhan", aliases: ["shivon"]))
+    }
+}

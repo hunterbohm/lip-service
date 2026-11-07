@@ -43,9 +43,8 @@ import os
     private var noticeSerial = 0
     /// Counts captures, so names from the screen that arrive after their capture ended are dropped.
     private var capture = 0
-    /// The newest dictation Learn from your fixes watches, until the next dictation or a minute later.
-    private var watchedFix: (pasted: Inserter.Pasted, serial: Int)?
-    private var fixSerial = 0
+    /// Follows the newest dictation for Learn from your fixes, until it is sent, the next dictation, or a minute later.
+    private var fixWatch: Task<Void, Never>?
     /// The word the Learned notice can undo.
     private var learned: Vocabulary.Term?
     private var fnSettingMentioned = false
@@ -174,7 +173,7 @@ import os
                 fallback = nil
                 words = ""
                 capture += 1
-                checkFix()
+                fixWatch?.cancel()
                 preferences.reloadVocabularyIfChanged()
                 do {
                     try microphone.start(from: preferences.current.settings.microphone)
@@ -315,47 +314,58 @@ import os
         menu.remember(insertion.text)
         if preferences.current.settings.keepHistory { history.add(HistoryEntry(text: insertion.text, audioSeconds: recording.seconds, app: target.app)) }
         let released = recording.releasedAt
-        let (outcome, pasted) = await inserter.insert(insertion, target: target, releasedAt: released,
-                                                      onPaste: { [timing] at in timing.record(at - released) })
-        if let pasted { watch(pasted) }
+        let outcome = await inserter.insert(insertion, target: target, releasedAt: released,
+                                            onPaste: { [timing] at in timing.record(at - released) }, onLanded: watch)
         if case .copied(let reason) = outcome {
             log.info("copied instead of pasting: \(String(describing: reason), privacy: .public)")
             show(.copied(reason))
         }
     }
 
-    private static let fixWindow = Duration.seconds(60)
+    private static let fixWindow = 60.0
+    private static let fixPoll = Duration.milliseconds(250)
+    /// Reads in a row that fail before the field counts as gone, such as a window that closed on send.
+    private static let fixMisses = 3
 
     private func watch(_ pasted: Inserter.Pasted) {
-        fixSerial += 1
-        let serial = fixSerial
-        watchedFix = (pasted, serial)
-        Task { [weak self] in
-            try? await Task.sleep(for: Self.fixWindow)
-            if let self, watchedFix?.serial == serial { checkFix() }
+        fixWatch?.cancel()
+        fixWatch = Task { [weak self] in
+            let start = Instant.now
+            var watch = FixWatch(span: pasted.span, at: 0)
+            var misses = 0, ended = "timed out"
+            while Instant.now - start < Self.fixWindow {
+                try? await Task.sleep(for: Self.fixPoll)
+                if Task.isCancelled { ended = "next dictation"; break }
+                guard let value = await pasted.field.contents()?.value else {
+                    misses += 1
+                    if misses == Self.fixMisses { ended = "field gone"; break }
+                    continue
+                }
+                misses = 0
+                if !watch.read(value, at: Instant.now - start) { ended = "field emptied"; break }
+            }
+            self?.learn(from: watch, ended: ended)
         }
     }
 
-    /// Reads the watched field once, off the main thread, and learns the word if the user fixed one.
-    private func checkFix() {
-        guard let watched = watchedFix else { return }
-        watchedFix = nil
-        Task { [weak self] in
-            guard let current = await watched.pasted.field.contents()?.value, let self else { return }
-            preferences.reloadVocabularyIfChanged()
-            var vocabulary = preferences.current.vocabulary
-            guard preferences.current.settings.learnFixes,
-                  let term = FixLearning.learn(from: watched.pasted.span, now: current, vocabulary: vocabulary, isWord: Spelling.isWord)
-            else { return }
-            do {
-                try vocabulary.save(term, replacing: nil)
-                try preferences.saveVocabulary(vocabulary)
-            } catch {
-                return log.error("could not learn a word: \(error.localizedDescription, privacy: .public)")
-            }
-            learned = term
-            show(.learned(term.text))
+    private func learn(from watch: FixWatch, ended: String) {
+        preferences.reloadVocabularyIfChanged()
+        var vocabulary = preferences.current.vocabulary
+        guard preferences.current.settings.learnFixes else { return }
+        guard let term = FixLearning.learn(from: watch.span, now: watch.settled, vocabulary: vocabulary, isWord: Spelling.isWord) else {
+            let found = watch.settled == watch.span.value ? "no settled edit"
+                : FixLearning.fix(of: watch.span, now: watch.settled) == nil ? "not a one-word fix" : "word not learnable"
+            return log.info("fix watch ended, \(ended, privacy: .public): \(found, privacy: .public)")
         }
+        do {
+            try vocabulary.save(term, replacing: nil)
+            try preferences.saveVocabulary(vocabulary)
+        } catch {
+            return log.error("could not learn a word: \(error.localizedDescription, privacy: .public)")
+        }
+        log.info("fix watch ended, \(ended, privacy: .public): learned a word")
+        learned = term
+        show(.learned(term.text))
     }
 
     /// Takes the word out again, unless it was edited since.
@@ -375,7 +385,7 @@ import os
         guard let last else { return show(.nothingToPaste) }
         Task {
             if case .copied(let reason) = await inserter.insert(last.again, target: inserter.releaseTarget(),
-                                                                 releasedAt: .now).outcome {
+                                                                 releasedAt: .now) {
                 show(.copied(reason))
             }
         }
