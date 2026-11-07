@@ -25,6 +25,7 @@ import os
     let agents = AgentPool()
     let timing = DictationTiming()
     private let formatter = SmartFormatter()
+    private let learnedAlert = LearnedAlert()
     private var setupObserver: (any NSObjectProtocol)?
     private var ghostwriter: Ghostwriter!
     /// What the running capture is for, and whether it goes to the agent rather than the cursor: a Ghostwrite or Hand
@@ -68,6 +69,10 @@ import os
     func start() {
         Task { [formatter, preferences] in
             await formatter.load(download: SettingsStore.isReal && preferences.current.settings.smartFormatting)
+        }
+        if SettingsStore.isReal {
+            learnedAlert.onUndo = { [unowned self] in undoLearned() }
+            learnedAlert.start()
         }
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
         keyTap.onPasteLast = { [unowned self] in pasteLast() }
@@ -366,6 +371,7 @@ import os
         log.info("fix watch ended, \(ended, privacy: .public): learned a word")
         learned = term
         show(.learned(term.text))
+        if SettingsStore.isReal { learnedAlert.show(term.text) }
     }
 
     /// Takes the word out again, unless it was edited since.
