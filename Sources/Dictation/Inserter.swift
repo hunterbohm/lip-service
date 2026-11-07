@@ -156,7 +156,12 @@ struct FocusTarget {
             }
             try? await Task.sleep(for: settle - .seconds(Instant.now - pasted))
             transaction.restore(ticket, on: pasteboard)
-            guard learns, let field, let landed else { return (.pasted, nil) }
+            guard learns else { return (.pasted, nil) }
+            guard let field, let landed else {
+                Self.log.info("fix watch skipped: \(field == nil ? "field unreadable" : "paste not seen in field", privacy: .public)")
+                return (.pasted, nil)
+            }
+            Self.log.info("fix watch started")
             return (.pasted, Pasted(field: field, span: PastedSpan(value: landed.value, location: landed.cursor - fitted.utf16.count,
                                                                     inserted: fitted)))
         }
