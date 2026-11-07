@@ -152,9 +152,9 @@ struct FocusTarget {
                     Self.log.info("Press Return skipped")
                 }
             } else if learns {
-                landed = await field?.waitForText(fitted, until: pasted + Self.landingWait)
+                landed = await field?.waitForText(fitted, until: pasted + Self.landingWait, retryingFailedReads: true)
                 if let field, let landed {
-                    Self.log.info("fix watch started")
+                    Self.log.info("fix watch started, paste seen after \(Instant.now - pasted, format: .fixed(precision: 3)) s")
                     onLanded(Pasted(field: field, span: PastedSpan(value: landed.value, location: landed.cursor - fitted.utf16.count,
                                                                    inserted: fitted)))
                 } else {
@@ -169,8 +169,9 @@ struct FocusTarget {
 
     /// When the field cannot be read, Return waits this long after the paste keystroke.
     private static let unseenPaste = 0.2
-    /// How long Learn from your fixes looks for the pasted text in its field.
-    private static let landingWait = 0.4
+    /// How long Learn from your fixes looks for the pasted text in its field. Inside the clipboard settle, so the
+    /// paste waits no longer for it. A busy Electron app can take most of it to show the text to Accessibility.
+    private static let landingWait = 0.9
     /// Kept from the Return deadline for the focus check just before Return.
     private static let returnCheckTime = 0.15
     private static let log = Logger(subsystem: "com.hunterbohm.dictation", category: "dictation")

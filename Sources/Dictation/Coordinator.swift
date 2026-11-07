@@ -25,6 +25,7 @@ import os
     let agents = AgentPool()
     let timing = DictationTiming()
     private let formatter = SmartFormatter()
+    private let learnedAlert = LearnedAlert()
     private var setupObserver: (any NSObjectProtocol)?
     private var ghostwriter: Ghostwriter!
     /// What the running capture is for, and whether it goes to the agent rather than the cursor: a Ghostwrite or Hand
@@ -69,6 +70,10 @@ import os
         Task { [formatter, preferences] in
             await formatter.load(download: SettingsStore.isReal && preferences.current.settings.smartFormatting)
         }
+        if SettingsStore.isReal {
+            learnedAlert.onUndo = { [unowned self] term in undoLearned(term) }
+            learnedAlert.start()
+        }
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
         keyTap.onPasteLast = { [unowned self] in pasteLast() }
         keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
@@ -81,7 +86,7 @@ import os
             case .moved(let edge): preferences.change { $0.barEdge = edge }
             case .toastAction(.retryModel): engine.retry()
             case .toastAction(.openKeyboardSettings): StatusMenu.openSettings(StatusMenu.keyboardSettings)
-            case .toastAction(.undoLearned): undoLearned()
+            case .toastAction(.undoLearned): if let learned { undoLearned(learned) }
             case .toastAction(.undoSetup):
                 preferences.undoSetup()
                 notice = nil
@@ -366,12 +371,12 @@ import os
         log.info("fix watch ended, \(ended, privacy: .public): learned a word")
         learned = term
         show(.learned(term.text))
+        if SettingsStore.isReal { learnedAlert.show(term) }
     }
 
     /// Takes the word out again, unless it was edited since.
-    private func undoLearned() {
-        guard let term = learned else { return }
-        learned = nil
+    private func undoLearned(_ term: Vocabulary.Term) {
+        if learned == term { learned = nil }
         preferences.reloadVocabularyIfChanged()
         var vocabulary = preferences.current.vocabulary
         vocabulary.terms.removeAll { $0 == term }

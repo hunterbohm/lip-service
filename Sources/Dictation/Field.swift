@@ -53,10 +53,14 @@ struct Field: @unchecked Sendable {
     }
 
     /// Polls until `text` ends at the cursor, which means the paste landed, until `deadline`. The contents then. Nil at
-    /// once for a field that cannot be read at all, so a caller does not wait out the deadline on it.
-    func waitForText(_ text: String, until deadline: Instant) async -> Contents? {
+    /// once for a field that cannot be read at all, so a caller does not wait out the deadline on it, unless
+    /// `retryingFailedReads`, for a caller that waits anyway and reads a busy app that misses a read.
+    func waitForText(_ text: String, until deadline: Instant, retryingFailedReads: Bool = false) async -> Contents? {
         while Instant.now < deadline {
-            guard let contents = await contents(until: deadline) else { return nil }
+            guard let contents = await contents(until: deadline) else {
+                if retryingFailedReads { try? await Task.sleep(for: .milliseconds(15)); continue }
+                return nil
+            }
             if contents.endsAtCursor(with: text) { return contents }
             try? await Task.sleep(for: .milliseconds(15))
         }
