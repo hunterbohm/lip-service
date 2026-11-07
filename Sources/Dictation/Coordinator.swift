@@ -314,9 +314,8 @@ import os
         menu.remember(insertion.text)
         if preferences.current.settings.keepHistory { history.add(HistoryEntry(text: insertion.text, audioSeconds: recording.seconds, app: target.app)) }
         let released = recording.releasedAt
-        let (outcome, pasted) = await inserter.insert(insertion, target: target, releasedAt: released,
-                                                      onPaste: { [timing] at in timing.record(at - released) })
-        if let pasted { watch(pasted) }
+        let outcome = await inserter.insert(insertion, target: target, releasedAt: released,
+                                            onPaste: { [timing] at in timing.record(at - released) }, onLanded: watch)
         if case .copied(let reason) = outcome {
             log.info("copied instead of pasting: \(String(describing: reason), privacy: .public)")
             show(.copied(reason))
@@ -386,7 +385,7 @@ import os
         guard let last else { return show(.nothingToPaste) }
         Task {
             if case .copied(let reason) = await inserter.insert(last.again, target: inserter.releaseTarget(),
-                                                                 releasedAt: .now).outcome {
+                                                                 releasedAt: .now) {
                 show(.copied(reason))
             }
         }

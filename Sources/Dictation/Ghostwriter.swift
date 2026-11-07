@@ -330,7 +330,7 @@ import os
             return
         }
         let insertion = Insertion(text: text, source: .agentDraft)
-        if case .copied(let reason) = await inserter.insert(insertion, target: run.target, releasedAt: .now).outcome {
+        if case .copied(let reason) = await inserter.insert(insertion, target: run.target, releasedAt: .now) {
             onNotice?(.copied(reason))
         }
     }
