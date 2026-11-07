@@ -71,7 +71,7 @@ import os
             await formatter.load(download: SettingsStore.isReal && preferences.current.settings.smartFormatting)
         }
         if SettingsStore.isReal {
-            learnedAlert.onUndo = { [unowned self] in undoLearned() }
+            learnedAlert.onUndo = { [unowned self] term in undoLearned(term) }
             learnedAlert.start()
         }
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
@@ -86,7 +86,7 @@ import os
             case .moved(let edge): preferences.change { $0.barEdge = edge }
             case .toastAction(.retryModel): engine.retry()
             case .toastAction(.openKeyboardSettings): StatusMenu.openSettings(StatusMenu.keyboardSettings)
-            case .toastAction(.undoLearned): undoLearned()
+            case .toastAction(.undoLearned): if let learned { undoLearned(learned) }
             case .toastAction(.undoSetup):
                 preferences.undoSetup()
                 notice = nil
@@ -371,13 +371,12 @@ import os
         log.info("fix watch ended, \(ended, privacy: .public): learned a word")
         learned = term
         show(.learned(term.text))
-        if SettingsStore.isReal { learnedAlert.show(term.text) }
+        if SettingsStore.isReal { learnedAlert.show(term) }
     }
 
     /// Takes the word out again, unless it was edited since.
-    private func undoLearned() {
-        guard let term = learned else { return }
-        learned = nil
+    private func undoLearned(_ term: Vocabulary.Term) {
+        if learned == term { learned = nil }
         preferences.reloadVocabularyIfChanged()
         var vocabulary = preferences.current.vocabulary
         vocabulary.terms.removeAll { $0 == term }
