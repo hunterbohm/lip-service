@@ -221,9 +221,9 @@ enum BarEvent: Equatable {
         let me = ProcessInfo.processInfo.processIdentifier
         let normal = Int(CGWindowLevelForKey(.normalWindow)), saver = Int(CGWindowLevelForKey(.screenSaverWindow))
         let bars: [BarRect] = list.compactMap { window in
-            // Above ordinary windows but under the screen saver, and more than a hairline such as a window border. The Dock, already outside the visible frame, and
-            // the hidden menu bar, which slides over everything only while the mouse is at the top, are not bars to
-            // avoid.
+            // Above ordinary windows but under the screen saver, and more than a hairline such as a window border.
+            // The Dock, already outside the visible frame, and the hidden menu bar, which slides over everything only
+            // while the mouse is at the top, are not bars to avoid.
             guard let layer = window[kCGWindowLayer as String] as? Int, layer > normal, layer < saver,
                   window[kCGWindowOwnerPID as String] as? Int32 != me,
                   !["Dock", "Window Server"].contains(window[kCGWindowOwnerName as String] as? String ?? ""),
