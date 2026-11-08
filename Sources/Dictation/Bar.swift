@@ -97,8 +97,8 @@ enum BarEvent: Equatable {
                                              onDrag: { [weak self] ended in self?.dragged(ended: ended) }))
         let inset = BarStyle.inset(of: state.body, edge: edge)
         let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area), inset: inset))
-        // While the words bar shows, its panel covers the widest the capsule can grow to on this edge, and the halo
-        // past it, and never resizes. The capsule grows inside it, so macOS never shows a panel mid-resize with its
+        // While the words bar shows, its panel covers the widest the capsule can be on this edge, and the halo past
+        // it, and never resizes. A change of width animates inside it, so macOS never shows a panel mid-resize with its
         // old content stretched across the new frame.
         let panelFrame = state.body.wordsBar == nil ? frame
             : NSRect(edge.place(width: max(BarStyle.maxWidth, size.width), height: size.height, in: BarRect(area), inset: inset))
@@ -342,7 +342,9 @@ struct VoiceReading {
 /// Sizes shared by the views and the layout.
 @MainActor enum BarStyle {
     static let height: CGFloat = 40
-    static let maxWidth: CGFloat = 560
+    /// The widest the words bar's panel is, so a capsule that widens, when a dictation becomes a Ghostwrite and its
+    /// agent shows, or narrows, when hands-free ends, animates inside it instead of resizing the panel.
+    static let maxWidth: CGFloat = 440
     static let padding: CGFloat = 18
     static let glyphGap: CGFloat = 13
     static let glyphWidth = CGFloat(HalftonePrint.width)
@@ -355,7 +357,6 @@ struct VoiceReading {
     static let toastMaxWidth: CGFloat = 520
     static let toastTitleFont = NSFont.systemFont(ofSize: 13.5, weight: .semibold)
     static let toastDetailFont = NSFont.systemFont(ofSize: 12.5)
-    static let wordsFont = NSFont.systemFont(ofSize: 15)
     static let statusFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     static let fill = Theme.canvas.opacity(0.96)
 
@@ -369,23 +370,13 @@ struct VoiceReading {
         switch body {
         case .hidden: nil
         case .idle: edge.isSide ? CGSize(width: idle.height, height: idle.width) : idle
-        case .listening(let words, let handsFree):
-            CGSize(width: wordsLayout(words, handsFree: handsFree, agent: agent).capsuleWidth, height: height)
-        case .transcribing(let words, nil): CGSize(width: wordsLayout(words, handsFree: false, agent: agent).capsuleWidth, height: height)
+        case .listening(_, let handsFree): CGSize(width: wordsBarWidth(handsFree: handsFree, agent: agent), height: height)
+        case .transcribing(_, nil): CGSize(width: wordsBarWidth(handsFree: false, agent: agent), height: height)
         case .working(let status, _):
             CGSize(width: padding + agentWidth(agent) + glyphWidth + glyphGap + measure(status, statusFont) + padding, height: height)
         case .transcribing(_, .some(let phase)), .preparing(let phase):
             CGSize(width: padding + 16 + 10 + measure(Self.describe(phase), statusFont) + padding, height: height)
         }
-    }
-
-    struct WordsLayout: Equatable {
-        /// The words' frame. Narrower than the words when they overflow, and then the newest words show.
-        var textWidth: CGFloat
-        /// The whole line's width.
-        var naturalWidth: CGFloat
-        var overflows: Bool
-        var capsuleWidth: CGFloat
     }
 
     /// The agent's mark and name ahead of the print, and the gap after them.
@@ -397,25 +388,13 @@ struct VoiceReading {
     static let avatarSize: CGFloat = 22
     static let agentFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-    static func wordsLayout(_ words: String, handsFree: Bool, agent: BarAgent? = nil) -> WordsLayout {
-        let fixed = padding + agentWidth(agent) + glyphWidth + (handsFree ? glyphGap + buttonsWidth : 0) + padding
-        let line = tokens(words).joined(separator: " ")
-        guard !line.isEmpty else { return WordsLayout(textWidth: 0, naturalWidth: 0, overflows: false, capsuleWidth: fixed) }
-        let natural = measure(line, wordsFont)
-        let room = maxWidth - fixed - glyphGap
-        let textWidth = min(natural, room)
-        return WordsLayout(textWidth: textWidth, naturalWidth: natural, overflows: natural > room,
-                           capsuleWidth: fixed + glyphGap + textWidth)
+    /// The words bar's width, the same whatever is said: the agent's mark, the waves, and the hands-free buttons.
+    static func wordsBarWidth(handsFree: Bool, agent: BarAgent?) -> CGFloat {
+        padding + agentWidth(agent) + CGFloat(LightWave.width) + (handsFree ? glyphGap + buttonsWidth : 0) + padding
     }
 
-    /// The words one by one, which is how they fade in.
-    static func tokens(_ words: String) -> [Substring] { words.split(whereSeparator: \.isWhitespace) }
-
-    static let spaceWidth = rawWidth(" ")
-
-    /// A word's width as the line was measured. SwiftUI rounds each word's own width up, which over a line adds up to
-    /// several points, so the words are framed to this instead.
-    static func rawWidth(_ text: String) -> CGFloat { NSAttributedString(string: text, attributes: [.font: wordsFont]).size().width }
+    /// How many words have been heard so far.
+    static func wordCount(_ words: String) -> Int { words.split(whereSeparator: \.isWhitespace).count }
 
     /// The text column's width in a toast: each line on one line when it fits, else the widest the toast allows,
     /// wrapping.
@@ -441,8 +420,8 @@ struct VoiceReading {
 
 private extension BarState.Body {
     var isListening: Bool { if case .listening = self { true } else { false } }
-    /// The capsule with the glyph and the words, while listening and while the last words are finished. It is one
-    /// view in both, so the glyph can crossfade from one to the other.
+    /// The capsule with the waves, while listening and while the last words are finished. It is one
+    /// view in both, so the waves settle without starting over.
     var wordsBar: (words: String, handsFree: Bool, finishing: Bool)? {
         switch self {
         case .listening(let words, let handsFree): (words, handsFree, false)
@@ -496,12 +475,10 @@ private struct BodyView: View {
     }
 
     private func wordsBar(_ bar: (words: String, handsFree: Bool, finishing: Bool)) -> some View {
-        capsule(behind: Print(meter: meter, finishing: bar.finishing, offset: BarStyle.agentWidth(agent))) {
+        capsule(behind: EmptyView()) {
             if let agent { AgentChip(agent: agent) }
-            Color.clear.frame(width: BarStyle.glyphWidth)
-            if !bar.words.isEmpty {
-                Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree, agent: agent), dimmed: bar.finishing)
-            }
+            WaveView(meter: meter, words: BarStyle.wordCount(bar.words), finishing: bar.finishing)
+                .frame(width: CGFloat(LightWave.width), height: BarStyle.height)
             Spacer(minLength: 0)
             if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
         }
@@ -613,10 +590,9 @@ private struct Ticker<Content: View>: View {
     }
 }
 
-/// The glyph under the capsule's content: a halftone print of the voice in white dots on a fine 45-degree screen. The
-/// newest voice is at the left and older voice runs right into the words, thinning as it arrives. While the words are
-/// being finished the print settles to a dim baseline and a light runs along it. With Reduce Motion the print is a still
-/// baseline while listening and a still dim baseline while finishing.
+/// The glyph ahead of an agent's status: a halftone print in white dots on a fine 45-degree screen, settled to a dim
+/// baseline with a light running along it while the agent works, and still while it waits on you. It can also print
+/// the voice, newest at the left. With Reduce Motion it is a still dim baseline.
 private struct Print: View {
     let meter: VoiceMeter
     let finishing: Bool
@@ -719,6 +695,88 @@ private struct HaloView: View {
     }
 }
 
+/// The words bar's inside: three soft blue waves that swell with the voice, and a spark that runs along them each time
+/// a word is recognised. While the words are finished the waves settle flat and dim, and a spark keeps crossing. Each
+/// frame blurs one layer, the glow under the waves and sparks. With Reduce Motion the waves are drawn once, still,
+/// with no sparks.
+private struct WaveView: View {
+    let meter: VoiceMeter
+    /// How many words have been heard so far; each new one starts a spark.
+    let words: Int
+    let finishing: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var swell = Eased()
+    @State private var sparks: [Double] = []
+
+    var body: some View {
+        Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
+            Canvas { context, size in draw(into: &context, size: size, time: time) }
+        }
+        .onChange(of: words) { old, new in
+            guard !reduceMotion, meter.frozenAt == nil else { return }
+            let now = Date.timeIntervalSinceReferenceDate
+            sparks.removeAll { now - $0 > LightWave.sparkLife }
+            sparks += LightWave.sparks(forAdded: new - old, at: now)
+        }
+    }
+
+    private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
+        let settled = meter.frozenAt != nil || reduceMotion
+        let target = finishing ? LightWave.finishingAmplitude
+            : reduceMotion ? LightWave.restingAmplitude : LightWave.amplitude(level: meter.reading(at: time).level(delay: 0))
+        let amplitude = settled ? swell.settle(at: target) : swell.step(toward: target, tau: 0.08, at: time)
+        let phaseTime = reduceMotion ? 0 : time
+        let width = size.width, mid = size.height / 2
+
+        func point(_ strand: LightWave.Strand, _ along: Double) -> CGPoint {
+            CGPoint(x: along * width, y: mid - LightWave.offset(strand, along: along, time: phaseTime, amplitude: amplitude))
+        }
+        let steps = Int(width / 2)
+        let paths = LightWave.strands.map { strand in
+            var path = Path()
+            path.move(to: point(strand, 0))
+            for index in 1...steps { path.addLine(to: point(strand, Double(index) / Double(steps))) }
+            return path
+        }
+        var lit: [(CGPoint, Double)] = []
+        if !reduceMotion {
+            // --render-bar shows one spark partway across.
+            let starts = meter.frozenAt.map { [$0 - LightWave.sparkLife * 0.4] } ?? (finishing ? [LightWave.finishingSpark(at: time)] : sparks)
+            for start in starts {
+                guard let spark = LightWave.spark(startedAt: start, at: time) else { continue }
+                lit.append((point(LightWave.strands[0], spark.along), spark.light))
+            }
+        }
+
+        context.opacity = finishing ? 0.55 : 1
+        var glow = context
+        glow.addFilter(.blur(radius: 4))
+        for (path, strand) in zip(paths, LightWave.strands) {
+            glow.stroke(path, with: shading(strand, 0.8, width: width), lineWidth: 3)
+        }
+        for (center, light) in lit {
+            glow.fill(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)), with: .color(Self.spark.opacity(light)))
+        }
+        for (path, strand) in zip(paths, LightWave.strands) {
+            context.stroke(path, with: shading(strand, 0.9, width: width), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        }
+        for (center, light) in lit {
+            context.fill(Path(ellipseIn: CGRect(x: center.x - 2.2, y: center.y - 2.2, width: 4.4, height: 4.4)), with: .color(Self.spark.opacity(light)))
+        }
+    }
+
+    private static let spark = Color(red: 0xEB / 255, green: 0xFA / 255, blue: 1)
+
+    /// A wave's colour, faded in from each end.
+    private func shading(_ strand: LightWave.Strand, _ opacity: Double, width: CGFloat) -> GraphicsContext.Shading {
+        let color = Color(red: strand.red, green: strand.green, blue: strand.blue).opacity(opacity)
+        let fade = LightWave.fade
+        return .linearGradient(Gradient(stops: [.init(color: color.opacity(0), location: 0), .init(color: color, location: fade),
+                                                .init(color: color, location: 1 - fade), .init(color: color.opacity(0), location: 1)]),
+                               startPoint: .zero, endPoint: CGPoint(x: width, y: 0))
+    }
+}
+
 /// The agent's round mark and its name, as on the card.
 struct AgentChip: View {
     let agent: BarAgent
@@ -753,87 +811,6 @@ private struct Spinner: View {
         }
         .frame(width: 14, height: 14)
         .frame(width: 16)
-    }
-}
-
-/// One line. Each new word prints in through a dot screen. When the line overflows, the newest words stay and
-/// the start fades out; the line slides over to make room.
-private struct Words: View {
-    let words: String
-    let layout: BarStyle.WordsLayout
-    let dimmed: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let shift = layout.overflows ? layout.naturalWidth - layout.textWidth : 0
-        HStack(spacing: BarStyle.spaceWidth) {
-            ForEach(Array(BarStyle.tokens(words).enumerated()), id: \.offset) { _, token in
-                Word(text: String(token), width: BarStyle.rawWidth(String(token)))
-            }
-        }
-        .fixedSize()
-        .offset(x: -shift)
-        .animation(reduceMotion ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.55), value: shift)
-        .frame(width: layout.textWidth, height: BarStyle.height, alignment: .leading)
-        .clipped()
-        .mask {
-            LinearGradient(stops: [.init(color: .black.opacity(layout.overflows ? 0 : 1), location: 0), .init(color: .black, location: 0.12)],
-                           startPoint: .leading, endPoint: .trailing)
-        }
-        .opacity(dimmed ? 0.5 : 1)
-        .animation(.easeOut(duration: 0.3), value: dimmed)
-        .padding(.leading, BarStyle.glyphGap)
-    }
-}
-
-private struct Word: View {
-    let text: String
-    let width: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var arrived = false
-
-    var body: some View {
-        let label = Text(text)
-            .font(.system(size: 15))
-            .foregroundStyle(.white)
-            .lineLimit(1)
-            .fixedSize()
-            .frame(width: width, alignment: .leading)
-        if reduceMotion {
-            label
-                .opacity(arrived ? 1 : 0)
-                .onAppear { withAnimation(.easeOut(duration: 0.2)) { arrived = true } }
-        } else {
-            label
-                .opacity(arrived ? 1 : 0.5)
-                .mask { DotScreen(radius: arrived ? DotScreen.full : 0) }
-                .onAppear { withAnimation(.timingCurve(0.33, 0, 0.2, 1, duration: 0.55)) { arrived = true } }
-        }
-    }
-}
-
-/// A grid of circles in 3 pt cells. At `full` radius they overlap and cover every cell whole, so a word masked with it
-/// is solid; at 0 nothing shows.
-private struct DotScreen: Shape {
-    static let cell = 3.0
-    static let full = 2.4
-    var radius: Double
-
-    var animatableData: Double {
-        get { radius }
-        set { radius = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        guard radius > 0.01 else { return path }
-        for column in 0..<Int((rect.width / Self.cell).rounded(.up)) {
-            for row in 0..<Int((rect.height / Self.cell).rounded(.up)) {
-                let x = rect.minX + (Double(column) + 0.5) * Self.cell, y = rect.minY + (Double(row) + 0.5) * Self.cell
-                path.addEllipse(in: CGRect(x: x - radius, y: y - radius, width: 2 * radius, height: 2 * radius))
-            }
-        }
-        return path
     }
 }
 
