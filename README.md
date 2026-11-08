@@ -87,7 +87,7 @@ From 1.0.8, Lip Service says in its menu bar menu and on the Home page when a ne
 - Hold fn or Right Control, speak, and let go. The text is pasted at the cursor.
 - To dictate without holding the key, tap it twice. Press it once more to insert the text, or press Escape to throw it away.
 - To paste your last dictation again, press Control+Command+V.
-- While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far, with a ring of blue dots around it that glows as you talk. Drag it to the top or to either side of the screen.
+- While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far, with a soft blue rim around it that glows brighter as you talk while a beam of light runs around its edge. Drag it to the top or to either side of the screen.
 - Lip Service removes filler words such as "um" and fixes capitals and punctuation.
 - **Smart formatting** adds paragraphs, numbered and bulleted lists, and quotation marks where they fit, without you saying "new paragraph" or "quote". Say "first… second… third…" and you get a numbered list. A model on your Mac reads what you said, your pauses, and the kind of app the text goes into. It only adds breaks, list markers and quotes, fixes punctuation, and drops counting words such as "first", so every other word goes in as you said it. To turn it off, clear **Smart formatting** on the **Dictation** page.
 - To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.

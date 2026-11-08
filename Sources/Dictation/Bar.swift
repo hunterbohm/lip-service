@@ -602,34 +602,17 @@ private struct Print: View {
     }
 }
 
-/// The dots of the halo for one capsule size, rebuilt only when the size changes.
-@MainActor private final class HaloDots {
-    private var size = CGSize.zero
-    private var dots: [HaloGlow.Dot] = []
-
-    func dots(for size: CGSize) -> [HaloGlow.Dot] {
-        if size != self.size {
-            self.size = size
-            dots = HaloGlow.dots(capsuleWidth: size.width, capsuleHeight: size.height)
-        }
-        return dots
-    }
-}
-
-/// A ring of small blue dots around the capsule that light up with the voice, drawn in the halo panel, which reaches
-/// `BarStyle.haloMargin` past the capsule on every side. It fades in while listening and out while the words are
-/// finished. Each frame it puts
-/// every lit dot into one of `shades` paths by its opacity and fills each path once. With Reduce Motion there is no halo.
+/// The glow around the capsule, drawn in the halo panel, which reaches `BarStyle.haloMargin` past the capsule on every
+/// side: a blurred halo and a soft rim in shades of blue that turn slowly around the capsule, and a bright beam that
+/// runs around the rim. All three brighten with the voice. It fades in while listening and out while the words are
+/// finished. With Reduce Motion the rim and halo stay still, with no beam.
 private struct HaloView: View {
     let meter: VoiceMeter
     let listening: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var aura = Eased()
-    @State private var grid = HaloDots()
 
-    private static let shades = 24
-    private static let blue = Color(red: HaloGlow.color.red, green: HaloGlow.color.green, blue: HaloGlow.color.blue)
-    private static let shadeStep = HaloGlow.opacityGain / Double(shades - 1)
+    private static let blues = Gradient(colors: (HaloGlow.rimColors + [HaloGlow.rimColors[0]]).map { Color(red: $0.red, green: $0.green, blue: $0.blue) })
 
     var body: some View {
         Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
@@ -638,25 +621,47 @@ private struct HaloView: View {
     }
 
     private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
-        guard !reduceMotion else { return }
         let target = listening ? 1.0 : 0.0
-        let light = meter.frozenAt != nil ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
-        guard light > 0.004 else { return }
-        let margin = BarStyle.haloMargin
-        let dots = grid.dots(for: CGSize(width: size.width - 2 * margin, height: size.height - 2 * margin))
-        let voice = meter.reading(at: time)
+        let fade = meter.frozenAt != nil || reduceMotion ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
+        guard fade > 0.004 else { return }
+        let margin = BarStyle.haloMargin, rim = CGFloat(HaloGlow.rimWidth)
+        let capsule = CGRect(x: margin, y: margin, width: size.width - 2 * margin, height: size.height - 2 * margin)
+        let ring = capsule.insetBy(dx: -rim / 2, dy: -rim / 2)
+        let rimPath = Path(roundedRect: ring, cornerRadius: ring.height / 2)
+        let haloRing = capsule.insetBy(dx: -3, dy: -3)
+        let light = reduceMotion ? HaloGlow.restingLight : HaloGlow.light(glow: meter.reading(at: time).glow(delay: 0))
+        let blues = GraphicsContext.Shading.conicGradient(Self.blues, center: CGPoint(x: capsule.midX, y: capsule.midY),
+                                                          angle: .radians(reduceMotion ? 0 : HaloGlow.turn(at: time)))
 
-        var paths = [Path](repeating: Path(), count: Self.shades)
-        for dot in dots {
-            let strength = HaloGlow.strength(of: dot, glow: voice.glow(delay: dot.delay))
-            guard strength >= HaloGlow.faintest else { continue }
-            let radius = HaloGlow.radius(strength: strength)
-            let shade = min(Self.shades - 1, Int(((HaloGlow.opacity(strength: strength) - HaloGlow.faintestOpacity) / Self.shadeStep).rounded()))
-            paths[shade].addEllipse(in: CGRect(x: margin + dot.x - radius, y: margin + dot.y - radius, width: 2 * radius, height: 2 * radius))
-        }
-        for (shade, path) in paths.enumerated() where !path.isEmpty {
-            let opacity = (HaloGlow.faintestOpacity + Double(shade) * Self.shadeStep) * light
-            context.fill(path, with: .color(Self.blue.opacity(opacity)))
+        var halo = context
+        halo.opacity = HaloGlow.haloOpacity(light: light) * fade
+        halo.addFilter(.blur(radius: HaloGlow.haloRadius(light: light)))
+        halo.stroke(Path(roundedRect: haloRing, cornerRadius: haloRing.height / 2), with: blues, lineWidth: 10)
+
+        let rimOpacity = HaloGlow.rimOpacity(light: light) * fade
+        var feather = context
+        feather.opacity = rimOpacity * 0.7
+        feather.addFilter(.blur(radius: 2.5))
+        feather.stroke(rimPath, with: blues, lineWidth: rim * 2.2)
+        var core = context
+        core.opacity = rimOpacity
+        core.addFilter(.blur(radius: 0.8))
+        core.stroke(rimPath, with: blues, lineWidth: rim)
+        guard !reduceMotion else { return }
+
+        let perimeter = HaloGlow.perimeter(capsuleWidth: capsule.width, capsuleHeight: capsule.height)
+        let beamOpacity = HaloGlow.beamOpacity(light: light) * fade
+        var bloom = context
+        bloom.opacity = 0.9
+        bloom.addFilter(.blur(radius: 5))
+        var beam = context
+        beam.addFilter(.blur(radius: 0.7))
+        for slice in HaloGlow.beam(at: time, perimeter: perimeter) {
+            let piece = rimPath.trimmedPath(from: slice.from, to: slice.to)
+            let rgb = HaloGlow.beamColor(along: slice.along)
+            let color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue).opacity(slice.light * beamOpacity)
+            bloom.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim * 3, lineCap: .round))
+            beam.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim, lineCap: .round))
         }
     }
 }

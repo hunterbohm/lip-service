@@ -2,7 +2,7 @@ import AppKit
 import DictationCore
 
 /// `--render-bar DIR`: lays out every bar state with the app's own Bar on a stand-in screen kept off the displays,
-/// and writes each as a PNG, the whole stage and a close-up, so the look can be checked without a key press. The
+/// and writes each as a PNG, the whole stage, a close-up, and the close-up on a near-black screen, so the look can be checked without a key press. The
 /// voice is frozen mid-speech and the animations settled, so a still shows the print at a fixed moment. One scene is captured while its words are still printing in.
 @MainActor enum RenderBar {
     private struct Scene {
@@ -149,8 +149,11 @@ import DictationCore
             }
             let stagePath = directory.appending(path: "\(scene.name).png")
             let closeUpPath = directory.appending(path: "\(scene.name)-closeup.png")
+            let darkCloseUpPath = directory.appending(path: "\(scene.name)-closeup-dark.png")
+            let closeUpRegion = closeUp(around: panels.map(\.frame))
             guard write(compose(panels, in: NSRect(origin: .zero, size: stage.size)), to: stagePath),
-                  write(compose(panels, in: closeUp(around: panels.map(\.frame))), to: closeUpPath)
+                  write(compose(panels, in: closeUpRegion), to: closeUpPath),
+                  write(compose(panels, in: closeUpRegion, dark: true), to: darkCloseUpPath)
             else { return 1 }
             print(stagePath.path)
         }
@@ -176,8 +179,9 @@ import DictationCore
         return union.insetBy(dx: -36, dy: -24)
     }
 
-    /// A light window with a darker sidebar stands in for the screen, so the bar's contrast reads as it would.
-    private static func compose(_ panels: [(frame: NSRect, image: NSImage, shadow: Bool)], in region: NSRect) -> NSBitmapImageRep {
+    /// A light window with a darker sidebar stands in for the screen, so the bar's contrast reads as it would. `dark` swaps
+    /// it for a near-black window like a dark-mode editor, where the bar must stand out by its glow.
+    private static func compose(_ panels: [(frame: NSRect, image: NSImage, shadow: Bool)], in region: NSRect, dark: Bool = false) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(region.width * scale), pixelsHigh: Int(region.height * scale),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -187,11 +191,11 @@ import DictationCore
         let transform = NSAffineTransform()
         transform.translateX(by: -region.minX, yBy: -region.minY)
         transform.concat()
-        NSColor(white: 0.97, alpha: 1).setFill()
+        NSColor(white: dark ? 0.045 : 0.97, alpha: 1).setFill()
         region.fill()
-        NSColor(white: 0.9, alpha: 1).setFill()
+        NSColor(white: dark ? 0.08 : 0.9, alpha: 1).setFill()
         NSRect(x: 0, y: 0, width: 180, height: stage.height).fill()
-        NSColor(white: 0.82, alpha: 1).setFill()
+        NSColor(white: dark ? 0.14 : 0.82, alpha: 1).setFill()
         for row in 0..<9 { NSRect(x: 220, y: stage.height - 70 - CGFloat(row) * 52, width: 360 + CGFloat(row % 3) * 90, height: 10).fill() }
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
