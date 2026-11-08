@@ -482,7 +482,7 @@ private struct BodyView: View {
     private func wordsBar(_ bar: (words: String, handsFree: Bool, finishing: Bool)) -> some View {
         capsule(behind: EmptyView()) {
             if let agent { AgentChip(agent: agent) }
-            WaveView(meter: meter, words: bar.words, finishing: bar.finishing)
+            WaveView(meter: meter, finishing: bar.finishing)
                 .frame(width: CGFloat(LightWave.width), height: BarStyle.height)
             Spacer(minLength: 0)
             if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
@@ -574,6 +574,18 @@ private struct GrowingBar<Capsule: View>: View, Animatable {
     func settle(at target: Double) -> Double {
         value = target
         return target
+    }
+}
+
+/// A distance that grows with time at a pace that can change, so speeding up never jumps the waves.
+@MainActor private final class Travel {
+    private var distance = 0.0
+    private var last: Double?
+
+    func step(at time: Double, pace: Double) -> Double {
+        defer { last = time }
+        if let last { distance += min(0.05, max(0, time - last)) * pace }
+        return distance
     }
 }
 
@@ -700,78 +712,61 @@ private struct HaloView: View {
     }
 }
 
-/// The words bar's inside: three soft blue waves that swell with the voice, and a spark that runs along them each time
-/// a word is recognised. While the words are finished the waves settle flat and dim, and a spark keeps crossing. Each
-/// frame blurs one layer, the glow under the waves and sparks. With Reduce Motion the waves are drawn once, still,
-/// with no sparks.
+/// The words bar's inside: three soft blue waves that follow the voice. Each sound starts in the middle and ripples out
+/// to both ends, and the waves run faster and glow brighter as the voice rises. While the words are finished they
+/// settle to a dim, almost flat line that breathes. Each frame blurs one layer, the glow under the waves. With Reduce
+/// Motion the waves are drawn once, still.
 private struct WaveView: View {
     let meter: VoiceMeter
-    /// The words heard so far; each new one starts a spark.
-    let words: String
     let finishing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var swell = Eased()
-    @State private var sparks: [Double] = []
+    /// 1 while you talk, easing to 0 once the words are finished.
+    @State private var live = Eased()
+    /// How far the waves have travelled, at their resting speed; it runs faster while you talk.
+    @State private var travel = Travel()
 
     var body: some View {
         Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
             Canvas { context, size in draw(into: &context, size: size, time: time) }
         }
-        .onChange(of: words) { old, new in
-            guard !reduceMotion, meter.frozenAt == nil else { return }
-            let now = Date.timeIntervalSinceReferenceDate
-            sparks.removeAll { now - $0 > LightWave.sparkLife }
-            let added = LightWave.addedWords(from: old.split(whereSeparator: \.isWhitespace), to: new.split(whereSeparator: \.isWhitespace))
-            sparks += LightWave.sparks(forAdded: added, at: now)
-        }
     }
 
     private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
         let settled = meter.frozenAt != nil || reduceMotion
-        let target = finishing ? LightWave.finishingAmplitude
-            : reduceMotion ? LightWave.restingAmplitude : LightWave.amplitude(level: meter.reading(at: time).level(delay: 0))
-        let amplitude = settled ? swell.settle(at: target) : swell.step(toward: target, tau: 0.08, at: time)
-        let phaseTime = reduceMotion ? 0 : time
+        let reading = meter.reading(at: time)
+        let now = reduceMotion ? 0 : reading.level(delay: 0)
+        let liveness = settled ? live.settle(at: finishing ? 0 : 1) : live.step(toward: finishing ? 0 : 1, tau: 0.15, at: time)
+        let travelled = reduceMotion ? 0 : meter.frozenAt != nil ? time : travel.step(at: time, pace: LightWave.pace(level: now * liveness))
         let width = size.width, mid = size.height / 2
 
-        func point(_ strand: LightWave.Strand, _ along: Double) -> CGPoint {
-            CGPoint(x: along * width, y: mid - LightWave.offset(strand, along: along, time: phaseTime, amplitude: amplitude))
-        }
         let steps = Int(width / 2)
+        let swell = (0...steps).map { index -> Double in
+            let along = Double(index) / Double(steps)
+            let voice = reduceMotion ? LightWave.restingAmplitude : LightWave.amplitude(level: reading.level(delay: LightWave.delay(along: along)))
+            return LightWave.finishingAmplitude + (voice - LightWave.finishingAmplitude) * liveness
+        }
         let paths = LightWave.strands.map { strand in
             var path = Path()
-            path.move(to: point(strand, 0))
-            for index in 1...steps { path.addLine(to: point(strand, Double(index) / Double(steps))) }
+            for index in 0...steps {
+                let along = Double(index) / Double(steps)
+                let point = CGPoint(x: along * width, y: mid - LightWave.offset(strand, along: along, travel: travelled, amplitude: swell[index]))
+                if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+            }
             return path
         }
-        var lit: [(CGPoint, Double)] = []
-        if !reduceMotion {
-            // --render-bar shows one spark partway across.
-            let starts = meter.frozenAt.map { [$0 - LightWave.sparkLife * 0.4] } ?? (finishing ? [LightWave.finishingSpark(at: time)] : sparks)
-            for start in starts {
-                guard let spark = LightWave.spark(startedAt: start, at: time) else { continue }
-                lit.append((point(LightWave.strands[0], spark.along), spark.light))
-            }
-        }
 
-        context.opacity = finishing ? 0.55 : 1
+        let speaking = LightWave.brightness(level: now)
+        let resting = reduceMotion ? 0.45 : LightWave.finishingBrightness(at: time)
+        context.opacity = resting + (speaking - resting) * liveness
         var glow = context
         glow.addFilter(.blur(radius: 4))
         for (path, strand) in zip(paths, LightWave.strands) {
-            glow.stroke(path, with: shading(strand, 0.8, width: width), lineWidth: 3)
-        }
-        for (center, light) in lit {
-            glow.fill(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)), with: .color(Self.spark.opacity(light)))
+            glow.stroke(path, with: shading(strand, 0.8, width: width), lineWidth: 3 + 2 * now * liveness)
         }
         for (path, strand) in zip(paths, LightWave.strands) {
             context.stroke(path, with: shading(strand, 0.9, width: width), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
         }
-        for (center, light) in lit {
-            context.fill(Path(ellipseIn: CGRect(x: center.x - 2.2, y: center.y - 2.2, width: 4.4, height: 4.4)), with: .color(Self.spark.opacity(light)))
-        }
     }
-
-    private static let spark = Color(red: 0xEB / 255, green: 0xFA / 255, blue: 1)
 
     /// A wave's colour, faded in from each end.
     private func shading(_ strand: LightWave.Strand, _ opacity: Double, width: CGFloat) -> GraphicsContext.Shading {
