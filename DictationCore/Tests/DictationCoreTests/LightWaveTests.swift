@@ -21,6 +21,8 @@ import Testing
         #expect(abs(LightWave.delay(along: 1) - LightWave.spread) < 1e-12)
         #expect(abs(LightWave.delay(along: 0.25) - LightWave.delay(along: 0.75)) < 1e-12)
         #expect(LightWave.delay(along: 0.3) > LightWave.delay(along: 0.4))
+        // Flat at the middle, so the two sides meet without a point.
+        #expect(LightWave.delay(along: 0.51) < 0.01 * LightWave.spread)
         // The envelope keeps two seconds, so every delay can be read back.
         #expect(LightWave.spread < LevelEnvelope.span)
     }

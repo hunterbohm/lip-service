@@ -44,8 +44,9 @@ public enum LightWave {
         restingAmplitude + (loudestAmplitude - restingAmplitude) * pow(clamped(level), 0.6)
     }
 
-    /// How long ago the voice that shapes the waves at `along` was heard: now in the middle, `spread` at the ends.
-    public static func delay(along: Double) -> Double { abs(min(max(along, 0), 1) - 0.5) * 2 * spread }
+    /// How long ago the voice that shapes the waves at `along` was heard: now in the middle, `spread` at the ends. It
+    /// grows with the square of the distance from the middle, so the middle has no crease where the two sides meet.
+    public static func delay(along: Double) -> Double { pow(abs(min(max(along, 0), 1) - 0.5) * 2, 2) * spread }
 
     /// How fast the waves travel for a voice level, as a multiple of their resting speed: up to two and a half times as
     /// fast at the loudest.
