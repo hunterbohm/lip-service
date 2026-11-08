@@ -87,8 +87,9 @@ public struct TalkTiming: Equatable, Sendable {
     /// Quiet that ends your turn.
     public var endOfTurn = 0.8
     public var longestTurn = 90.0
-    /// A turn shorter than this is a cough or a click, and is dropped.
-    public var shortestTurn = 0.5
+    /// A turn shorter than this is a click or a knock, and is dropped. A quick "no" or "bye" is longer, so it stays a
+    /// turn; a cough that is transcribed to nothing or to noise is dropped after transcription.
+    public var shortestTurn = 0.2
     /// Blocks kept from before your turn started, so its first syllable is not cut off.
     public var prerollBlocks = 10
     /// After the agent starts speaking, its first syllables from the speakers can't cut in on it.

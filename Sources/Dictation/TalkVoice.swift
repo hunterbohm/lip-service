@@ -173,14 +173,7 @@ struct ServerVoiceProvider: VoiceProvider {
         let engine = AVAudioEngine(), player = AVAudioPlayerNode()
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
-        let meter = self.meter
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
-            guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
-            var sum: Float = 0
-            for index in 0..<Int(buffer.frameLength) { sum += channel[index] * channel[index] }
-            let rms = (sum / Float(buffer.frameLength)).squareRoot()
-            meter.value = rms
-        }
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil, block: meter.tapBlock())
         engine.prepare()
         try engine.start()
         player.play()
@@ -208,9 +201,14 @@ struct ServerVoiceProvider: VoiceProvider {
         guard let player, let buffer = buffer(for: clip) else { return }
         queue.append(caption)
         if queue.count == 1 { onStarted?(caption) }
-        let current = generation
-        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.played(current) } }
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack, completionHandler: Self.whenPlayed(generation, by: self))
+    }
+
+    /// Formed outside the main actor, as `PlayingLevel.tapBlock` is, because AVFAudio calls it on its own thread and a
+    /// closure formed in a main-actor method traps there.
+    nonisolated private static func whenPlayed(_ current: Int, by speaker: SpeakerOut) -> AVAudioPlayerNodeCompletionHandler {
+        { [weak speaker] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { speaker?.played(current) } }
         }
     }
 
@@ -277,6 +275,17 @@ private final class PlayingLevel: Sendable {
     var value: Float {
         get { level.withLock { $0 } }
         set { level.withLock { $0 = newValue } }
+    }
+
+    /// Formed here rather than in SpeakerOut, because a closure formed inside a main-actor method is inferred main-actor
+    /// and traps when the audio thread calls it.
+    func tapBlock() -> AVAudioNodeTapBlock {
+        { [self] buffer, _ in
+            guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+            var sum: Float = 0
+            for index in 0..<Int(buffer.frameLength) { sum += channel[index] * channel[index] }
+            value = (sum / Float(buffer.frameLength)).squareRoot()
+        }
     }
 }
 

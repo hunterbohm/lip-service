@@ -109,10 +109,18 @@ import Testing
         #expect(utterance.samples.count > 40 * 480)
     }
 
-    @Test func aCoughIsDropped() {
+    @Test func aClickIsDropped() {
         var ear = calibrated()
-        let events = run(&ear, Array(repeating: voice, count: 6) + Array(repeating: quiet, count: 30), from: 0.6)
+        let events = run(&ear, Array(repeating: voice, count: 4) + Array(repeating: quiet, count: 30), from: 0.6)
         #expect(events.map(\.0) == [.began, .dropped])
+    }
+
+    @Test func aQuickNoIsATurn() throws {
+        var ear = calibrated()
+        // About 0.3 s of voice, as a short "no" or "bye" is.
+        let events = run(&ear, Array(repeating: voice, count: 10) + Array(repeating: quiet, count: 30), from: 0.6)
+        #expect(events.first?.0 == .began)
+        guard case .ended = try #require(events.last?.0) else { Issue.record("a quick word was dropped"); return }
     }
 
     @Test func theAgentsEchoDoesNotCutInButYourVoiceDoes() {
