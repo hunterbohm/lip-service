@@ -62,4 +62,29 @@ import Testing
         #expect(LightWave.finishingSpark(at: every * 3) == every * 3)
         #expect(every > LightWave.sparkLife)
     }
+
+    private func added(_ old: String, _ new: String) -> Int {
+        LightWave.addedWords(from: old.split(separator: " "), to: new.split(separator: " "))
+    }
+
+    @Test func newWordsAreCountedWhileTheWindowHoldsEverything() {
+        #expect(added("", "so I") == 2)
+        #expect(added("so I", "so I was thinking") == 2)
+        #expect(added("so I was", "so I was") == 0)
+        #expect(added("so I was", "so I") == 0)
+    }
+
+    @Test func newWordsAreCountedOnceOldOnesDropOffTheFront() {
+        // The 15 s window slid: two words left the front and two arrived, so the count did not change.
+        #expect(added("so I was thinking we could", "was thinking we could move the") == 2)
+        // It slid further than words arrived, so the count fell.
+        #expect(added("so I was thinking we could", "thinking we could move") == 1)
+    }
+
+    @Test func aRevisedWordCountsAsNew() {
+        #expect(added("send it to their", "send it to there") == 1)
+        #expect(added("so I was thinking we could", "thinking we could moo the") == 2)
+        #expect(added("alpha beta", "gamma") == 1)
+        #expect(added("alpha beta", "") == 0)
+    }
 }

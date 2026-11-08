@@ -71,6 +71,22 @@ public enum LightWave {
         return (along, (1 - 0.6 * along) * min(1, along / fade, (1 - along) / fade))
     }
 
+    /// How many words `new` adds to `old`. The live words cover only the newest 15 s of a capture, so once that fills,
+    /// old words drop off the front as new ones arrive and the count alone stops rising. This lines `new` up where its
+    /// start best matches a run of `old`, and counts the words past the end of that run. A word revised in place counts
+    /// as added. With no match at all, a change counts as one.
+    public static func addedWords<Word: Equatable>(from old: [Word], to new: [Word]) -> Int {
+        guard old != new else { return 0 }
+        var best = 0
+        for offset in old.indices {
+            var run = 0
+            while offset + run < old.count, run < new.count, old[offset + run] == new[run] { run += 1 }
+            best = max(best, run)
+        }
+        guard best > 0 else { return old.isEmpty ? new.count : min(new.count, 1) }
+        return new.count - best
+    }
+
     /// The start times of the sparks for a word update at `time` that adds `added` words.
     public static func sparks(forAdded added: Int, at time: Double) -> [Double] {
         (0..<min(max(added, 0), sparksPerUpdate)).map { time + Double($0) * sparkStagger }

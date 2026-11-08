@@ -393,9 +393,6 @@ struct VoiceReading {
         padding + agentWidth(agent) + CGFloat(LightWave.width) + (handsFree ? glyphGap + buttonsWidth : 0) + padding
     }
 
-    /// How many words have been heard so far.
-    static func wordCount(_ words: String) -> Int { words.split(whereSeparator: \.isWhitespace).count }
-
     /// The text column's width in a toast: each line on one line when it fits, else the widest the toast allows,
     /// wrapping.
     static func toastTextWidth(_ notice: BarNotice) -> CGFloat {
@@ -477,7 +474,7 @@ private struct BodyView: View {
     private func wordsBar(_ bar: (words: String, handsFree: Bool, finishing: Bool)) -> some View {
         capsule(behind: EmptyView()) {
             if let agent { AgentChip(agent: agent) }
-            WaveView(meter: meter, words: BarStyle.wordCount(bar.words), finishing: bar.finishing)
+            WaveView(meter: meter, words: bar.words, finishing: bar.finishing)
                 .frame(width: CGFloat(LightWave.width), height: BarStyle.height)
             Spacer(minLength: 0)
             if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
@@ -701,8 +698,8 @@ private struct HaloView: View {
 /// with no sparks.
 private struct WaveView: View {
     let meter: VoiceMeter
-    /// How many words have been heard so far; each new one starts a spark.
-    let words: Int
+    /// The words heard so far; each new one starts a spark.
+    let words: String
     let finishing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var swell = Eased()
@@ -716,7 +713,8 @@ private struct WaveView: View {
             guard !reduceMotion, meter.frozenAt == nil else { return }
             let now = Date.timeIntervalSinceReferenceDate
             sparks.removeAll { now - $0 > LightWave.sparkLife }
-            sparks += LightWave.sparks(forAdded: new - old, at: now)
+            let added = LightWave.addedWords(from: old.split(whereSeparator: \.isWhitespace), to: new.split(whereSeparator: \.isWhitespace))
+            sparks += LightWave.sparks(forAdded: added, at: now)
         }
     }
 
