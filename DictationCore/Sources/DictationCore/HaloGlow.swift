@@ -17,7 +17,7 @@ public enum HaloGlow {
     public static let speed = 260.0
     /// The beam's length along the rim, from its faint tail to its bright head, and the slices it is drawn in.
     public static let tail = 140.0
-    public static let slices = 40
+    public static let slices = 24
     /// The share of the light that stays on when the voice is silent, and what the voice adds to it.
     public static let restingLight = 0.4
 

@@ -605,7 +605,9 @@ private struct Print: View {
 /// The glow around the capsule, drawn in the halo panel, which reaches `BarStyle.haloMargin` past the capsule on every
 /// side: a blurred halo and a soft rim in shades of blue that turn slowly around the capsule, and a bright beam that
 /// runs around the rim. All three brighten with the voice. It fades in while listening and out while the words are
-/// finished. With Reduce Motion the rim and halo stay still, with no beam.
+/// finished. With Reduce Motion the rim and halo stay still, with no beam. Each frame blurs three layers, the halo, the
+/// rim's feather and the beam's bloom; the rim and beam themselves are drawn sharp, since a blur under a point wide
+/// did not show and cost a layer each.
 private struct HaloView: View {
     let meter: VoiceMeter
     let listening: Bool
@@ -645,7 +647,6 @@ private struct HaloView: View {
         feather.stroke(rimPath, with: blues, lineWidth: rim * 2.2)
         var core = context
         core.opacity = rimOpacity
-        core.addFilter(.blur(radius: 0.8))
         core.stroke(rimPath, with: blues, lineWidth: rim)
         guard !reduceMotion else { return }
 
@@ -654,14 +655,12 @@ private struct HaloView: View {
         var bloom = context
         bloom.opacity = 0.9
         bloom.addFilter(.blur(radius: 5))
-        var beam = context
-        beam.addFilter(.blur(radius: 0.7))
         for slice in HaloGlow.beam(at: time, perimeter: perimeter) {
             let piece = rimPath.trimmedPath(from: slice.from, to: slice.to)
             let rgb = HaloGlow.beamColor(along: slice.along)
             let color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue).opacity(slice.light * beamOpacity)
             bloom.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim * 3, lineCap: .round))
-            beam.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim, lineCap: .round))
+            context.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim, lineCap: .butt))
         }
     }
 }
