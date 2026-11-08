@@ -13,7 +13,7 @@
 # own (confidentWordBiasGate, issue #967): a span heard at 0.99 or more loses the context bias, except a close
 # spelling of the term, which keeps it. On Lip Service's test, `entry` still became `Sentry`, which is a close
 # spelling, in 3 of 10 sentences that v0.17.7 with this patch left alone, so the patch is kept and moved to where
-# v0.18.3 decides a replacement, using the decoder confidence v0.18.3 now records for each word. It vetoes at 0.95,
+# v0.18.3 decides a replacement, using the decoder confidence v0.18.3 now records for each word, counted over the tokens that hold a letter or digit so an unsure trailing comma does not weaken it. It vetoes at 0.95,
 # close spellings included, and exempts a span whose letters already spell the term. The fifth scores a heard word
 # against a term by sound as well as spelling, so the commoner spelling of the same sounds counts as a near match.
 # v0.18.3 has nothing like it. The sixth stops a model download from writing where a server says.
@@ -22,14 +22,15 @@
 # .. component, or lands outside the model folder, before anything is written. The download also stops using a
 # token or a registry address from the environment, so a request goes to huggingface.co with no credentials.
 # v0.18.3 changed ModelHub only in what it purges and how it judges a cache, not where it writes, so the sixth patch
-# is unchanged. Safe to rerun.
+# is unchanged. Safe to rerun, and a change to this script or the guard re-vendors on the next run.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tag=v0.18.3
 commit=c8b41f98eae668794dd0083bbe028fe7e6585051
 dest="$root/Vendor/FluidAudio"
-patches=6
-stamp="$dest/.vendored-$commit-patches-$patches"
+# The stamp holds a hash of this script and the guard, so changing a patch re-vendors, not only a new commit.
+digest="$(cat "$0" "$root/scripts/download-guard/DownloadGuard.swift" | shasum -a 256 | cut -c1-12)"
+stamp="$dest/.vendored-$commit-$digest"
 [[ -f "$stamp" ]] && exit 0
 
 mkdir -p "$root/Vendor"
@@ -116,6 +117,41 @@ def patch(path, edits):
         text = text.replace(old, new)
     open(path, "w").write(text)
 
+patch(f"{base}/VocabularyRescorer.swift", [
+("""        var minConfidence: Float? = nil
+    }
+""", """        var minConfidence: Float? = nil
+        /// The lowest token confidence in the word, punctuation aside; nil when the timings carry none. A trailing
+        /// comma or period the decoder is unsure of must not make a confidently heard word look uncertain.
+        var letterConfidence: Float? = nil
+    }
+""", 1),
+("""        var wordMinConfidence = Float.infinity
+
+""", """        var wordMinConfidence = Float.infinity
+        var wordLetterConfidence = Float.infinity
+
+""", 1),
+("""                            minConfidence: wordMinConfidence.isFinite ? wordMinConfidence : nil
+                        ))""", """                            minConfidence: wordMinConfidence.isFinite ? wordMinConfidence : nil,
+                            letterConfidence: wordLetterConfidence.isFinite ? wordLetterConfidence : nil
+                        ))""", 1),
+("""                wordMinConfidence = .infinity
+            } else {""", """                wordMinConfidence = .infinity
+                wordLetterConfidence = .infinity
+            } else {""", 1),
+("""            wordMinConfidence = min(wordMinConfidence, timing.confidence)
+""", """            wordMinConfidence = min(wordMinConfidence, timing.confidence)
+            if stripWordBoundaryPrefix(token).contains(where: { $0.isLetter || $0.isNumber }) {
+                wordLetterConfidence = min(wordLetterConfidence, timing.confidence)
+            }
+""", 1),
+("""                    minConfidence: wordMinConfidence.isFinite ? wordMinConfidence : nil
+                ))""", """                    minConfidence: wordMinConfidence.isFinite ? wordMinConfidence : nil,
+                    letterConfidence: wordLetterConfidence.isFinite ? wordLetterConfidence : nil
+                ))""", 1),
+])
+
 patch(f"{base}/VocabularyRescorer+TokenEvaluation.swift", [
 ("""    /// Whether the TDT decoder heard every word of the candidate's span with at least""", """    /// A decoder at least this sure of every token in a span heard a real word, not a misheard name. The CTC
     /// comparison cannot overrule it, because its boost outweighs the acoustic difference between a common word
@@ -130,7 +166,7 @@ patch(f"{base}/VocabularyRescorer+TokenEvaluation.swift", [
         guard !candidate.spanIndices.isEmpty,
             letters(candidate.originalPhrase) != letters(candidate.vocabTerm),
             candidate.spanIndices.allSatisfy({ index in
-                guard wordTimings.indices.contains(index), let confidence = wordTimings[index].minConfidence else {
+                guard wordTimings.indices.contains(index), let confidence = wordTimings[index].letterConfidence else {
                     return false
                 }
                 return confidence >= certainDecoderConfidence

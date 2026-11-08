@@ -55,6 +55,13 @@ cp "$root/LICENSE" "$licenses/LICENSE"
 cp "$fluid/LICENSE" "$licenses/FluidAudio/LICENSE"
 for name in "${linked[@]}"; do cp "$fluid/ThirdPartyLicenses/$name" "$licenses/FluidAudio/ThirdPartyLicenses/$name"; done
 
+# The app must not ship FluidAudio's LuxTTS G2P tables (derived from GPL-3.0 espeak-ng output), which the TTS trait
+# builds into a resource bundle beside the binary. Only the files copied above go into the app, so none should be here.
+if find "$staging/$bundle" \( -name '*.tsv.zz' -o -name 'luxtts_*' -o -name '*LuxTtsG2pResources*' \) | grep -q .; then
+    printf 'The app bundle holds LuxTTS G2P files, which are not MIT-compatible. Remove them from %s.\n' "$bundle" >&2
+    exit 1
+fi
+
 # The umask above keeps build files private, but every account on the Mac must be able to open the app.
 chmod -R go+rX "$staging/$bundle"
 "$root/scripts/sign.sh" "$staging/$bundle" com.hunterbohm.dictation "$root/Resources/Dictation.entitlements"
