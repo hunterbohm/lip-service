@@ -20,13 +20,23 @@ public struct PinnedModel: Equatable, Sendable {
     public var repo: String
     /// The full 40-character commit.
     public var commit: String
-    /// The model's folder in FluidAudio's cache.
+    /// The repository's folder in FluidAudio's cache.
     public var folder: String
+    /// The model's folder inside the repository, for a repository that holds several, such as a voice pack. Empty
+    /// when the model is the whole repository.
+    public var subdirectory: String
+    /// Relative to the model's folder: `folder`, and `subdirectory` inside it.
     public var files: [ModelFile]
 
-    public init(repo: String, commit: String, folder: String, files: [ModelFile]) {
-        (self.repo, self.commit, self.folder, self.files) = (repo, commit, folder, files)
+    public init(repo: String, commit: String, folder: String, subdirectory: String = "", files: [ModelFile]) {
+        (self.repo, self.commit, self.folder, self.subdirectory, self.files) = (repo, commit, folder, subdirectory, files)
     }
+
+    /// Where the model's folder is in the repository's folder.
+    public var modelFolder: String { subdirectory.isEmpty ? folder : folder + "/" + subdirectory }
+
+    /// The files' paths in the repository, which is how a download names them.
+    public var remotePaths: Set<String> { Set(files.map { subdirectory.isEmpty ? $0.path : subdirectory + "/" + $0.path }) }
 
     /// The Core ML bundles. Everything inside one is listed, so a file in it that the table lacks is a problem.
     public var bundles: [String] {

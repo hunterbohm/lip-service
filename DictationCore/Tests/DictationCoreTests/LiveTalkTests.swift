@@ -109,6 +109,37 @@ import Testing
         #expect(utterance.samples.count > 40 * 480)
     }
 
+    @Test func aPauseIsTranscribedBeforeTheTurnEnds() throws {
+        var ear = calibrated()
+        let events = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 40), from: 0.6)
+        try #require(events.count == 3)
+        guard case .paused(let soFar) = events[1].0, case .ended(let whole) = events[2].0 else { Issue.record("\(events)"); return }
+        #expect(soFar.speechEnd == whole.speechEnd)
+        // The words so far come 0.5 s into the quiet, 0.3 s before the turn ends, and hold everything but quiet after.
+        #expect(events[1].1 - soFar.speechEnd.seconds > 0.5 && events[1].1 - soFar.speechEnd.seconds < 0.53)
+        #expect(soFar.samples.count < whole.samples.count && whole.samples.starts(with: soFar.samples))
+    }
+
+    @Test func talkingAgainAfterAPauseGoesOnWithTheTurn() throws {
+        var ear = calibrated()
+        let blocks = Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 20) + Array(repeating: voice, count: 10)
+            + Array(repeating: quiet, count: 40)
+        let events = run(&ear, blocks, from: 0.6).map(\.0)
+        try #require(events.count == 5)
+        #expect(events[0] == .began && events[2] == .resumed)
+        guard case .paused(let first) = events[1], case .paused(let second) = events[3], case .ended(let whole) = events[4] else {
+            Issue.record("\(events)"); return
+        }
+        #expect(first.speechEnd != whole.speechEnd)
+        #expect(second.speechEnd == whole.speechEnd)
+    }
+
+    @Test func aClickIsNotTranscribedEarly() {
+        var ear = calibrated()
+        let events = run(&ear, Array(repeating: voice, count: 4) + Array(repeating: quiet, count: 30), from: 0.6)
+        #expect(!events.contains { if case .paused = $0.0 { true } else { false } })
+    }
+
     @Test func aClickIsDropped() {
         var ear = calibrated()
         let events = run(&ear, Array(repeating: voice, count: 4) + Array(repeating: quiet, count: 30), from: 0.6)
@@ -304,7 +335,8 @@ import Testing
     @Test func settingsWithoutLiveTalkReadTheDefaults() throws {
         let settings = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
         #expect(settings.liveTalk == LiveTalkSettings())
-        #expect(settings.liveTalk.voice == .onMac(.michael))
+        #expect(settings.liveTalk.voice == .onMac(.preston))
+        #expect(OnMacVoice.preston.id == "phonon:en_us_Preston")
         var custom = Settings()
         custom.liveTalk.voice = .server(url: "http://msi:8890", voice: "hunter")
         custom.liveTalk.agentID = "claude"
@@ -330,6 +362,16 @@ import Testing
         #expect(TalkVoiceChoice.speakURL("msi:8890") == nil)
         #expect(TalkVoiceChoice.speakURL("ftp://x") == nil)
         #expect(OnMacVoice.michael.title == "Michael (American, Kokoro)")
+        #expect(OnMacVoice.preston.title == "Preston (American, Phonon)")
+        #expect(OnMacVoice(model: .phonon, voice: "en_gb_Hugh").title == "Hugh (British, Phonon)")
+        #expect(OnMacVoice.offered.first == .standard)
+        #expect(OnMacVoice.offered.contains(.michael))
+    }
+
+    @Test func theOfferedPhononVoicesAreTheOnesPinned() {
+        let pinned = Set(PinnedModels.phonon.files.map(\.path).filter { $0.hasPrefix("voices/") })
+        #expect(pinned == Set(OnMacVoice.phononVoices.map { "voices/\($0.voice).safetensors" }))
+        #expect(OnMacVoice.offered.filter { $0.model == .phonon } == OnMacVoice.phononVoices)
     }
 
     @Test func toolCallsCarryTheirKindAndID() throws {
@@ -440,16 +482,25 @@ struct ShortFirstSentenceTests {
     @Test func aFinishedSentenceWithNoSpaceYetCanBeFlushed() {
         var chunker = SpeechChunker()
         #expect(chunker.feed("It's four.").isEmpty)
-        #expect(chunker.endsOnSentence)
+        #expect(chunker.sentenceEndWait == 0.15)
         #expect(chunker.finish() == ["It's four."])
     }
 
-    @Test func aNumberIsNotASentenceEnd() {
+    @Test func aNumberWaitsLongerForADecimal() {
         var chunker = SpeechChunker()
         #expect(chunker.feed("It went up 3.").isEmpty)
-        #expect(!chunker.endsOnSentence)
+        #expect(chunker.sentenceEndWait == 0.6)
         #expect(chunker.feed("5 percent").isEmpty)
-        #expect(!chunker.endsOnSentence)
+        #expect(chunker.sentenceEndWait == nil)
+    }
+
+    @Test func aBareNumberAnswerIsSaidWithoutWaitingForTheTurnToEnd() {
+        var chunker = SpeechChunker()
+        #expect(chunker.feed("366.").isEmpty)
+        #expect(chunker.sentenceEndWait == 0.6)
+        #expect(chunker.finish() == ["366."])
+        #expect(chunker.feed("Is it 3?").isEmpty)
+        #expect(chunker.sentenceEndWait == 0.15)
     }
 }
 

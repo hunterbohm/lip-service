@@ -41,8 +41,9 @@ enum Mode {
                    Says one sentence with FluidAudio's Phonon text-to-speech through the library the app is built with, and
                    prints one JSON line: the load time, the time to the first audio, the time to the last, and the length.
                    Exits 1 if no sound came out. The voice is en_us_Preston and the text a short sentence unless given.
-                   --pack loads a pack folder that is already on disk. Otherwise the pack is downloaded into --directory,
-                   or FluidAudio's text-to-speech folder, which URLSession only does in a GUI session, not over SSH.
+                   --pack loads a pack folder that is already on disk, unchecked. Otherwise the pinned pack in --directory,
+                   or FluidAudio's text-to-speech models folder, is checked as the app checks it, and downloaded when it is
+                   missing, which URLSession only does in a GUI session. Over SSH, fetch it with scripts/fetch-models.sh --voice.
                Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone automatic|default|UID]
                    Starts and stops the microphone as dictation does, and prints one JSON line per round with how long
                    the first audio took and how much of the hold was recorded. Uses the saved microphone unless given.
@@ -66,7 +67,7 @@ enum Mode {
                    Holds a live talk with no microphone or speakers: each clip is played in as your next turn, in real
                    time, and the agent's voice is made but not played. One JSON line per turn with its timings, in
                    seconds after your speech ended, then one with the session, to delete it from the agent's history.
-                   --voice is an on-Mac voice such as kokoro:am_michael. --out writes what the voice said.
+                   --voice is an on-Mac voice, phonon:en_us_Preston unless given, or another such as kokoro:am_michael. --out writes what the voice said.
                    --note replaces the preset's per-agent talk note. --option replaces its live-talk session options.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
@@ -204,7 +205,7 @@ enum Mode {
                     case "--host": options.remoteHost = try Self.value(of: argument, from: &rest)
                     case "--voice":
                         let parts = try Self.value(of: argument, from: &rest).split(separator: ":", maxSplits: 1).map(String.init)
-                        guard parts.count == 2, let model = OnMacVoice.Model(rawValue: parts[0]) else { throw DictationError("--voice takes MODEL:VOICE, such as kokoro:am_michael") }
+                        guard parts.count == 2, let model = OnMacVoice.Model(rawValue: parts[0]) else { throw DictationError("--voice takes MODEL:VOICE, such as phonon:en_us_Preston or kokoro:am_michael") }
                         options.voice = .onMac(OnMacVoice(model: model, voice: parts[1]))
                     case "--voice-server": server = try Self.value(of: argument, from: &rest)
                     case "--voice-name": serverVoice = try Self.value(of: argument, from: &rest)
@@ -503,7 +504,7 @@ enum Headless {
     /// also stops the engine from deleting a cache that fails its check or downloading a new one, so the run
     /// reports the failure and leaves the folder alone. The engine does the check itself.
     private static func modelsAreCached(in store: ModelStore) -> Bool {
-        guard PinnedModels.all.allSatisfy({ FileManager.default.fileExists(atPath: store.folder(for: $0).path) }) else {
+        guard PinnedModels.speech.allSatisfy({ FileManager.default.fileExists(atPath: store.folder(for: $0).path) }) else {
             log("models missing: run scripts/fetch-models.sh")
             return false
         }

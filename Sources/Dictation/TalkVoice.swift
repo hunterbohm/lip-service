@@ -34,48 +34,84 @@ enum Voices {
 struct OnMacVoiceProvider: VoiceProvider {
     let voice: OnMacVoice
 
-    func prepare() async throws { _ = try await OnMacVoices.shared.kokoro(for: voice) }
+    func prepare() async throws { _ = try await OnMacVoices.shared.model(for: voice) }
 
     func speak(_ text: String) async throws -> VoiceClip {
-        let manager = try await OnMacVoices.shared.kokoro(for: voice)
-        let result = try await manager.synthesizeDetailed(text: text, voice: voice.voice)
-        return VoiceClip(samples: result.samples, sampleRate: Double(result.sampleRate))
+        try await OnMacVoices.shared.model(for: voice).speak(text, voice: voice.voice)
+    }
+}
+
+/// A loaded voice model.
+enum OnMacVoiceModel: Sendable {
+    case kokoro(KokoroAneManager)
+    case phonon(PocketTtsSmallManager)
+
+    func speak(_ text: String, voice: String) async throws -> VoiceClip {
+        switch self {
+        case .kokoro(let manager):
+            let result = try await manager.synthesizeDetailed(text: text, voice: voice)
+            return VoiceClip(samples: result.samples, sampleRate: Double(result.sampleRate))
+        case .phonon(let manager):
+            let samples = try await manager.synthesizeSamples(text: text, voice: voice)
+            return VoiceClip(samples: samples, sampleRate: Double(PocketTtsConstants.audioSampleRate))
+        }
+    }
+
+    func cleanup() async {
+        if case .kokoro(let manager) = self { await manager.cleanup() }
+    }
+
+    /// Loads `voice`, and says a short line through it, because the first line through a freshly loaded chain is slow.
+    /// Phonon's pack is pinned like the speech models: downloaded only from the pinned commit, only the pinned files,
+    /// and checked file by file before Core ML reads it. Kokoro's files are not pinned.
+    static func load(_ voice: OnMacVoice) async throws -> OnMacVoiceModel {
+        let model: OnMacVoiceModel
+        switch voice.model {
+        case .kokoro:
+            let manager = KokoroAneManager(variant: .english, defaultVoice: voice.voice)
+            try await manager.initialize(preloadVoices: [voice.voice])
+            model = .kokoro(manager)
+        case .phonon:
+            let pack = try await ModelStore(directory: try ModelStore.voiceDirectory()).phononPack()
+            let manager = PocketTtsSmallManager(model: .phonon31m, defaultVoice: voice.voice)
+            try await manager.load(from: pack)
+            guard try await manager.availableVoices().contains(voice.voice) else {
+                throw DictationError("Phonon has no voice \(voice.voice). Pick another in Settings.")
+            }
+            model = .phonon(manager)
+        }
+        _ = try await model.speak("Hello, I'm ready when you are.", voice: voice.voice)
+        return model
     }
 }
 
 actor OnMacVoices {
     static let shared = OnMacVoices()
     static let keepLoaded = 10.0 * 60
-    private var loaded: (voice: OnMacVoice, manager: KokoroAneManager)?
-    private var loading: (voice: OnMacVoice, task: Task<KokoroAneManager, any Error>)?
+    private var loaded: (voice: OnMacVoice, model: OnMacVoiceModel)?
+    private var loading: (voice: OnMacVoice, task: Task<OnMacVoiceModel, any Error>)?
     private var release: Task<Void, Never>?
     private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "talk")
 
-    func kokoro(for voice: OnMacVoice) async throws -> KokoroAneManager {
+    func model(for voice: OnMacVoice) async throws -> OnMacVoiceModel {
         release?.cancel()
         release = nil
-        guard voice.model == .kokoro else {
-            throw DictationError("The \(voice.voice) voice needs a newer FluidAudio than this build has. Pick a Kokoro voice in Settings.")
-        }
-        if let loaded, loaded.voice == voice { return loaded.manager }
+        if let loaded, loaded.voice == voice { return loaded.model }
         if let loading, loading.voice == voice { return try await loading.task.value }
-        let task = Task { () throws -> KokoroAneManager in
+        let task = Task { () throws -> OnMacVoiceModel in
             let started = Instant.now
-            let manager = KokoroAneManager(variant: .english, defaultVoice: voice.voice)
-            try await manager.initialize(preloadVoices: [voice.voice])
-            // The first line through a freshly loaded chain is slow, so a short one goes through it now.
-            _ = try await manager.synthesizeDetailed(text: "Hello, I'm ready when you are.", voice: voice.voice)
+            let model = try await OnMacVoiceModel.load(voice)
             Logger(subsystem: "com.hunterbohm.dictation", category: "talk")
                 .info("voice \(voice.id, privacy: .public) ready in \(Instant.now - started, format: .fixed(precision: 2)) s")
-            return manager
+            return model
         }
         loading = (voice, task)
         do {
-            let manager = try await task.value
+            let model = try await task.value
             if loading?.voice == voice { loading = nil }
-            if let old = loaded, old.voice != voice { await old.manager.cleanup() }
-            loaded = (voice, manager)
-            return manager
+            if let old = loaded, old.voice != voice { await old.model.cleanup() }
+            loaded = (voice, model)
+            return model
         } catch {
             if loading?.voice == voice { loading = nil }
             throw DictationError("The voice didn't load: \(error.localizedDescription)")
@@ -96,7 +132,7 @@ actor OnMacVoices {
         release = nil
         guard let loaded else { return }
         self.loaded = nil
-        await loaded.manager.cleanup()
+        await loaded.model.cleanup()
         log.info("voice \(loaded.voice.id, privacy: .public) unloaded")
     }
 }

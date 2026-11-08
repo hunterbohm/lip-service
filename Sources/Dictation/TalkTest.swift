@@ -35,7 +35,7 @@ import Foundation
         }
 
         let store = ModelStore(directory: options.models ?? ModelStore.defaultDirectory)
-        guard PinnedModels.all.allSatisfy({ FileManager.default.fileExists(atPath: store.folder(for: $0).path) }) else {
+        guard PinnedModels.speech.allSatisfy({ FileManager.default.fileExists(atPath: store.folder(for: $0).path) }) else {
             return fail("speech models missing: run scripts/fetch-models.sh")
         }
         ModelHub.offlineMode = true

@@ -5,8 +5,9 @@ public struct OnMacVoice: Equatable, Hashable, Codable, Sendable, Identifiable {
     public enum Model: String, Codable, CaseIterable, Sendable {
         /// Kokoro 82M, on the Neural Engine.
         case kokoro
-        /// PocketTTS small with the Phonon voices, from FluidAudio 0.18.3.
-        case pocketPhonon
+        /// PocketTTS small with Gradium's Phonon 31M English voices, from FluidAudio 0.18.3. Its pack is pinned and checked
+        /// like the speech models.
+        case phonon
     }
 
     public var model: Model
@@ -16,23 +17,37 @@ public struct OnMacVoice: Equatable, Hashable, Codable, Sendable, Identifiable {
 
     public var id: String { "\(model.rawValue):\(voice)" }
 
+    /// Phonon's American male voice Preston, Hunter's pick.
+    public static let preston = OnMacVoice(model: .phonon, voice: "en_us_Preston")
     /// Kokoro's American male voice.
     public static let michael = OnMacVoice(model: .kokoro, voice: "am_michael")
-    public static let standard = michael
+    public static let standard = preston
 
-    /// The voices the settings offer. Any other voice the model has works too, set through `setup apply` or by hand.
-    public static let offered: [OnMacVoice] = [
+    /// Phonon's voices in the pinned pack. scripts/pin-models.py lists the same ones, and only these are downloaded.
+    public static let phononVoices: [OnMacVoice] = ["en_us_Preston", "en_us_Easton", "en_us_Miles", "en_us_Harper", "en_us_Zoey",
+                                                     "en_gb_Hugh", "en_gb_Freya"].map { OnMacVoice(model: .phonon, voice: $0) }
+
+    /// The voices the settings offer. Any other Kokoro voice works too, set through `setup apply` or by hand.
+    public static let offered: [OnMacVoice] = phononVoices + [
         michael, OnMacVoice(model: .kokoro, voice: "am_adam"), OnMacVoice(model: .kokoro, voice: "am_eric"),
         OnMacVoice(model: .kokoro, voice: "af_heart"), OnMacVoice(model: .kokoro, voice: "af_bella"),
         OnMacVoice(model: .kokoro, voice: "bm_george"), OnMacVoice(model: .kokoro, voice: "bf_emma"),
     ]
 
-    /// "Michael (American, Kokoro)".
+    /// "Preston (American, Phonon)", "Michael (American, Kokoro)".
     public var title: String {
-        let parts = voice.split(separator: "_", maxSplits: 1)
-        guard model == .kokoro, parts.count == 2, parts[0].count == 2 else { return voice }
-        let accent = parts[0].first == "b" ? "British" : "American"
-        return "\(parts[1].capitalized) (\(accent), Kokoro)"
+        switch model {
+        case .kokoro:
+            let parts = voice.split(separator: "_", maxSplits: 1)
+            guard parts.count == 2, parts[0].count == 2 else { return voice }
+            let accent = parts[0].first == "b" ? "British" : "American"
+            return "\(parts[1].capitalized) (\(accent), Kokoro)"
+        case .phonon:
+            let parts = voice.split(separator: "_", maxSplits: 2)
+            guard parts.count == 3, parts[0] == "en" else { return voice }
+            let accent = parts[1] == "gb" ? "British" : "American"
+            return "\(parts[2]) (\(accent), Phonon)"
+        }
     }
 }
 

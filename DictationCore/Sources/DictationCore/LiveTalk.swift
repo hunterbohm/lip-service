@@ -86,6 +86,9 @@ public struct TalkTiming: Equatable, Sendable {
     public var cutInBlocks = 6
     /// Quiet that ends your turn.
     public var endOfTurn = 0.8
+    /// Quiet after which your words so far are transcribed, while the rest of `endOfTurn` runs out, so the text is ready
+    /// when the turn ends. Early enough to leave time for the transcription, about 0.1 s, and a preview still running.
+    public var transcribeAfter = 0.5
     public var longestTurn = 90.0
     /// A turn shorter than this is a click or a knock, and is dropped. A quick "no" or "bye" is longer, so it stays a
     /// turn; a cough that is transcribed to nothing or to noise is dropped after transcription.
@@ -134,6 +137,11 @@ public struct TalkEar: Sendable {
     public enum Event: Equatable, Sendable {
         /// You started a turn.
         case began
+        /// You paused for `transcribeAfter`: your words so far, to transcribe while the turn may still end. The turn is
+        /// still yours.
+        case paused(TalkUtterance)
+        /// You talked again after a pause, so what `paused` gave is not the whole turn.
+        case resumed
         /// Your turn ended.
         case ended(TalkUtterance)
         /// Something too short to be a turn, such as a cough.
@@ -142,12 +150,16 @@ public struct TalkEar: Sendable {
         case cutIn
         case idleWarning
         case idleEnded
+
+        /// A turn starts with this event, and the block it came with is already in `heard`.
+        public var startsTurn: Bool { self == .began || self == .cutIn }
     }
 
     private enum Phase: Equatable, Sendable {
         case calibrating
         case waiting(quietSince: Instant, warned: Bool)
-        case hearing(startedAt: Instant, lastLoud: Instant)
+        /// `paused` is set once `paused` was sent for the quiet since `lastLoud`.
+        case hearing(startedAt: Instant, lastLoud: Instant, paused: Bool)
         /// Your turn is over and the agent has it. `graceUntil` holds off a cut-in while its first words echo back.
         case agent(graceUntil: Instant, speaking: Bool)
     }
@@ -200,12 +212,23 @@ public struct TalkEar: Sendable {
                 return .idleWarning
             }
             return nil
-        case .hearing(let startedAt, var lastLoud):
+        case .hearing(let startedAt, var lastLoud, var paused):
             heard += block
-            if level > thresholds.start { lastLoud = time }
-            phase = .hearing(startedAt: startedAt, lastLoud: lastLoud)
+            var event: Event?
+            if level > thresholds.start {
+                lastLoud = time
+                if paused { (paused, event) = (false, .resumed) }
+            }
             let length = Double(heard.count) / Recording.sampleRate
-            guard time - lastLoud > timing.endOfTurn || length > timing.longestTurn else { return nil }
+            guard time - lastLoud > timing.endOfTurn || length > timing.longestTurn else {
+                // A pause long enough to transcribe, in a turn long enough to keep.
+                if !paused, time - lastLoud > timing.transcribeAfter, lastLoud - startedAt >= timing.shortestTurn {
+                    paused = true
+                    event = .paused(TalkUtterance(samples: heard, speechEnd: lastLoud, turnEnd: time))
+                }
+                phase = .hearing(startedAt: startedAt, lastLoud: lastLoud, paused: paused)
+                return event
+            }
             let utterance = TalkUtterance(samples: heard, speechEnd: lastLoud, turnEnd: time)
             heard = []
             // The preroll and the quiet at the end are not speech, so the length that counts is from the first loud block
@@ -259,7 +282,7 @@ public struct TalkEar: Sendable {
         heard = preroll.flatMap { $0 }
         preroll = []
         loud = 0
-        phase = .hearing(startedAt: time + -Double(timing.startBlocks) * timing.block, lastLoud: time)
+        phase = .hearing(startedAt: time + -Double(timing.startBlocks) * timing.block, lastLoud: time, paused: false)
     }
 }
 

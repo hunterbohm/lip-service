@@ -6,9 +6,9 @@ extension Headless {
     struct TtsCheckOptions {
         var voice = "en_us_Preston"
         var text = "Okay, I looked at the build and it passed, so you can ship it whenever you are ready."
-        /// A pack folder already on disk. Without it the pack is downloaded.
+        /// A pack folder already on disk, loaded as it is. Without it the pinned pack is checked, and downloaded if missing.
         var pack: URL?
-        /// Where a download goes, FluidAudio's text-to-speech folder unless given.
+        /// The text-to-speech models folder that holds the pinned pack, FluidAudio's unless given.
         var directory: URL?
         var out: URL?
     }
@@ -27,7 +27,9 @@ extension Headless {
             if let pack = options.pack {
                 try await manager.load(from: pack)
             } else {
-                try await manager.initialize(directory: options.directory)
+                // The pack the app uses: the pinned files, each checked before Core ML reads it.
+                let store = ModelStore(directory: try options.directory ?? ModelStore.voiceDirectory())
+                try await manager.load(from: try await store.phononPack())
             }
             let load = Instant.now - loadStarted
             guard try await manager.availableVoices().contains(options.voice) else {

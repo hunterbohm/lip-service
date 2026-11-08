@@ -133,6 +133,9 @@ enum TalkEnd: Equatable {
     private var waitingTurn: TalkUtterance?
     private let words = TurnAudio()
     private var previews: Task<Void, Never>?
+    /// Your words up to a pause, being transcribed while the pause may still end the turn. `speechEnd` is the end of
+    /// the last words it heard.
+    private var early: (speechEnd: Instant, text: Task<String, any Error>)?
     private var transcribing: Task<Void, Never>?
     private(set) var ended = false
 
@@ -257,7 +260,7 @@ enum TalkEnd: Equatable {
             pending.removeFirst(block)
             let time = now + -Double(pending.count) / Recording.sampleRate
             let event = ear.hear(samples, at: time)
-            if ear.isHearing, event == nil { words.append(samples) }
+            if ear.isHearing, event?.startsTurn != true { words.append(samples) }
             if let event { handle(event, at: time) }
             if ended { return }
         }
@@ -271,7 +274,17 @@ enum TalkEnd: Equatable {
             log.info("you talked over \(self.agent.name, privacy: .public)")
             if permission == nil { stopReply() }
             hearing()
+        case .paused(let soFar):
+            // Previews would only decode the quiet again, and would hold up the worker.
+            previews?.cancel()
+            early?.text.cancel()
+            let recording = Recording(samples: soFar.samples, releasedAt: soFar.turnEnd)
+            early = (soFar.speechEnd, Task { [engine] in try await engine.dictate(recording).text })
+        case .resumed:
+            early = nil
+            startPreviews()
         case .dropped:
+            early = nil
             previews?.cancel()
             if permission != nil {
                 ear.agentWorking(at: time)
@@ -293,7 +306,12 @@ enum TalkEnd: Equatable {
 
     private func hearing() {
         words.reset(ear.heard)
+        early = nil
         bar = TalkBar(agent: bar.agent, phase: .hearing)
+        startPreviews()
+    }
+
+    private func startPreviews() {
         previews?.cancel()
         let stream = engine.previews(of: words)
         previews = Task { [weak self] in
@@ -304,13 +322,18 @@ enum TalkEnd: Equatable {
         }
     }
 
+    /// Uses what was transcribed at the pause when no words came after it, since the rest of the turn is quiet.
     private func transcribe(_ utterance: TalkUtterance) {
         var clock = TurnClock(speechEnd: utterance.speechEnd)
         clock.mark(.turnEnd, at: utterance.turnEnd)
         let recording = Recording(samples: utterance.samples, releasedAt: utterance.turnEnd)
+        let early = self.early.flatMap { $0.speechEnd == utterance.speechEnd ? $0.text : nil }
+        self.early = nil
         transcribing = Task { [weak self, engine] in
             let text: String
-            do { text = try await engine.dictate(recording).text } catch {
+            do {
+                if let early, let heard = try? await early.value { text = heard } else { text = try await engine.dictate(recording).text }
+            } catch {
                 self?.heardNothing(failed: error.localizedDescription)
                 return
             }
@@ -429,11 +452,11 @@ enum TalkEnd: Equatable {
             for chunk in chunker.feed(text) { queue(chunk, turn: current) }
             textCount += 1
             flush?.cancel()
-            guard chunker.endsOnSentence else { break }
+            guard let wait = chunker.sentenceEndWait else { break }
             let seen = textCount
             flush = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(150))
-                guard let self, !Task.isCancelled, seen == self.textCount, current == self.turn, self.chunker.endsOnSentence else { return }
+                try? await Task.sleep(for: .seconds(wait))
+                guard let self, !Task.isCancelled, seen == self.textCount, current == self.turn, self.chunker.sentenceEndWait != nil else { return }
                 for chunk in self.chunker.finish() { self.queue(chunk, turn: current) }
             }
         case .show(let body):

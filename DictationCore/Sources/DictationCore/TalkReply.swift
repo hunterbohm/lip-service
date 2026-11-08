@@ -101,13 +101,14 @@ public struct SpeechChunker: Sendable {
         return rest.isEmpty ? [] : [rest]
     }
 
-    /// The words waiting end a sentence, though the space after it hasn't come, as when the agent pauses after "Sure."
-    /// The caller may `finish` them after a short wait. A number such as "3." might go on to "3.5", so it doesn't count.
-    public var endsOnSentence: Bool {
+    /// How long to wait for more text before `finish`ing the words waiting, or nil to wait for more. The words end a
+    /// sentence, though the space after it hasn't come, as when the agent pauses after "Sure." or answers "366." A number
+    /// such as "3." might go on to "3.5", so after a digit the wait is longer, and a decimal's next digit arrives well
+    /// within it.
+    public var sentenceEndWait: Double? {
         let text = buffer.trimmingCharacters(in: .whitespaces)
-        guard let last = text.last, ".!?…".contains(last) else { return false }
-        let before = text.dropLast().last
-        return before.map { !$0.isNumber } ?? false
+        guard let last = text.last, ".!?…".contains(last), let before = text.dropLast().last else { return nil }
+        return last == "." && before.isNumber ? 0.6 : 0.15
     }
 
     /// Where the next piece ends, just past its punctuation, or nil to wait for more.

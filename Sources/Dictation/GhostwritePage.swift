@@ -279,7 +279,7 @@ private struct LiveTalkSection: View {
                 }
             }
             .padding(.top, 12)
-            Text("The first talk downloads the voice, about 90 MB, from Hugging Face. What you say and what the agent says stay on this Mac, "
+            Text("The first talk downloads the voice from Hugging Face: 134 MB for Phonon, about 90 MB for Kokoro. What you say and what the agent says stay on this Mac, "
                  + "except what goes to the agent itself and, if you pick one, the voice server.")
                 .font(.system(size: 12)).foregroundStyle(Theme.tertiary).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
         }

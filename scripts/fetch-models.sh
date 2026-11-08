@@ -5,10 +5,19 @@
 # first launch. Each model folder is assembled under a temporary name and renamed into place, because FluidAudio
 # treats a folder as complete as soon as its bundle directories exist. An existing folder is checked and left as it
 # is. Safe to rerun. MODELS_DIR replaces FluidAudio's models folder.
+# --voice also fetches live talk's on-Mac voice pack into FluidAudio's text-to-speech models folder, or VOICES_DIR,
+# as `--test-talk` over SSH needs. Only the pack's folder inside its repository is assembled and renamed into place.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 lock="$root/scripts/models.lock"
 models="${MODELS_DIR:-$HOME/Library/Application Support/FluidAudio/Models}"
+voices="${VOICES_DIR:-$HOME/.cache/fluidaudio/Models}"
+with_voice=0
+case "${1:-}" in
+    "") ;;
+    --voice) with_voice=1 ;;
+    *) printf 'usage: %s [--voice]\n' "$0" >&2; exit 2 ;;
+esac
 mkdir -p "$models"
 
 sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
@@ -32,9 +41,15 @@ check() {
     return $bad
 }
 
+# A model is its whole repository, in $models/FOLDER. A voice is the folder SUBDIRECTORY of its repository, in
+# $voices/FOLDER/SUBDIRECTORY, and its files are fetched from SUBDIRECTORY/PATH.
 fetch() {
-    local repo="$1" commit="$2" folder="$3" entries="$4"
-    local final="$models/$folder"
+    local kind="$1" repo="$2" commit="$3" folder="$4" subdirectory="$5" entries="$6"
+    local final="$models/$folder" remote=""
+    if [[ "$kind" == voice ]]; then
+        final="$voices/$folder/$subdirectory" remote="$subdirectory/"
+        folder="$folder/$subdirectory"
+    fi
     if [[ -d "$final" ]]; then
         if check "$final" "$entries"; then
             printf '%s already present and checked.\n' "$folder"
@@ -43,7 +58,7 @@ fetch() {
         printf '%s does not match %s at %s. Remove it and run this again.\n' "$final" "$repo" "${commit:0:12}" >&2
         exit 1
     fi
-    local staging="$models/.$folder.partial"
+    local staging="$(dirname "$final")/.$(basename "$final").partial"
     mkdir -p "$staging"
     local size digest path out
     while read -r size digest path; do
@@ -51,7 +66,7 @@ fetch() {
         mkdir -p "$(dirname "$out")"
         if [[ -f "$out" && "$(stat -f %z "$out")" == "$size" && "$(sha256 "$out")" == "$digest" ]]; then continue; fi
         if [[ "$size" == 0 ]]; then : > "$out"; else
-            curl -fsSL --retry 3 -o "$out.part" "https://huggingface.co/$repo/resolve/$commit/$path"
+            curl -fsSL --retry 3 -o "$out.part" "https://huggingface.co/$repo/resolve/$commit/$remote$path"
             mv "$out.part" "$out"
         fi
         if [[ "$(stat -f %z "$out")" != "$size" || "$(sha256 "$out")" != "$digest" ]]; then
@@ -67,16 +82,20 @@ fetch() {
 
 entries="$(mktemp)"
 trap 'rm -f "$entries"' EXIT
-repo="" commit="" folder=""
-while read -r kind first second third; do
+current="" repo="" commit="" folder="" subdirectory=""
+flush() {
+    [[ -z "$current" ]] && return
+    if [[ "$current" == model || "$with_voice" == 1 ]]; then fetch "$current" "$repo" "$commit" "$folder" "$subdirectory" "$entries"; fi
+}
+while read -r kind first second third fourth; do
     case "$kind" in
         '#'*) ;;
-        model)
-            if [[ -n "$folder" ]]; then fetch "$repo" "$commit" "$folder" "$entries"; fi
-            repo="$first" commit="$second" folder="$third"
+        model|voice)
+            flush
+            current="$kind" repo="$first" commit="$second" folder="$third" subdirectory="${fourth:-}"
             : > "$entries"
             ;;
         *) printf '%s %s %s\n' "$kind" "$first" "$second" >> "$entries" ;;
     esac
 done < "$lock"
-fetch "$repo" "$commit" "$folder" "$entries"
+flush
