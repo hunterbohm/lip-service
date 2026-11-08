@@ -2,7 +2,7 @@ import Foundation
 
 /// How FluidAudio runs the boosting model over audio longer than 15 s: 15 s windows every 13 s, each window run on
 /// its own, and the overlapping frames of neighbours averaged in probability space. Mirrors
-/// `computeLogProbsChunked` in FluidAudio v0.17.7 (`CtcKeywordSpotter+Inference.swift`). A window's
+/// `computeLogProbsChunked` in FluidAudio v0.18.3 (`CtcKeywordSpotter+Inference.swift`). A window's
 /// log-probabilities depend only on its audio, so every window that ends before release can be computed while
 /// the key is still held.
 public enum CtcWindows {

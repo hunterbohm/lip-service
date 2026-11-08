@@ -36,11 +36,13 @@ for resource in selftest.wav start.wav stop.wav cancel.wav AppIcon.icns; do
 done
 
 # The licenses of the code compiled into the app. Of FluidAudio's ThirdPartyLicenses, the linked ones cover code in
-# the FluidAudio product. The others cover the NemoTextProcessing binary target, which fetch-deps.sh removes, and
-# text-to-speech model files the app never downloads.
+# the FluidAudio product. The others cover the NemoTextProcessing binary target, which fetch-deps.sh removes,
+# text-to-speech model files that the app does not ship, and the LuxTTS English G2P tables. Those tables are derived
+# from espeak-ng output (GPL-3.0) and live in FluidAudio's separate LuxTtsG2pResources resource bundle, which the
+# TTS trait links but which this script never copies into the app. The check below stops the build if one is copied.
 fluid="$root/Vendor/FluidAudio"
 linked=(fastcluster-LICENSE.md vbx-LICENSE.md JapaneseG2P-LICENSE.md)
-not_linked=(NemoTextProcessing-LICENSE.md KokoroANE-v3 KokoroAneSpanishFrenchG2P-LICENSE.md)
+not_linked=(NemoTextProcessing-LICENSE.md KokoroANE-v3 KokoroAneSpanishFrenchG2P-LICENSE.md LuxTtsEnglishG2P-LICENSE.md)
 for entry in "$fluid"/ThirdPartyLicenses/*; do
     if [[ " ${linked[*]} ${not_linked[*]} " != *" ${entry##*/} "* ]]; then
         printf 'Check whether FluidAudio ThirdPartyLicenses/%s covers linked code, then list it in %s.\n' "${entry##*/}" "$0" >&2
@@ -52,6 +54,13 @@ mkdir -p "$licenses/FluidAudio/ThirdPartyLicenses"
 cp "$root/LICENSE" "$licenses/LICENSE"
 cp "$fluid/LICENSE" "$licenses/FluidAudio/LICENSE"
 for name in "${linked[@]}"; do cp "$fluid/ThirdPartyLicenses/$name" "$licenses/FluidAudio/ThirdPartyLicenses/$name"; done
+
+# The app must not ship FluidAudio's LuxTTS G2P tables (derived from GPL-3.0 espeak-ng output), which the TTS trait
+# builds into a resource bundle beside the binary. Only the files copied above go into the app, so none should be here.
+if find "$staging/$bundle" \( -name '*.tsv.zz' -o -name 'luxtts_*' -o -name '*LuxTtsG2pResources*' \) | grep -q .; then
+    printf 'The app bundle holds LuxTTS G2P files, which are not MIT-compatible. Remove them from %s.\n' "$bundle" >&2
+    exit 1
+fi
 
 # The umask above keeps build files private, but every account on the Mac must be able to open the app.
 chmod -R go+rX "$staging/$bundle"
