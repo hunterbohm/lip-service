@@ -394,53 +394,53 @@ import Testing
         #expect(BarNotice.talkStarted(agent: "Hermes").detail == "To end, double-tap Left Control or say goodbye.")
     }
 
-    @Test func theBarShowsWordsOrAStatus() {
+    @Test func theIslandSaysWhatIsHappening() {
         #expect(TalkBar(agent: hermes, phase: .connecting).status == "Connecting to Hermes…")
         #expect(TalkBar(agent: hermes, phase: .listening, endingSoon: true).status == "Still there? Ending soon")
         #expect(TalkBar(agent: hermes, phase: .thinking, activity: "Checking your calendar").status == "Checking your calendar")
-        #expect(TalkBar(agent: hermes, phase: .hearing, line: "what's on").words == "what's on")
-        #expect(TalkBar(agent: hermes, phase: .thinking, line: "what's on").words == nil)
-        #expect(TalkBar(agent: hermes, phase: .speaking, line: "You have two.").speaker == .agent)
-        #expect(TalkBar(agent: hermes, phase: .hearing).speaker == .you)
-        #expect(TalkBar(agent: hermes, phase: .thinking).speaker == .nobody)
+        #expect(TalkIsland.headline(TalkBar(agent: hermes, phase: .hearing)) == "Listening")
+        #expect(TalkIsland.headline(TalkBar(agent: hermes, phase: .speaking)) == "Hermes")
     }
 
-    @Test func theGlowBreathesAndFollowsWhoIsTalking() {
-        #expect(TalkGlow.breath(at: 0) == 0)
-        #expect(abs(TalkGlow.breath(at: TalkGlow.breathPeriod / 2) - 1) < 1e-9)
-        #expect(TalkGlow.light(breath: 1, voice: 1, speaker: .nobody) < 0.5)
-        #expect(abs(TalkGlow.light(breath: 0, voice: 1, speaker: .agent) - 1) < 1e-9)
-        #expect(TalkGlow.beamSpeed(.agent) < 0)
-        #expect(TalkGlow.beamSpeed(.you) == HaloGlow.speed)
-        #expect(TalkGlow.rimColors(mix: 0).map(\.green) == TalkGlow.yourRimColors.map(\.green))
-        // Neither side of a talk wears dictation's blues.
-        #expect(TalkGlow.yourRimColors.map(\.blue) != HaloGlow.rimColors.map(\.blue))
-        #expect(TalkGlow.agentRimColors.map(\.blue) != HaloGlow.rimColors.map(\.blue))
-        #expect(zip(TalkGlow.rimColors(mix: 1), TalkGlow.agentRimColors).allSatisfy { abs($0.red - $1.red) < 1e-9 && abs($0.blue - $1.blue) < 1e-9 })
-        #expect(TalkGlow.mix(for: .nobody, last: .agent) > TalkGlow.mix(for: .nobody, last: .you))
+    @Test func theIslandOpensWhenThereIsSomethingToRead() {
+        #expect(!TalkIsland.isOpen(TalkBar(agent: hermes, phase: .listening), hovering: false))
+        #expect(!TalkIsland.isOpen(TalkBar(agent: hermes, phase: .hearing, line: "what's on"), hovering: false))
+        #expect(!TalkIsland.isOpen(TalkBar(agent: hermes, phase: .thinking), hovering: false))
+        #expect(TalkIsland.isOpen(TalkBar(agent: hermes, phase: .thinking, line: "what's on"), hovering: false))
+        #expect(TalkIsland.isOpen(TalkBar(agent: hermes, phase: .thinking, activity: "Checking your calendar"), hovering: false))
+        #expect(TalkIsland.isOpen(TalkBar(agent: hermes, phase: .speaking, line: "You have two."), hovering: false))
+        #expect(TalkIsland.isOpen(TalkBar(agent: hermes, phase: .listening, endingSoon: true), hovering: false))
+        // The pointer over it opens it, which shows the button that ends the talk.
+        #expect(TalkIsland.isOpen(TalkBar(agent: hermes, phase: .listening), hovering: true))
     }
 
-    @Test func theBeamNeverJumpsWhenTheSpeakerChanges() {
-        var clock = TalkGlow.BeamClock()
-        var previous = clock.advance(to: 0, target: 260)
-        var largest = 0.0
-        for frame in 1...240 {
-            let target = frame < 120 ? 260.0 : -208
-            let head = clock.advance(to: Double(frame) / 60, target: target)
-            largest = max(largest, abs(head - previous))
-            previous = head
+    @Test func theIslandFitsTheNotch() {
+        let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
+        #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 46)
+        #expect(TalkIsland.compactWidth(.plain) == 96 + 2 * 44)
+        #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))
+        #expect(TalkIsland.openWidth(TalkIsland.Screen(hasNotch: true, notchWidth: 900, barHeight: 32)) == TalkIsland.widest)
+    }
+
+    @Test func theOrbAndEarFollowWhoIsTalking() {
+        #expect(TalkIsland.mood(.hearing) == .you && TalkIsland.mood(.speaking) == .speaking && TalkIsland.mood(.thinking) == .thinking)
+        #expect(TalkIsland.ear(.hearing) == .voice(agent: false))
+        #expect(TalkIsland.ear(.speaking) == .voice(agent: true))
+        #expect(TalkIsland.ear(.thinking) == .working && TalkIsland.ear(.connecting) == .working)
+        #expect(TalkIsland.orbSpeed(.thinking) > TalkIsland.orbSpeed(.you))
+        for mood in [TalkIsland.Mood.connecting, .you, .thinking, .speaking] { #expect(TalkIsland.orbColors(mood).count == 3) }
+        // The orb swells with the voice and stays within a quarter of its size.
+        #expect(TalkIsland.orbScale(level: 1, mood: .you, time: 0) > TalkIsland.orbScale(level: 0, mood: .you, time: 0))
+        #expect(TalkIsland.orbScale(level: 5, mood: .you, time: 0) <= 1.22 + 1e-9)
+    }
+
+    @Test func theVoiceBarsRiseWithTheLevelAndStayInTheEar() {
+        for index in 0..<5 {
+            #expect(TalkIsland.barHeight(index: index, level: 0, time: 1) == 4)
+            #expect(TalkIsland.barHeight(index: index, level: 1, time: 1) <= TalkIsland.barTallest)
         }
-        #expect(largest <= 260.0 / 60 + 1e-9)
-        #expect(clock.speed < 0)
-    }
-
-    @Test func aBackwardBeamIsTheMirrorOfAForwardOne() {
-        let forward = TalkGlow.beam(head: 100, perimeter: 1000, backward: false)
-        let backward = TalkGlow.beam(head: -100, perimeter: 1000, backward: true)
-        #expect(forward.count == backward.count)
-        let brightest = forward.max { $0.light < $1.light }!, mirrored = backward.max { $0.light < $1.light }!
-        #expect(abs(brightest.to - 0.1) < 1e-9)
-        #expect(abs(mirrored.from - 0.9) < 1e-9)
+        #expect(TalkIsland.barHeight(index: 2, level: 0.8, time: 0.3) > TalkIsland.barHeight(index: 2, level: 0.1, time: 0.3))
+        #expect((0..<3).allSatisfy { (0...1).contains(TalkIsland.dotLift(index: $0, time: 2.2)) })
     }
 }
 

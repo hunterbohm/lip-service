@@ -16,7 +16,12 @@ import DictationCore
         var card: CardModel?
         /// Cards a talk put up, newest last.
         var talkCards: [TalkCardEvent] = []
+        /// A talk's island on a screen with a notch, and with the pointer over it.
+        var notch = false
+        var hovering = false
     }
+
+    private static let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
 
     private static let hermes = BarAgent(initial: "H", name: "Hermes")
     private static let said = "reply saying Tuesday at 3 works and I'll bring the latest cut"
@@ -118,6 +123,12 @@ import DictationCore
                   talkCards: [.permission(agent: "Hermes", phrase: "Running a command", detail: "terminal: hermes send -t photon", byVoice: false)]),
             Scene(name: "60-talk-visual", state: BarState(body: talk(.speaking, line: "Here's your week.")), edge: .top, settle: 2.5,
                   talkCards: [.show(.html(chart))]),
+            Scene(name: "61-talk-hover", state: BarState(body: talk(.listening)), edge: .top, quiet: true, hovering: true),
+            Scene(name: "62-talk-notch-listening", state: BarState(body: talk(.hearing, line: "what's on")), edge: .top, notch: true),
+            Scene(name: "63-talk-notch-thinking", state: BarState(body: talk(.thinking, line: "what's on my calendar this afternoon",
+                                                                               activity: "Checking your calendar")), edge: .top, quiet: true, notch: true),
+            Scene(name: "64-talk-notch-agent-talking", state: BarState(body: talk(.speaking, line: "You have two meetings this afternoon, the first at three.")),
+                  edge: .top, notch: true),
         ]
     }
 
@@ -177,6 +188,10 @@ import DictationCore
         let bar = Bar(level: { 0 }, area: { _ in stage })
         let cards = CardPanel()
         let talkCards = TalkCardPanel()
+        let island = TalkIslandPanel()
+        island.model.frozenAt = frozenAt
+        island.model.level = { [bar] in bar.meter.reading(at: frozenAt).level(delay: 0) }
+        island.onMoved = { [bar] rect in bar.talkAnchor = rect }
         for scene in scenes + agentScenes + talkScenes {
             bar.render(BarState(body: .hidden), edge: scene.edge)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
@@ -185,10 +200,19 @@ import DictationCore
             bar.showOutlines(nearest: scene.dragNearest)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             if let card = scene.card { cards.show(card, above: bar.anchor()) } else { cards.hide() }
+            if case .talk(let talk) = scene.state.body {
+                island.place(in: stage, screen: scene.notch ? notched : .plain)
+                island.model.hovering = scene.hovering
+                island.show(talk)
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.8))
+            } else {
+                island.show(nil)
+            }
             talkCards.closeAll()
-            for event in scene.talkCards { talkCards.handle(event, agent: hermes, under: bar.anchor()) }
+            for event in scene.talkCards { talkCards.handle(event, agent: hermes, under: (island.islandRect, .top)) }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
-            let shown = bar.visiblePanels + (cards.isVisible ? [(panel: cards.window, shadow: true)] : [])
+            let shown = bar.visiblePanels + (island.isVisible && scene.state.body.isTalkBody ? [(panel: island.window, shadow: false)] : [])
+                + (cards.isVisible ? [(panel: cards.window, shadow: true)] : [])
                 + (talkCards.isVisible ? [(panel: talkCards.window, shadow: true)] : [])
             let webShots = talkCards.isVisible ? webSnapshots(talkCards) : []
             let panels = shown.map {
@@ -286,4 +310,8 @@ import DictationCore
             return false
         }
     }
+}
+
+private extension BarState.Body {
+    var isTalkBody: Bool { if case .talk = self { true } else { false } }
 }

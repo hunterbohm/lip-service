@@ -55,6 +55,8 @@ import os
     /// The live talk running now, if any. The bar reads its level through this.
     private let live = LiveTalkSlot()
     private let talkCards = TalkCardPanel()
+    /// The island at the top of the screen that shows a talk.
+    private let island = TalkIslandPanel()
 
     init() {
         inserter = Inserter(preferences: preferences)
@@ -82,6 +84,12 @@ import os
         keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
         keyTap.onDoubleTap = { [unowned self] in toggleTalk() }
         talkCards.onPermission = { [unowned self] allowed in live.talk?.answerPermission(allowed) }
+        island.model.level = { [bar] in bar.meter.reading(at: Date.timeIntervalSinceReferenceDate).level(delay: 0) }
+        island.model.onEnd = { [unowned self] in live.talk?.end(.byYou) }
+        island.onMoved = { [unowned self] rect in
+            bar.talkAnchor = rect
+            talkCards.move(under: (rect, .top))
+        }
         updateTalkKey()
         ghostwriter.onChange = { [unowned self] in render() }
         ghostwriter.onNotice = { [unowned self] notice in show(notice) }
@@ -97,7 +105,6 @@ import os
                 preferences.undoSetup()
                 notice = nil
                 render()
-            case .endTalk: live.talk?.end(.byYou)
             }
         }
         preferences.onChange = { [unowned self] old, new in apply(old, new) }
@@ -183,7 +190,7 @@ import os
         let barAgent = BarAgent(initial: agent.initial, name: agent.name)
         talk.onBar = { [unowned self] _ in render() }
         talk.onNotice = { [unowned self] notice in show(notice) }
-        talk.onCard = { [unowned self] event in talkCards.handle(event, agent: barAgent, under: bar.anchor()) }
+        talk.onCard = { [unowned self] event in talkCards.handle(event, agent: barAgent, under: (island.islandRect, .top)) }
         talk.onEnd = { [unowned self, weak talk] reason in
             guard let talk, live.talk === talk else { return }
             live.talk = nil
@@ -477,6 +484,7 @@ import os
                                    notice: notice, showsIdle: !settings.hideBarWhenIdle, agent: agent?.agent, working: agent?.working,
                                    busy: agent?.busy ?? false, talk: live.talk?.bar),
                    edge: settings.barEdge)
+        island.show(live.talk?.bar)
         menu.show(engine: engineStatus, keyTapRunning: keyTap.isRunning, waiting: pending)
     }
 }

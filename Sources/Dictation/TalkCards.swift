@@ -38,6 +38,13 @@ import WebKit
     var isVisible: Bool { panel.isVisible }
     var window: NSPanel { panel }
 
+    /// Moves the cards under a new place, such as the island once it opens or closes.
+    func move(under anchor: (frame: NSRect, edge: BarEdge)) {
+        guard self.anchor.map({ $0.frame != anchor.frame || $0.edge != anchor.edge }) ?? true else { return }
+        self.anchor = anchor
+        layout()
+    }
+
     func handle(_ event: TalkCardEvent, agent: BarAgent, under anchor: (frame: NSRect, edge: BarEdge)) {
         self.anchor = anchor
         switch event {

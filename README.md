@@ -55,7 +55,7 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.17.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.19.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
@@ -87,7 +87,7 @@ From 1.0.8, Lip Service says in its menu bar menu and on the Home page when a ne
 - Hold fn or Right Control, speak, and let go. The text is pasted at the cursor.
 - To dictate without holding the key, tap it twice. Press it once more to insert the text, or press Escape to throw it away.
 - To paste your last dictation again, press Control+Command+V.
-- While you speak, a bar at the bottom of the screen shows a halftone print of your voice and the words heard so far, with a soft blue rim around it that glows brighter as you talk while a beam of light runs around its edge. Drag it to the top or to either side of the screen.
+- While you speak, a bar at the bottom of the screen shows soft blue waves that swell with your voice, and a spark runs along them each time a word is recognized. A soft blue rim around it glows brighter as you talk while a beam of light runs around its edge. Drag it to the top or to either side of the screen.
 - Lip Service removes filler words such as "um" and fixes capitals and punctuation.
 - **Smart formatting** adds paragraphs, numbered and bulleted lists, and quotation marks where they fit, without you saying "new paragraph" or "quote". Say "first… second… third…" and you get a numbered list. A model on your Mac reads what you said, your pauses, and the kind of app the text goes into. It only adds breaks, list markers and quotes, fixes punctuation, and drops counting words such as "first", so every other word goes in as you said it. To turn it off, clear **Smart formatting** on the **Dictation** page.
 - To teach it a name it gets wrong, open the **Dictionary** page and click **Add Word**. If the name still comes out wrong, add the ways it gets misheard, too.
@@ -96,7 +96,7 @@ From 1.0.8, Lip Service says in its menu bar menu and on the Home page when a ne
 - On the **Profiles** page, pick a style for each group of apps: **Formal**, **Casual** with no period at the end, or **Very casual** in lowercase. Each group can also press Return for you after the text goes in, only into the field you dictated into.
 - **Ghostwrite**: hold fn and Control, say what you want written, such as "reply that Thursday works, after 3", and let go. Your agent reads the window you're in and writes it in your voice. The draft streams into a card: press Return to type it, hold the keys again and say a change, or press Escape to throw it away.
 - **Hand off**: hold fn and Option and say a task. After a 5 s countdown that Escape cancels, it goes to your agent in its own app: Hermes in iMessage, Claude Code or Codex as a new T3 Code thread, or Telegram, Slack, Discord, a web address, or a command.
-- **Live talk**: double-tap Left Control and talk with your agent out loud, hands free. Pause and it answers in a voice made on your Mac; talk over it to cut in. It works with any agent Lip Service can reach. The bar moves to the top and glows teal while you talk and violet while the agent does. Links, images, code and charts the agent wants you to see show up as cards under the bar instead of being read out. Double-tap again, say "goodbye", or click the bar's x to end. Two minutes of quiet ends it too.
+- **Live talk**: double-tap Left Control and talk with your agent out loud, hands free. Pause and it answers in a voice made on your Mac; talk over it to cut in. It works with any agent Lip Service can reach. A black island like the iPhone's Dynamic Island shows the talk at the top of the screen, growing out of the notch on a MacBook that has one: a colored orb that swells with the voice, and the agent's words as it says them. Links, images, code and charts the agent wants you to see show up as cards under it instead of being read out. Double-tap again, say "goodbye", or hover over the island and click its x to end. Two minutes of quiet ends it too.
 - The setup window on first launch walks you through permissions, a first dictation, your styles, and your agent. To have your agent do it instead, click **Let my agent set it up**, or **Copy setup prompt** on the Ghostwrite page, and paste the prompt into your agent. Lip Service lists what it changed, with **Undo**.
 - To insert text you type often, such as your address, add a snippet on the **Dictionary** page. Say its cue on its own and the saved text goes in exactly as written.
 - To stop music and videos playing over you, turn on **Mute other audio** on the **Dictation** page. The sound comes back as soon as you stop talking, and again later if an output was unplugged while muted.
