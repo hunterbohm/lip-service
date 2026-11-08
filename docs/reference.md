@@ -33,7 +33,7 @@ Short messages appear just above the bar, or below it when the bar is at the top
 
 Every dictation also goes into **Recent Dictations** in the menu, and clicking one copies it again. The list holds the last 20 dictations and lives in memory only, so it empties when the app quits. The history on the Home page keeps every dictation across launches.
 
-The bar sits at the bottom center of the screen that has the mouse. To move it, drag it while you dictate, or drag the small idle bar. Dashed outlines mark the four places it can go: bottom center, top center, left middle, and right middle. Let go near one and the bar snaps there and stays there. On the left or right edge the bar is centered vertically and grows away from that edge.
+The bar sits at the bottom center of the screen that has the mouse. To move it, drag it while you dictate, or drag the small idle bar. Dashed outlines mark the four places it can go: bottom center, top center, left middle, and right middle. Let go near one and the bar snaps there and stays there. On the left or right edge the bar is centered vertically and grows away from that edge. When another app keeps a bar along that edge, such as the top bar of a tiling window manager like OmniWM or AeroSpace with SketchyBar, Lip Service sits just inside it instead of under it.
 
 When **Hide bar when idle** is off, a small dark pill stays at the bar's place between dictations. It is on by default, so the bar shows only while you dictate.
 
@@ -311,7 +311,7 @@ The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio 
 
 To make a release zip, name it after the version in `Info.plist`. Sign a release with the certificate whose fingerprint the README lists, or the README's check fails for everyone who downloads it:
 
-	ditto -c -k --norsrc --noextattr --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.14.zip
+	ditto -c -k --norsrc --noextattr --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.15.zip
 
 ## Speech models
 
