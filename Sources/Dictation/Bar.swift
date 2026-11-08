@@ -19,11 +19,9 @@ enum BarEvent: Equatable {
     private let bodyPanel = BarPanel()
     private let toastPanel = BarPanel()
     private let outlinePanel = BarPanel()
-    private let haloPanel = BarPanel()
     private let bodyHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let toastHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let outlineHost = BarHostingView(rootView: AnyView(EmptyView()))
-    private let haloHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let level: @MainActor () -> Float
     /// The visible frame of the screen to use. Defaults to the screen the bar is on, or the mouse's.
     private let area: (@MainActor (_ current: NSScreen?) -> NSRect)?
@@ -35,6 +33,10 @@ enum BarEvent: Equatable {
     private weak var clearedScreen: NSScreen?
     private var drag: Drag?
     private var sampler: Timer?
+    /// The body's capsule on screen, which is smaller than its panel while the words bar shows.
+    private var capsuleFrame = NSRect.zero
+    /// Checks the pointer while the words bar takes the mouse, so its panel takes clicks only over the capsule.
+    private var pointer: Timer?
 
     private struct Drag {
         /// Mouse position within the body when the drag began.
@@ -46,12 +48,11 @@ enum BarEvent: Equatable {
     init(level: @escaping @MainActor () -> Float, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
         self.level = level
         self.area = area
-        for (panel, host) in [(bodyPanel, bodyHost), (toastPanel, toastHost), (outlinePanel, outlineHost), (haloPanel, haloHost)] {
+        for (panel, host) in [(bodyPanel, bodyHost), (toastPanel, toastHost), (outlinePanel, outlineHost)] {
             panel.contentView = host
         }
         toastHost.sizingOptions = [.intrinsicContentSize]
         outlinePanel.hasShadow = false
-        haloPanel.hasShadow = false
     }
 
     /// Shown with orderFrontRegardless, never makeKeyAndOrderFront, so the app never activates and focus stays in
@@ -88,46 +89,59 @@ enum BarEvent: Equatable {
             bodyPanel.orderOut(nil)
             // A panel out of view keeps its views running, and the spinner's timeline would redraw 60 times a second.
             bodyHost.rootView = AnyView(EmptyView())
-            hideHalo()
+            followPointer()
             return nil
         }
-        bodyHost.rootView = AnyView(BodyView(shown: state.body, agent: state.agent, edge: edge, meter: meter,
+        bodyHost.rootView = AnyView(BodyView(shown: state.body, agent: state.agent, edge: edge, meter: meter, capsuleWidth: size.width,
                                              onEvent: { [weak self] in self?.onEvent?($0) },
                                              onDrag: { [weak self] ended in self?.dragged(ended: ended) }))
-        let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area),
-                                      inset: BarStyle.inset(of: state.body, edge: edge)))
-        bodyPanel.ignoresMouseEvents = !state.body.acceptsMouse
-        var haloFrame: NSRect?
-        if let bar = state.body.wordsBar {
-            haloHost.rootView = AnyView(HaloView(meter: meter, listening: !bar.finishing))
-            haloFrame = frame.insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin)
-        } else {
-            hideHalo()
-        }
-        if animated, bodyPanel.isVisible, bodyPanel.frame.height == frame.height, bodyPanel.frame != frame {
-            // A halo that is not up yet starts around the body as it is, so both grow to the new width together.
-            if haloFrame != nil, !haloPanel.isVisible {
-                haloPanel.setFrame(bodyPanel.frame.insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin), display: true)
-            }
+        let inset = BarStyle.inset(of: state.body, edge: edge)
+        let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area), inset: inset))
+        // While the words bar shows, its panel covers the widest the capsule can grow to on this edge, and the halo
+        // past it, and never resizes. The capsule grows inside it, so macOS never shows a panel mid-resize with its
+        // old content stretched across the new frame.
+        let panelFrame = state.body.wordsBar == nil ? frame
+            : NSRect(edge.place(width: max(BarStyle.maxWidth, size.width), height: size.height, in: BarRect(area), inset: inset))
+                .insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin)
+        capsuleFrame = frame
+        followPointer()
+        // The words bar draws its own shadow; the system's would follow the halo.
+        bodyPanel.hasShadow = state.body.wordsBar == nil
+        if animated, bodyPanel.isVisible, bodyPanel.frame.height == panelFrame.height, bodyPanel.frame != panelFrame, state.body.wordsBar == nil {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
-                bodyPanel.animator().setFrame(frame, display: true)
-                if let haloFrame { haloPanel.animator().setFrame(haloFrame, display: true) }
+                bodyPanel.animator().setFrame(panelFrame, display: true)
             }
-        } else {
-            bodyPanel.setFrame(frame, display: true)
-            if let haloFrame { haloPanel.setFrame(haloFrame, display: true) }
+        } else if bodyPanel.frame != panelFrame {
+            bodyPanel.setFrame(panelFrame, display: true)
         }
         bodyPanel.orderFrontRegardless()
-        if haloFrame != nil { haloPanel.order(.below, relativeTo: bodyPanel.windowNumber) }
         return frame
     }
 
-    /// The halo's timeline would keep redrawing in a panel that is out of view, so its view goes with it.
-    private func hideHalo() {
-        haloPanel.orderOut(nil)
-        haloHost.rootView = AnyView(EmptyView())
+    /// The words bar's panel is larger than its capsule, and an empty part of a panel still takes clicks. So while it
+    /// shows, the panel takes the mouse only while the pointer is over the capsule or a drag is on, checked 30 times a
+    /// second, and a click beside the bar reaches the app under it.
+    private func followPointer() {
+        guard state.body.acceptsMouse, state.body.wordsBar != nil else {
+            pointer?.invalidate()
+            pointer = nil
+            bodyPanel.ignoresMouseEvents = !state.body.acceptsMouse
+            return
+        }
+        updatePointer()
+        guard pointer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updatePointer() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pointer = timer
+    }
+
+    private func updatePointer() {
+        let over = drag != nil || capsuleFrame.contains(NSEvent.mouseLocation)
+        if bodyPanel.ignoresMouseEvents == over { bodyPanel.ignoresMouseEvents = !over }
     }
 
     private func layoutToast(in area: NSRect, against bodyFrame: NSRect?) {
@@ -167,7 +181,6 @@ enum BarEvent: Equatable {
         outlinePanel.setFrame(started.area, display: true)
         outlinePanel.order(.below, relativeTo: bodyPanel.windowNumber)
         toastPanel.orderOut(nil)
-        hideHalo()
         return started
     }
 
@@ -189,7 +202,7 @@ enum BarEvent: Equatable {
 
     /// Where the body is on screen, or where it would be, so the agent's card can sit just above it.
     func anchor() -> (frame: NSRect, edge: BarEdge) {
-        if bodyPanel.isVisible { return (bodyPanel.frame, edge) }
+        if bodyPanel.isVisible { return (capsuleFrame, edge) }
         let area = currentArea()
         return (NSRect(edge.place(width: 0, height: BarStyle.height, in: BarRect(area),
                                   inset: BarStyle.inset(of: .listening(words: "", handsFree: false), edge: edge))), edge)
@@ -197,7 +210,7 @@ enum BarEvent: Equatable {
 
     /// The panels as they are now, bottom first, for --render-bar. `shadow` is whether the system gives the panel one.
     var visiblePanels: [(panel: NSPanel, shadow: Bool)] {
-        [(haloPanel, false), (outlinePanel, true), (bodyPanel, true), (toastPanel, true)].filter { $0.0.isVisible }
+        [(outlinePanel, true), (bodyPanel, bodyPanel.hasShadow), (toastPanel, true)].filter { $0.0.isVisible }
     }
 
     /// Shows the drag outlines as they look mid-drag with the mouse nearest `edge`, or hides them, for --render-bar.
@@ -337,7 +350,7 @@ struct VoiceReading {
     static let buttonsWidth = 2 * buttonSize + 6
     static let idle = CGSize(width: 28, height: 14)
     static let toastGap: CGFloat = 8
-    /// How far the halo's panel reaches past the body on every side: the halo's reach, and two points to spare.
+    /// How far the words bar's panel reaches past the capsule on every side, for the halo: its reach, and two to spare.
     static let haloMargin = CGFloat(HaloGlow.reach) + 2
     static let toastMaxWidth: CGFloat = 520
     static let toastTitleFont = NSFont.systemFont(ofSize: 13.5, weight: .semibold)
@@ -456,28 +469,47 @@ private struct BodyView: View {
     let agent: BarAgent?
     let edge: BarEdge
     let meter: VoiceMeter
+    /// The words bar's capsule width. Its panel is wider, and a new width animates inside it.
+    let capsuleWidth: CGFloat
     let onEvent: (BarEvent) -> Void
     let onDrag: (_ ended: Bool) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .gesture(DragGesture(minimumDistance: 3)
-                .onChanged { _ in onDrag(false) }
-                .onEnded { _ in onDrag(true) })
+        if let bar = shown.wordsBar {
+            GrowingBar(width: capsuleWidth, meter: meter, listening: !bar.finishing, capsule: wordsBar(bar))
+                .animation(reduceMotion ? nil : .timingCurve(0.2, 0.9, 0.3, 1, duration: 0.25), value: capsuleWidth)
+                .gesture(dragging)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .left ? .leading : edge == .right ? .trailing : .center)
+                .padding(BarStyle.haloMargin)
+        } else {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .gesture(dragging)
+        }
+    }
+
+    private var dragging: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { _ in onDrag(false) }
+            .onEnded { _ in onDrag(true) }
+    }
+
+    private func wordsBar(_ bar: (words: String, handsFree: Bool, finishing: Bool)) -> some View {
+        capsule(behind: Print(meter: meter, finishing: bar.finishing, offset: BarStyle.agentWidth(agent))) {
+            if let agent { AgentChip(agent: agent) }
+            Color.clear.frame(width: BarStyle.glyphWidth)
+            if !bar.words.isEmpty {
+                Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree, agent: agent), dimmed: bar.finishing)
+            }
+            Spacer(minLength: 0)
+            if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
+        }
     }
 
     @ViewBuilder private var content: some View {
-        if let bar = shown.wordsBar {
-            capsule(behind: Print(meter: meter, finishing: bar.finishing, offset: BarStyle.agentWidth(agent))) {
-                if let agent { AgentChip(agent: agent) }
-                Color.clear.frame(width: BarStyle.glyphWidth)
-                if !bar.words.isEmpty {
-                    Words(words: bar.words, layout: BarStyle.wordsLayout(bar.words, handsFree: bar.handsFree, agent: agent), dimmed: bar.finishing)
-                }
-                Spacer(minLength: 0)
-                if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
-            }
+        if shown.wordsBar != nil {
+            EmptyView()
         } else {
             switch shown {
             case .hidden, .listening, .transcribing(_, nil):
@@ -520,6 +552,28 @@ private struct BodyView: View {
             .background(Capsule().fill(BarStyle.fill))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.07)))
             .clipShape(Capsule())
+    }
+}
+
+/// The words bar's capsule at `width`, with its shadow and its halo. Animatable, so while a new width animates SwiftUI
+/// draws it at every width in between, and the capsule and the halo grow together frame by frame.
+private struct GrowingBar<Capsule: View>: View, Animatable {
+    // SwiftUI reads and writes the animated width off the main actor; a CGFloat is safe to share.
+    nonisolated(unsafe) var width: CGFloat
+    let meter: VoiceMeter
+    let listening: Bool
+    let capsule: Capsule
+
+    nonisolated var animatableData: CGFloat {
+        get { width }
+        set { width = newValue }
+    }
+
+    var body: some View {
+        capsule
+            .frame(width: width, height: BarStyle.height)
+            .shadow(color: .black.opacity(0.28), radius: 5, y: 1)
+            .background { HaloView(meter: meter, listening: listening).padding(-BarStyle.haloMargin) }
     }
 }
 
@@ -602,8 +656,8 @@ private struct Print: View {
     }
 }
 
-/// The glow around the capsule, drawn in the halo panel, which reaches `BarStyle.haloMargin` past the capsule on every
-/// side: a blurred halo and a soft rim in shades of blue that turn slowly around the capsule, and a bright beam that
+/// The glow around the capsule, drawn behind it and reaching `BarStyle.haloMargin` past it on every side, so it grows
+/// with the capsule frame by frame: a blurred halo and a soft rim in shades of blue that turn slowly around the capsule, and a bright beam that
 /// runs around the rim. All three brighten with the voice. It fades in while listening and out while the words are
 /// finished. With Reduce Motion the rim and halo stay still, with no beam. Each frame blurs three layers, the halo, the
 /// rim's feather and the beam's bloom; the rim and beam themselves are drawn sharp, since a blur under a point wide
