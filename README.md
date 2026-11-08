@@ -170,11 +170,11 @@ You need a Mac with Apple silicon, macOS 26, and the Command Line Tools with Swi
 	scripts/test.sh
 	scripts/build-app.sh
 
-`fetch-deps.sh` downloads FluidAudio v0.17.7 into `Vendor/FluidAudio` and patches it. `build-app.sh` builds `dist/Lip Service.app` and signs it with a self-signed certificate. It makes the certificate on the first run and keeps it in `~/.config/dictation/signing`. The [reference](docs/reference.md) covers the end-to-end test, the headless test modes, and signing.
+`fetch-deps.sh` downloads FluidAudio v0.18.3 into `Vendor/FluidAudio` and patches it. `build-app.sh` builds `dist/Lip Service.app` and signs it with a self-signed certificate. It makes the certificate on the first run and keeps it in `~/.config/dictation/signing`. The [reference](docs/reference.md) covers the end-to-end test, the headless test modes, and signing.
 
 ## Credits
 
-- [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.17.7, by FluidInference, runs the speech models. It is licensed under Apache 2.0. `scripts/fetch-deps.sh` applies three patches to it. One removes the NemoTextProcessing binary target, which the app does not use. One makes vocabulary rescoring faster without changing its output. The third lets the app give the rescorer a tokenizer it already loaded, so the tokenizer file is read once.
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) v0.18.3, by FluidInference, runs the speech models. It is licensed under Apache 2.0. `scripts/fetch-deps.sh` applies six patches to it. One removes the NemoTextProcessing binary target, which the app does not use. One makes vocabulary rescoring faster without changing its output. One lets the app give the rescorer a tokenizer it already loaded, so the tokenizer file is read once. One keeps a word the speech model was sure of when a dictionary term spelled a little differently would replace it. One also compares by sound, so a spelling of the same sounds counts as a near match. The last makes the model download fetch only the files the app expects.
 - [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2), by NVIDIA, turns speech into text. Lip Service uses FluidInference's [Core ML conversion](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml). Both are licensed under CC BY 4.0.
 - [parakeet-ctc-110m](https://huggingface.co/FluidInference/parakeet-ctc-110m-coreml), FluidInference's Core ML conversion of NVIDIA's [Parakeet TDT-CTC 110M](https://huggingface.co/nvidia/parakeet-tdt_ctc-110m), boosts the words in your dictionary. Both are licensed under CC BY 4.0.
 

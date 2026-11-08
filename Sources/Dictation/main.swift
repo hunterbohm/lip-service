@@ -24,6 +24,9 @@ case .bench(let options):
     dispatchMain()
 case .listInputs:
     exit(Headless.listInputs())
+case .ttsCheck(let options):
+    Task { exit(await Headless.ttsCheck(options)) }
+    dispatchMain()
 case .micStart(let options):
     Task { @MainActor in exit(await Headless.micStart(options)) }
     dispatchMain()

@@ -9,6 +9,7 @@ enum Mode {
     case selfTest(Headless.SelfTestOptions)
     case bench(Headless.BenchOptions)
     case listInputs
+    case ttsCheck(Headless.TtsCheckOptions)
     case micStart(Headless.MicStartOptions)
     case renderBar(URL)
     case renderWindow(URL)
@@ -35,6 +36,12 @@ enum Mode {
                    --format-app formats for one app group: messages, workChat, email, aiAndCode or everythingElse.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
+               Dictation --tts-check [--voice NAME] [--text TEXT] [--pack DIR | --directory DIR] [--out FILE.wav]
+                   Says one sentence with FluidAudio's Phonon text-to-speech through the library the app is built with, and
+                   prints one JSON line: the load time, the time to the first audio, the time to the last, and the length.
+                   Exits 1 if no sound came out. The voice is en_us_Preston and the text a short sentence unless given.
+                   --pack loads a pack folder that is already on disk. Otherwise the pack is downloaded into --directory,
+                   or FluidAudio's text-to-speech folder, which URLSession only does in a GUI session, not over SSH.
                Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone automatic|default|UID]
                    Starts and stops the microphone as dictation does, and prints one JSON line per round with how long
                    the first audio took and how much of the hold was recorded. Uses the saved microphone unless given.
@@ -111,6 +118,19 @@ enum Mode {
                 self = .bench(options)
             case "--list-inputs":
                 self = .listInputs
+            case "--tts-check":
+                var options = Headless.TtsCheckOptions()
+                while let flag = rest.popFirst() {
+                    switch flag {
+                    case "--voice": options.voice = try Self.value(of: flag, from: &rest)
+                    case "--text": options.text = try Self.value(of: flag, from: &rest)
+                    case "--pack": options.pack = URL(fileURLWithPath: try Self.value(of: flag, from: &rest))
+                    case "--directory": options.directory = URL(fileURLWithPath: try Self.value(of: flag, from: &rest))
+                    case "--out": options.out = URL(fileURLWithPath: try Self.value(of: flag, from: &rest))
+                    default: throw DictationError("unknown option \(flag)")
+                    }
+                }
+                self = .ttsCheck(options)
             case "--mic-start":
                 var options = Headless.MicStartOptions()
                 while let flag = rest.popFirst() {

@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS("26.0")],
     dependencies: [
         .package(path: "DictationCore"),
-        .package(path: "Vendor/FluidAudio", traits: []),
+        .package(path: "Vendor/FluidAudio", traits: ["TTS"]),
     ],
     targets: [
         .executableTarget(

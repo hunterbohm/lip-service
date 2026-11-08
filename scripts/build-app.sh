@@ -36,11 +36,13 @@ for resource in selftest.wav start.wav stop.wav cancel.wav AppIcon.icns; do
 done
 
 # The licenses of the code compiled into the app. Of FluidAudio's ThirdPartyLicenses, the linked ones cover code in
-# the FluidAudio product. The others cover the NemoTextProcessing binary target, which fetch-deps.sh removes, and
-# text-to-speech model files the app never downloads.
+# the FluidAudio product. The others cover the NemoTextProcessing binary target, which fetch-deps.sh removes,
+# text-to-speech model files that the app does not ship, and the LuxTTS English G2P tables. Those tables are derived
+# from espeak-ng output (GPL-3.0) and live in FluidAudio's separate LuxTtsG2pResources resource bundle, which the
+# TTS trait links but which this script never copies into the app. The check below stops the build if one is copied.
 fluid="$root/Vendor/FluidAudio"
 linked=(fastcluster-LICENSE.md vbx-LICENSE.md JapaneseG2P-LICENSE.md)
-not_linked=(NemoTextProcessing-LICENSE.md KokoroANE-v3 KokoroAneSpanishFrenchG2P-LICENSE.md)
+not_linked=(NemoTextProcessing-LICENSE.md KokoroANE-v3 KokoroAneSpanishFrenchG2P-LICENSE.md LuxTtsEnglishG2P-LICENSE.md)
 for entry in "$fluid"/ThirdPartyLicenses/*; do
     if [[ " ${linked[*]} ${not_linked[*]} " != *" ${entry##*/} "* ]]; then
         printf 'Check whether FluidAudio ThirdPartyLicenses/%s covers linked code, then list it in %s.\n' "${entry##*/}" "$0" >&2
