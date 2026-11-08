@@ -162,7 +162,14 @@ enum TalkEnd: Equatable {
         var text: String
         /// The reply's last line, which plays nothing.
         var end = false
+        /// Counts the lines queued, so a cut-in can drop the ones queued before it.
+        var number = 0
     }
+    private var queuedLines = 0
+    /// Lines up to this number are not said: you talked over them while the agent waited on a permission.
+    private var hushedThrough = 0
+    /// Counts your turns, so a transcription that finishes after you started the next one is dropped.
+    private var utterances = 0
 
     init(agent: AgentConnection, pool: AgentPool, engine: SpeechEngine, voice: any VoiceProvider, input: any TalkInput,
          speaker: any TalkSpeaker) {
@@ -272,7 +279,13 @@ enum TalkEnd: Equatable {
             hearing()
         case .cutIn:
             log.info("you talked over \(self.agent.name, privacy: .public)")
-            if permission == nil { stopReply() }
+            if permission == nil {
+                stopReply()
+            } else {
+                // The question stays open for your answer, but its voice stops, so the microphone hears only you.
+                hushedThrough = queuedLines
+                speaker.stop()
+            }
             hearing()
         case .paused(let soFar):
             // Previews would only decode the quiet again, and would hold up the worker.
@@ -305,6 +318,7 @@ enum TalkEnd: Equatable {
     }
 
     private func hearing() {
+        utterances += 1
         words.reset(ear.heard)
         early = nil
         bar = TalkBar(agent: bar.agent, phase: .hearing)
@@ -329,15 +343,17 @@ enum TalkEnd: Equatable {
         let recording = Recording(samples: utterance.samples, releasedAt: utterance.turnEnd)
         let early = self.early.flatMap { $0.speechEnd == utterance.speechEnd ? $0.text : nil }
         self.early = nil
+        let current = utterances
         transcribing = Task { [weak self, engine] in
             let text: String
             do {
                 if let early, let heard = try? await early.value { text = heard } else { text = try await engine.dictate(recording).text }
             } catch {
-                self?.heardNothing(failed: error.localizedDescription)
+                guard let self, current == self.utterances else { return }
+                self.heardNothing(failed: error.localizedDescription)
                 return
             }
-            guard let self, !self.ended else { return }
+            guard let self, !self.ended, current == self.utterances else { return }
             clock.mark(.transcribed, at: .now)
             self.heard(Speech.collapse(text), clock: clock)
         }
@@ -469,14 +485,16 @@ enum TalkEnd: Equatable {
         flush?.cancel()
         for piece in splitter.finish() { take(piece, turn: current) }
         for chunk in chunker.finish() { queue(chunk, turn: current) }
-        lines?.yield(Line(turn: current, text: "", end: true))
+        queuedLines += 1
+        lines?.yield(Line(turn: current, text: "", end: true, number: queuedLines))
     }
 
     private func queue(_ text: String, turn current: Int) {
         let spoken = Speech.spoken(text)
         guard !spoken.isEmpty else { return }
         clock?.mark(.firstPiece, at: .now)
-        lines?.yield(Line(turn: current, text: text))
+        queuedLines += 1
+        lines?.yield(Line(turn: current, text: text, number: queuedLines))
     }
 
     /// Makes one line and hands it to the speaker, which plays it while the next is made.
@@ -487,9 +505,10 @@ enum TalkEnd: Equatable {
             if !speaker.isPlaying { turnOver() }
             return
         }
+        guard line.number > hushedThrough else { return }
         do {
             let clip = try await voice.speak(Speech.spoken(line.text))
-            guard line.turn == turn, !ended else { return }
+            guard line.turn == turn, !ended, line.number > hushedThrough else { return }
             speaker.play(clip, caption: Speech.caption(line.text))
         } catch {
             guard line.turn == turn, !ended else { return }
