@@ -17,6 +17,8 @@ import Foundation
         var models: URL?
         /// The talk-note extra, replacing the preset's.
         var note: String?
+        /// The live-talk session options, replacing the preset's when any are given.
+        var talkOptions: [ConfigChoice] = []
     }
 
     static func run(_ options: Options) async -> Int32 {
@@ -26,6 +28,7 @@ import Foundation
         if let command = options.command { agent.command = command }
         agent.remoteHost = options.remoteHost
         if let note = options.note { agent.talkNote = note }
+        if !options.talkOptions.isEmpty { agent.talkOptions = options.talkOptions }
         let clips: [[Float]]
         do { clips = try options.clips.map { try Recording.load(wav: $0).samples } } catch {
             return fail("cannot read clips: \(error.localizedDescription)")

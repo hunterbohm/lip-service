@@ -257,7 +257,8 @@ import Testing
         #expect(plain.hasPrefix("(Voice call through Lip Service"))
         #expect(plain.hasSuffix(") what's on today"))
         let hermes = TalkPrompt.message("text me that", extra: AgentPreset.with(id: "hermes")!.talkNote)
-        #expect(hermes.contains(#"hermes send -t photon "<text>""#))
+        // Sent through a quoted heredoc, so nothing in the text is run by the shell.
+        #expect(hermes.contains(#"hermes send -t photon <<'EOF'"#))
     }
 
     @Test func aTurnIsTimedFromTheEndOfSpeech() {
@@ -441,5 +442,37 @@ struct ShortFirstSentenceTests {
         #expect(!chunker.endsOnSentence)
         #expect(chunker.feed("5 percent").isEmpty)
         #expect(!chunker.endsOnSentence)
+    }
+}
+
+@Suite("Talk permissions")
+struct TalkPermissionTests {
+    private func request(_ kind: String?, options: [String] = ["allow_once", "allow_always", "reject_once"], title: String = "Read notes.md") -> PermissionRequest {
+        PermissionRequest(rpcID: .number(1), session: "s", title: title, options: options.map { .init(id: $0 + "-id", name: $0, kind: $0) }, toolKind: kind)
+    }
+
+    @Test func readingSearchingAndThinkingGoAheadOnce() {
+        #expect(TalkPermission.decide(request("read")) == .answer("allow_once-id"))
+        #expect(TalkPermission.decide(request("search")) == .answer("allow_once-id"))
+    }
+
+    @Test func onlyFetchingCanBeAllowedByVoice() {
+        #expect(TalkPermission.decide(request("fetch")) == .ask(byVoice: true))
+        for kind in ["execute", "edit", "delete", "move", "other"] { #expect(TalkPermission.decide(request(kind)) == .ask(byVoice: false)) }
+        #expect(TalkPermission.decide(request(nil)) == .ask(byVoice: false))
+    }
+
+    @Test func alwaysIsNeverPicked() {
+        #expect(TalkPermission.choice(request("execute"), allowed: true) == "allow_once-id")
+        let onlyAlways = request("execute", options: ["allow_always", "reject_once"])
+        #expect(TalkPermission.decide(onlyAlways) == .answer("reject_once-id"))
+        #expect(TalkPermission.choice(onlyAlways, allowed: true) == nil)
+        #expect(TalkPermission.choice(onlyAlways, allowed: false) == "reject_once-id")
+    }
+
+    @Test func aHarmlessTitleCantHideTheKind() {
+        #expect(ToolLine.permissionPhrase(title: "Read the weather", kind: "execute") == "Running a command")
+        #expect(ToolLine.permissionPhrase(title: "Check calendar", kind: "delete") == "Deleting a file")
+        #expect(ToolLine.permissionPhrase(title: "google_calendar_list_events", kind: nil) == "Checking your calendar")
     }
 }

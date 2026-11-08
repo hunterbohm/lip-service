@@ -10,7 +10,7 @@ import WebKit
     struct Card: Identifiable {
         enum Content {
             case show(ShowCard)
-            case permission(agent: String, phrase: String, detail: String)
+            case permission(agent: String, phrase: String, detail: String, byVoice: Bool)
         }
 
         let id = UUID()
@@ -42,7 +42,8 @@ import WebKit
         self.anchor = anchor
         switch event {
         case .show(let card): add(Card(content: .show(card), agent: agent))
-        case .permission(let name, let phrase, let detail): add(Card(content: .permission(agent: name, phrase: phrase, detail: detail), agent: agent))
+        case .permission(let name, let phrase, let detail, let byVoice):
+            add(Card(content: .permission(agent: name, phrase: phrase, detail: detail, byVoice: byVoice), agent: agent))
         case .permissionAnswered:
             cards.removeAll { if case .permission = $0.content { true } else { false } }
             layout()
@@ -278,14 +279,14 @@ private struct TalkCardView: View {
                 .frame(height: height ?? 160)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .padding(10)
-        case .permission(_, let phrase, let detail):
+        case .permission(_, let phrase, let detail, let byVoice):
             VStack(alignment: .leading, spacing: 6) {
                 Text(phrase).font(.system(size: 14, weight: .semibold))
                 if detail != phrase, !detail.isEmpty {
                     Text(detail).font(.system(size: 12)).foregroundStyle(Theme.secondary).lineLimit(3)
                 }
                 HStack(spacing: 8) {
-                    Text("Say yes or no").font(.system(size: 12)).foregroundStyle(Theme.tertiary)
+                    Text(byVoice ? "Say yes or no" : "Saying no refuses it").font(.system(size: 12)).foregroundStyle(Theme.tertiary)
                     Spacer(minLength: 0)
                     Button { onAnswer(false) } label: {
                         Text("Deny").font(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 6)

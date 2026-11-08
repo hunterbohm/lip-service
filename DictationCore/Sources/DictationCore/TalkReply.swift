@@ -227,6 +227,13 @@ public enum ToolLine {
         "execute": "Running a command", "think": "Thinking it over", "fetch": "Looking at a web page", "switch_mode": "Changing modes",
     ]
 
+    /// The phrase for a permission the agent asks for. The kind decides it when the agent gives one, so a title that
+    /// sounds harmless can't dress up a command or a deletion as something else.
+    public static func permissionPhrase(title: String, kind: String?) -> String {
+        if let kind, let phrase = byKind[kind] { return phrase }
+        return phrase(title: title, kind: nil)
+    }
+
     /// Only the first word or two of a title is matched, since the rest of it is often the tool's arguments.
     public static func phrase(title: String, kind: String?) -> String {
         let name = title.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == ":" || $0 == "(" }).prefix(2).joined(separator: " ")
@@ -274,6 +281,35 @@ public enum TalkPrompt {
         let extra = extra.trimmingCharacters(in: .whitespacesAndNewlines)
         return "(\(note)\(extra.isEmpty ? "" : " " + extra)) \(words)"
     }
+}
+
+/// How a talk answers the agent's requests to use a tool. Reading, searching and thinking go ahead, as in voice notes.
+/// Anything else is asked. A spoken yes may allow only fetching a page; running a command, editing, deleting, moving or
+/// anything unnamed needs Allow clicked on the card, so a misheard word or a voice in the room can't approve it. Either
+/// way only "allow once" is ever picked, never "always".
+public enum TalkPermission {
+    public enum Decision: Equatable, Sendable {
+        /// Answer at once with this option, or with no option, which the agent takes as cancelled.
+        case answer(String?)
+        /// Ask. `byVoice` is whether a spoken yes may allow it.
+        case ask(byVoice: Bool)
+    }
+
+    public static let automatic: Set<String> = ["read", "search", "think"]
+    public static let spokenYes: Set<String> = ["fetch"]
+
+    public static func decide(_ request: PermissionRequest) -> Decision {
+        if let kind = request.toolKind, automatic.contains(kind) { return .answer(allowOnce(request) ?? request.rejection?.id) }
+        guard allowOnce(request) != nil else { return .answer(request.rejection?.id) }
+        return .ask(byVoice: request.toolKind.map(spokenYes.contains) ?? false)
+    }
+
+    /// The option an answer picks: "allow once" for a yes, the agent's refusal for a no.
+    public static func choice(_ request: PermissionRequest, allowed: Bool) -> String? {
+        allowed ? allowOnce(request) : request.rejection?.id
+    }
+
+    private static func allowOnce(_ request: PermissionRequest) -> String? { request.options.first { $0.kind == "allow_once" }?.id }
 }
 
 /// The steps of one turn, timed from when you stopped talking, for the log and the end-to-end test.

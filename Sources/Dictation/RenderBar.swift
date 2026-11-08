@@ -113,9 +113,9 @@ import DictationCore
             Scene(name: "58-talk-cards", state: BarState(body: talk(.speaking, line: "The link is on your screen.")), edge: .top,
                   talkCards: [.show(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")),
                               .show(.link(URL(string: "https://www.swift.org/documentation/")!))]),
-            Scene(name: "59-talk-permission", state: BarState(body: talk(.speaking, line: "Hermes wants your OK for this: Running a command. Say yes or no.")),
+            Scene(name: "59-talk-permission", state: BarState(body: talk(.speaking, line: "Hermes wants your OK for this: Running a command. Click Allow on the screen, or say no.")),
                   edge: .top,
-                  talkCards: [.permission(agent: "Hermes", phrase: "Running a command", detail: "hermes send -t photon \"Call Theo at five\"")]),
+                  talkCards: [.permission(agent: "Hermes", phrase: "Running a command", detail: "terminal: hermes send -t photon", byVoice: false)]),
             Scene(name: "60-talk-visual", state: BarState(body: talk(.speaking, line: "Here's your week.")), edge: .top, settle: 2.5,
                   talkCards: [.show(.html(chart))]),
         ]

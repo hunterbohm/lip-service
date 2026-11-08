@@ -31,7 +31,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
                     draftOptions: [.option(id: "model", value: "anthropic:claude-haiku-5-5"), .option(id: "reasoning_effort", value: "low")],
                     taskOptions: [],
                     talkOptions: [.option(id: "model", value: "anthropic:claude-opus-5-5"), .option(id: "reasoning_effort", value: "low")],
-                    talkNote: #"If I ask you to send me something, run: hermes send -t photon "<text>" in the terminal."#,
+                    talkNote: #"If I ask you to send me something, send it in the terminal through a quoted heredoc, so nothing in the text runs: hermes send -t photon <<'EOF', then the text, then EOF."#,
                     spokenNames: ["Hermes"], destination: .iMessage(handle: "")),
         AgentPreset(id: "claude", name: "Claude Code", program: "npx", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
                     draftOptions: [.option(id: "model", value: "haiku"), .option(id: "effort", value: "low")],

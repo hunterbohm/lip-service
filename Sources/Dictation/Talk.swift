@@ -77,8 +77,9 @@ final class TurnAudio: LiveAudio {
 /// What the cards next to the bar show for a talk.
 enum TalkCardEvent {
     case show(ShowCard)
-    /// The agent asks to use a tool. Allow or Deny on the card, or a spoken yes or no, answers it.
-    case permission(agent: String, phrase: String, detail: String)
+    /// The agent asks to use a tool. Allow or Deny on the card answers it, and so does a spoken no, or a spoken yes when
+    /// `byVoice`.
+    case permission(agent: String, phrase: String, detail: String, byVoice: Bool)
     case permissionAnswered
 }
 
@@ -150,7 +151,7 @@ enum TalkEnd: Equatable {
     private var flush: Task<Void, Never>?
     /// Counts the reply's text, so a flush knows whether more came meanwhile.
     private var textCount = 0
-    private var permission: (request: PermissionRequest, answer: CheckedContinuation<String?, Never>, turn: Int)?
+    private var permission: (request: PermissionRequest, answer: CheckedContinuation<String?, Never>, turn: Int, byVoice: Bool)?
     private var permissionTimeout: Task<Void, Never>?
 
     private struct Line {
@@ -274,7 +275,7 @@ enum TalkEnd: Equatable {
             previews?.cancel()
             if permission != nil {
                 ear.agentWorking(at: time)
-                bar = TalkBar(agent: bar.agent, phase: .thinking, activity: "Say yes or no")
+                bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permissionHint)
             } else {
                 bar = TalkBar(agent: bar.agent, phase: connected ? .listening : .connecting)
             }
@@ -324,7 +325,7 @@ enum TalkEnd: Equatable {
         if let failed { log.error("talk transcription failed: \(failed, privacy: .public)") }
         if permission != nil {
             ear.agentWorking(at: .now)
-            bar = TalkBar(agent: bar.agent, phase: .thinking, activity: "Say yes or no")
+            bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permissionHint)
             return
         }
         ear.agentDone(at: .now)
@@ -337,12 +338,19 @@ enum TalkEnd: Equatable {
         if text.isEmpty || TalkWords.isNoise(text) { return heardNothing() }
         if TalkWords.isGoodbye(text, agentNames: [agent.name]) { return end(.goodbye) }
         if permission != nil {
-            guard let yes = TalkWords.answer(text) else {
+            let byVoice = permission?.byVoice ?? false
+            switch TalkWords.answer(text) {
+            case false?: return answerPermission(false)
+            case true? where byVoice: return answerPermission(true)
+            case true?:
                 ear.agentWorking(at: .now)
-                bar = TalkBar(agent: bar.agent, phase: .thinking, line: text, activity: "Say yes or no")
-                return queue("Sorry, was that a yes or a no?", turn: turn)
+                bar = TalkBar(agent: bar.agent, phase: .thinking, line: text, activity: "Click Allow, or say no")
+                return queue("For that one, click Allow on the screen.", turn: turn)
+            case nil:
+                ear.agentWorking(at: .now)
+                bar = TalkBar(agent: bar.agent, phase: .thinking, line: text, activity: byVoice ? "Say yes or no" : "Click Allow, or say no")
+                return queue(byVoice ? "Sorry, was that a yes or a no?" : "Click Allow on the screen, or say no.", turn: turn)
             }
-            return answerPermission(yes)
         }
         send(text, clock: clock)
     }
@@ -479,7 +487,7 @@ enum TalkEnd: Equatable {
         guard !ended, !ear.isHearing else { return }
         if replyDone, permission == nil { return turnOver() }
         ear.agentWorking(at: .now)
-        bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permission == nil ? bar.activity : "Say yes or no")
+        bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permission == nil ? bar.activity : permissionHint)
     }
 
     private func turnOver() {
@@ -508,12 +516,18 @@ enum TalkEnd: Equatable {
 
     private func ask(_ request: PermissionRequest, turn current: Int) async -> String? {
         guard current == turn, !ended, permission == nil else { return request.rejection?.id }
-        let phrase = ToolLine.phrase(title: request.title, kind: request.toolKind)
-        onCard?(.permission(agent: agent.name, phrase: phrase, detail: request.title))
-        bar.activity = "Say yes or no"
-        queue("\(agent.name) wants your OK for this: \(phrase). Say yes or no.", turn: current)
+        let byVoice: Bool
+        switch TalkPermission.decide(request) {
+        case .answer(let option): return option
+        case .ask(let voice): byVoice = voice
+        }
+        let phrase = ToolLine.permissionPhrase(title: request.title, kind: request.toolKind)
+        onCard?(.permission(agent: agent.name, phrase: phrase, detail: request.title, byVoice: byVoice))
+        bar.activity = byVoice ? "Say yes or no" : "Click Allow, or say no"
+        queue(byVoice ? "\(agent.name) wants your OK for this: \(phrase). Say yes or no."
+                      : "\(agent.name) wants your OK for this: \(phrase). Click Allow on the screen, or say no.", turn: current)
         return await withCheckedContinuation { continuation in
-            permission = (request, continuation, current)
+            permission = (request, continuation, current, byVoice)
             permissionTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { return }
@@ -522,14 +536,14 @@ enum TalkEnd: Equatable {
         }
     }
 
+    private var permissionHint: String { permission?.byVoice == true ? "Say yes or no" : "Click Allow, or say no" }
+
     /// Allow or Deny on the card, or a spoken yes or no.
     func answerPermission(_ allowed: Bool) {
         guard let permission else { return }
         self.permission = nil
         permissionTimeout?.cancel()
-        let options = permission.request.options
-        let choice = allowed ? (options.first { $0.kind == "allow_once" } ?? options.first { $0.kind.hasPrefix("allow") }) : permission.request.rejection
-        permission.answer.resume(returning: choice?.id)
+        permission.answer.resume(returning: TalkPermission.choice(permission.request, allowed: allowed))
         onCard?(.permissionAnswered)
         log.info("talk permission \(allowed ? "allowed" : "denied", privacy: .public)")
         guard !ended else { return }

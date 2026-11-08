@@ -61,12 +61,13 @@ enum Mode {
                    Sends WORDS through one Hand off destination, as the app does. --dry-run builds it and sends nothing.
                    --window-text includes the sample window text, as with Send the window's text with hand-offs on.
                Dictation --test-talk [--preset ID] [--command 'hermes acp'] [--host HOST] [--voice VOICE]
-                         [--voice-server URL [--voice-name NAME]] [--note TEXT] [--out PATH.wav] [--models DIR] CLIP.wav...
+                         [--voice-server URL [--voice-name NAME]] [--option ID=VALUE]... [--note TEXT] [--out PATH.wav]
+                         [--models DIR] CLIP.wav...
                    Holds a live talk with no microphone or speakers: each clip is played in as your next turn, in real
                    time, and the agent's voice is made but not played. One JSON line per turn with its timings, in
                    seconds after your speech ended, then one with the session, to delete it from the agent's history.
                    --voice is an on-Mac voice such as kokoro:am_michael. --out writes what the voice said.
-                   --note replaces the preset's per-agent talk note.
+                   --note replaces the preset's per-agent talk note. --option replaces its live-talk session options.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
                Dictation setup show
@@ -208,6 +209,10 @@ enum Mode {
                     case "--voice-server": server = try Self.value(of: argument, from: &rest)
                     case "--voice-name": serverVoice = try Self.value(of: argument, from: &rest)
                     case "--note": options.note = try Self.value(of: argument, from: &rest)
+                    case "--option":
+                        let pair = try Self.value(of: argument, from: &rest).split(separator: "=", maxSplits: 1).map(String.init)
+                        guard pair.count == 2 else { throw DictationError("--option takes ID=VALUE") }
+                        options.talkOptions.append(.option(id: pair[0], value: pair[1]))
                     case "--out": options.out = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case "--models": options.models = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
                     case let flag where flag.hasPrefix("--"): throw DictationError("unknown option \(flag)")
