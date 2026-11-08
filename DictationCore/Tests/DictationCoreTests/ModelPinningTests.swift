@@ -214,5 +214,30 @@ private struct Fixture {
                 #expect(file.size >= 0 && !file.path.hasPrefix("/") && !file.path.contains(".."))
             }
         }
+        #expect(PinnedModels.all == PinnedModels.speech + PinnedModels.voices)
+        #expect(PinnedModels.speech.allSatisfy { $0.subdirectory.isEmpty })
+    }
+
+    @Test func aPackInsideARepositoryIsFetchedAndCheckedByItsOwnFolder() {
+        let pack = PinnedModel(repo: "o/r", commit: String(repeating: "a", count: 40), folder: "r", subdirectory: "p/q",
+                               files: [ModelFile("arch.json", size: 1, sha256: ""), ModelFile("m.mlmodelc/model.mil", size: 1, sha256: "")])
+        #expect(pack.modelFolder == "r/p/q")
+        #expect(pack.remotePaths == ["p/q/arch.json", "p/q/m.mlmodelc/model.mil"])
+        #expect(pack.bundles == ["m.mlmodelc"])
+        let whole = PinnedModel(repo: "o/r", commit: pack.commit, folder: "r", files: pack.files)
+        #expect(whole.modelFolder == "r")
+        #expect(whole.remotePaths == ["arch.json", "m.mlmodelc/model.mil"])
+    }
+
+    @Test func thePhononPackHoldsOnlyWhatFluidAudioReads() {
+        let pack = PinnedModels.phonon
+        #expect(pack.repo == "FluidInference/pocket-tts-coreml" && pack.folder == "pocket-tts" && pack.subdirectory == "phonon/phonon-31m-en")
+        #expect(pack.bundles == ["mimi_decoder.mlmodelc", "pocket_state.mlmodelc"])
+        let paths = Set(pack.files.map(\.path))
+        for needed in ["arch.json", "pocket_state.json", "constants_bin/bos_emb.bin", "constants_bin/text_embed_table.bin",
+                       "constants_bin/tokenizer.model", "voices/en_us_Preston.safetensors"] {
+            #expect(paths.contains(needed), "\(needed)")
+        }
+        #expect(!paths.contains { $0.contains(".mlpackage") || $0.hasPrefix("constants/") || $0 == "manifest.json" })
     }
 }

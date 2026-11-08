@@ -15,6 +15,10 @@ enum BarEvent: Equatable {
     var onEvent: ((BarEvent) -> Void)?
     /// The smoothed microphone level the print draws from, sampled while listening.
     let meter = VoiceMeter()
+    /// The talk island's place on screen while a talk runs, which messages hang under.
+    var talkAnchor: NSRect? {
+        didSet { if talkAnchor != oldValue, state.body.isTalk, state.toast != nil { layout(animated: false) } }
+    }
 
     private let bodyPanel = BarPanel()
     private let toastPanel = BarPanel()
@@ -62,7 +66,7 @@ enum BarEvent: Equatable {
         if next.body.isActive && !state.body.isActive || toastOnHiddenBar { (screen, clearedScreen) = (nil, nil) }
         let movedEdge = nextEdge != edge
         (state, edge) = (next, nextEdge)
-        sampleLevels(state.body.isListening)
+        sampleLevels(state.body.isListening || state.body.isTalk)
         guard drag == nil else { return }
         layout(animated: !movedEdge)
     }
@@ -151,9 +155,12 @@ enum BarEvent: Equatable {
         }
         toastHost.rootView = AnyView(ToastView(notice: notice, onAction: { [weak self] in self?.onEvent?(.toastAction($0)) }))
         let size = toastHost.fittingSize
-        let anchor = bodyFrame.map { BarRect($0) } ?? edge.place(width: 0, height: 0, in: BarRect(area),
-                                                               inset: BarStyle.inset(of: .listening(words: "", handsFree: false), edge: edge))
-        let frame = edge.placeToast(width: size.width, height: size.height, against: anchor, gap: BarStyle.toastGap)
+        // During a talk the bar is hidden and a message hangs under the island at the top instead.
+        let talkAnchor = state.body.isTalk ? talkAnchor : nil
+        let toastEdge = talkAnchor == nil ? edge : .top
+        let anchor = talkAnchor.map { BarRect($0) } ?? bodyFrame.map { BarRect($0) }
+            ?? edge.place(width: 0, height: 0, in: BarRect(area), inset: BarStyle.inset(of: .listening(words: "", handsFree: false), edge: edge))
+        let frame = toastEdge.placeToast(width: size.width, height: size.height, against: anchor, gap: BarStyle.toastGap)
         toastPanel.ignoresMouseEvents = notice.action == nil
         toastPanel.setFrame(NSRect(frame), display: true)
         toastPanel.orderFrontRegardless()
@@ -368,7 +375,7 @@ struct VoiceReading {
 
     static func size(of body: BarState.Body, edge: BarEdge, agent: BarAgent? = nil) -> CGSize? {
         switch body {
-        case .hidden: nil
+        case .hidden, .talk: nil
         case .idle: edge.isSide ? CGSize(width: idle.height, height: idle.width) : idle
         case .listening(_, let handsFree): CGSize(width: wordsBarWidth(handsFree: handsFree, agent: agent), height: height)
         case .transcribing(_, nil): CGSize(width: wordsBarWidth(handsFree: false, agent: agent), height: height)
@@ -417,6 +424,7 @@ struct VoiceReading {
 
 private extension BarState.Body {
     var isListening: Bool { if case .listening = self { true } else { false } }
+    var isTalk: Bool { if case .talk = self { true } else { false } }
     /// The capsule with the waves, while listening and while the last words are finished. It is one
     /// view in both, so the waves settle without starting over.
     var wordsBar: (words: String, handsFree: Bool, finishing: Bool)? {
@@ -486,7 +494,7 @@ private struct BodyView: View {
             EmptyView()
         } else {
             switch shown {
-            case .hidden, .listening, .transcribing(_, nil):
+            case .hidden, .listening, .transcribing(_, nil), .talk:
                 EmptyView()
             case .working(let status, let busy):
                 capsule(behind: Print(meter: meter, finishing: true, resting: !busy, offset: BarStyle.agentWidth(agent))) {

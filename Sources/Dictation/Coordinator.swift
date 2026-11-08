@@ -52,6 +52,11 @@ import os
     /// A vocabulary change waiting for no dictation to be in flight, since the engine rebuilds its rescorer between
     /// jobs and a release would wait on it. Learning a word saves one at the start of the next capture.
     private var vocabularyToApply: Vocabulary??
+    /// The live talk running now, if any. The bar reads its level through this.
+    private let live = LiveTalkSlot()
+    private let talkCards = TalkCardPanel()
+    /// The island at the top of the screen that shows a talk.
+    private let island = TalkIslandPanel()
 
     init() {
         inserter = Inserter(preferences: preferences)
@@ -59,7 +64,7 @@ import os
         updates = UpdateNotice(UpdateCheck.checker(preferences: preferences))
         keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
-        bar = Bar(level: { [microphone] in microphone.level })
+        bar = Bar(level: { [microphone, live] in live.talk?.level ?? microphone.level })
         menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter, updates: updates)
         ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,
                                   usageCount: usageCount,
@@ -77,6 +82,15 @@ import os
         keyTap.onUpdate = { [unowned self] commands, cue in handle(commands, cue: cue) }
         keyTap.onPasteLast = { [unowned self] in pasteLast() }
         keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
+        keyTap.onDoubleTap = { [unowned self] in toggleTalk() }
+        talkCards.onPermission = { [unowned self] allowed in live.talk?.answerPermission(allowed) }
+        island.model.level = { [bar] in bar.meter.reading(at: Date.timeIntervalSinceReferenceDate).level(delay: 0) }
+        island.model.onEnd = { [unowned self] in live.talk?.end(.byYou) }
+        island.onMoved = { [unowned self] rect in
+            bar.talkAnchor = rect
+            talkCards.move(under: (rect, .top))
+        }
+        updateTalkKey()
         ghostwriter.onChange = { [unowned self] in render() }
         ghostwriter.onNotice = { [unowned self] notice in show(notice) }
         bar.onEvent = { [unowned self] event in
@@ -95,6 +109,7 @@ import os
         }
         preferences.onChange = { [unowned self] old, new in apply(old, new) }
         microphone.onFailure = { [unowned self] error in
+            if let talk = live.talk { return talk.end(.failed(error.localizedDescription)) }
             stopPreviews()
             keyTap.abort()
             endAgentCapture()
@@ -143,9 +158,10 @@ import os
         if old.activeVocabulary != new.activeVocabulary { vocabularyToApply = .some(new.activeVocabulary) }
         if old.settings.captureKeys != new.settings.captureKeys {
             stopPreviews()
-            microphone.cancel()
+            if live.talk == nil { microphone.cancel() }
             keyTap.keys = new.settings.captureKeys
         }
+        updateTalkKey()
         for agent in old.settings.agents.agents where new.settings.agents.agent(id: agent.id)?.shellCommand != agent.shellCommand {
             agents.stop(agent.id)
         }
@@ -153,6 +169,50 @@ import os
         keyTap.pasteLast = new.settings.pasteLast
         if !new.settings.muteWhileDictating { muter.stop() }
         render()
+    }
+
+    /// Double-tapping Left Control starts a talk only with the setting on and no dictation key on Left Control.
+    private func updateTalkKey() {
+        let settings = preferences.current.settings
+        keyTap.talkKey = settings.liveTalk.enabled && LiveTalkKey.conflict(with: settings.captureKeys) == nil
+    }
+
+    /// Double-tapping Left Control: starts a talk, or ends the one running.
+    private func toggleTalk() {
+        if let talk = live.talk { return talk.end(.byYou) }
+        let settings = preferences.current.settings
+        guard settings.liveTalk.enabled, !keyTap.machine.isCapturing else { return }
+        guard let agent = settings.liveTalk.agent(in: settings.agents) else {
+            return show(.talkFailed("Set up an agent in Settings > Ghostwrite to talk with it."))
+        }
+        let talk = Talk(agent: agent, pool: agents, engine: engine, voice: Voices.provider(for: settings.liveTalk.voice),
+                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut())
+        let barAgent = BarAgent(initial: agent.initial, name: agent.name)
+        talk.onBar = { [unowned self] _ in render() }
+        talk.onNotice = { [unowned self] notice in show(notice) }
+        talk.onCard = { [unowned self] event in talkCards.handle(event, agent: barAgent, under: (island.islandRect, .top)) }
+        talk.onEnd = { [unowned self, weak talk] reason in
+            guard let talk, live.talk === talk else { return }
+            live.talk = nil
+            keyTap.suspended = false
+            talkCards.dropPermissions()
+            microphone.prepare(preferences.current.settings.microphone)
+            if preferences.current.settings.sounds { sounds.play(.stop) }
+            switch reason {
+            case .failed(let why): show(.talkFailed(why))
+            case .quiet, .goodbye, .byYou:
+                if case .talkStarted = notice { notice = nil }
+                if case .talkEndingSoon = notice { notice = nil }
+                render()
+            }
+        }
+        stopPreviews()
+        fixWatch?.cancel()
+        live.talk = talk
+        keyTap.suspended = true
+        if settings.sounds { sounds.play(.start) }
+        show(.talkStarted(agent: agent.name))
+        talk.start()
     }
 
     /// The window's shortcut recorder borrows the keyboard from dictation until it has a result.
@@ -422,8 +482,14 @@ import os
         keyTap.takesCardKeys = ghostwriter.isOpen
         bar.render(BarState.derive(hotkey: keyTap.machine, words: words, pending: pending, engine: engineStatus,
                                    notice: notice, showsIdle: !settings.hideBarWhenIdle, agent: agent?.agent, working: agent?.working,
-                                   busy: agent?.busy ?? false),
+                                   busy: agent?.busy ?? false, talk: live.talk?.bar),
                    edge: settings.barEdge)
+        island.show(live.talk?.bar)
         menu.show(engine: engineStatus, keyTapRunning: keyTap.isRunning, waiting: pending)
     }
+}
+
+/// Holds the running talk for the bar's level, which is set up before the coordinator is.
+@MainActor final class LiveTalkSlot {
+    var talk: Talk?
 }

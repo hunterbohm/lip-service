@@ -10,7 +10,12 @@ struct ModelStore: Sendable {
 
     static let defaultDirectory = AsrModels.defaultCacheDirectory(for: .v2).deletingLastPathComponent()
 
-    func folder(for model: PinnedModel) -> URL { directory.appending(path: model.folder, directoryHint: .isDirectory) }
+    func folder(for model: PinnedModel) -> URL { directory.appending(path: model.modelFolder, directoryHint: .isDirectory) }
+
+    /// FluidAudio's text-to-speech models folder, which holds one folder per repository. Made if missing.
+    static func voiceDirectory() throws -> URL {
+        try TtsCacheDirectory.ensure().appending(path: PocketTtsConstants.defaultModelsSubdirectory, directoryHint: .isDirectory)
+    }
 
     func speechModels(progress: @escaping ProgressHandler) async throws -> AsrModels {
         let folder = try await verifiedFolder(PinnedModels.parakeetTDT, repo: .parakeetV2, progress: progress)
@@ -25,6 +30,12 @@ struct ModelStore: Sendable {
         return BoostingModels(ctc: ctc, tokenizer: tokenizer)
     }
 
+    /// The Phonon voice pack, checked, for `PocketTtsSmallManager.load(from:)`. The store's directory is
+    /// `voiceDirectory()`.
+    func phononPack(progress: ProgressHandler? = nil) async throws -> URL {
+        try await verifiedFolder(PinnedModels.phonon, repo: .pocketTts, progress: progress)
+    }
+
     /// Fetches the pinned commit when the cache is missing, partial, or not the pinned files, and throws unless
     /// the folder then matches the table. A cache that fails is from a version that downloaded from the main
     /// branch, or damaged, so it is deleted and fetched once more. An interrupted download is kept, so the retry
@@ -36,13 +47,19 @@ struct ModelStore: Sendable {
         // The vocabulary file and every model file come from the pinned commit, never from main.
         ModelRegistry.revisionOverrides = Dictionary(uniqueKeysWithValues: PinnedModels.all.map { ($0.repo, $0.commit) })
         // The download fetches only these files, so a listing cannot add others or place one outside the folder.
-        ModelHub.allowedFiles = Dictionary(uniqueKeysWithValues: PinnedModels.all.map { ($0.repo, Set($0.files.map(\.path))) })
+        ModelHub.allowedFiles = Dictionary(uniqueKeysWithValues: PinnedModels.all.map { ($0.repo, $0.remotePaths) })
         let folder = folder(for: model)
         var problems = ModelCheck.problems(in: folder, for: model)
         if !problems.isEmpty {
             guard !ModelHub.offlineMode else { throw ModelCheckFailure(model: model, problems: problems) }
             if !ModelCheck.canResume(problems) { try FileManager.default.removeItem(at: folder) }
-            try await ModelHub.download(repo, to: directory, progressHandler: progress)
+            if model.subdirectory.isEmpty {
+                try await ModelHub.download(repo, to: directory, progressHandler: progress)
+            } else {
+                // Only the pack's folder is fetched, into the repository's folder, which may hold other packs.
+                try await ModelHub.download(repo, subdirectory: model.subdirectory, to: directory.appending(path: model.folder),
+                                            progressHandler: progress)
+            }
             problems = ModelCheck.problems(in: folder, for: model)
             guard problems.isEmpty else { throw ModelCheckFailure(model: model, problems: problems) }
         }
@@ -81,6 +98,6 @@ struct ModelCheckFailure: LocalizedError {
     var errorDescription: String? {
         let first = problems.first.map(String.init(describing:)) ?? "files are missing"
         let more = problems.count > 1 ? " (and \(problems.count - 1) more)" : ""
-        return "The \(model.folder) model does not match the published one: \(first)\(more)."
+        return "The \(model.modelFolder) model does not match the published one: \(first)\(more)."
     }
 }

@@ -124,6 +124,10 @@ import Synchronization
         device.stop()
     }
 
+    /// The samples recorded since the last call, which the capture then forgets, so a live talk that runs for minutes
+    /// holds only what it has not read yet. Empty when not capturing.
+    func drain() -> [Float] { capturing ? sink.take() : [] }
+
     private func startFailed(_ error: any Error, generation failed: Int) {
         guard capturing, failed == generation else { return }
         cancel()
@@ -393,6 +397,14 @@ final class SampleSink: LiveAudio {
     }
 
     func open() { state.withLock { $0 = State(open: true) } }
+
+    /// Returns the samples so far and keeps recording, starting again from none.
+    func take() -> [Float] {
+        state.withLock { state in
+            defer { state.samples = [] }
+            return state.samples
+        }
+    }
 
     /// Returns the samples and drops anything that arrives afterward.
     func close() -> [Float] {

@@ -222,7 +222,9 @@ public struct SessionInfo: Equatable, Sendable {
 public enum SessionUpdate: Equatable, Sendable {
     case message(String)
     case thought(String)
-    case tool(title: String, status: String?)
+    /// A tool the agent started or moved on. `kind` is ACP's read, edit, execute and so on; `id` is the same for every
+    /// update of one call.
+    case tool(title: String, status: String?, kind: String? = nil, id: String? = nil)
     case options([ConfigOption])
     case other(String)
 
@@ -232,7 +234,9 @@ public enum SessionUpdate: Equatable, Sendable {
         let parsed: SessionUpdate = switch kind {
         case "agent_message_chunk": .message(text(update["content"]))
         case "agent_thought_chunk": .thought(text(update["content"]))
-        case "tool_call", "tool_call_update": .tool(title: update["title"]?.string ?? "", status: update["status"]?.string)
+        case "tool_call", "tool_call_update":
+            .tool(title: update["title"]?.string ?? "", status: update["status"]?.string, kind: update["kind"]?.string,
+                  id: update["toolCallId"]?.string)
         case "config_option_update": .options(ConfigOption.parse(update["configOptions"]))
         default: .other(kind)
         }

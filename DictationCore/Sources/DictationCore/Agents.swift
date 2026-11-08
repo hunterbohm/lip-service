@@ -19,16 +19,24 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
     public var remoteCommand: [String]?
     public var draftOptions: [ConfigChoice]
     public var taskOptions: [ConfigChoice]
+    /// Set on each live talk's session: a strong model that still answers quickly.
+    public var talkOptions: [ConfigChoice] = []
+    /// Added to the voice note on every turn of a talk, for what only this agent can do.
+    public var talkNote = ""
     public var spokenNames: [String]
     public var destination: Destination
 
     public static let all: [AgentPreset] = [
         AgentPreset(id: "hermes", name: "Hermes", program: "hermes", command: ["hermes", "acp"], remoteCommand: ["hermes", "acp"],
                     draftOptions: [.option(id: "model", value: "anthropic:claude-haiku-5-5"), .option(id: "reasoning_effort", value: "low")],
-                    taskOptions: [], spokenNames: ["Hermes"], destination: .iMessage(handle: "")),
+                    taskOptions: [],
+                    talkOptions: [.option(id: "model", value: "anthropic:claude-opus-5-5"), .option(id: "reasoning_effort", value: "low")],
+                    talkNote: #"If I ask you to send me something, send it in the terminal through a quoted heredoc, so nothing in the text runs: hermes send -t photon <<'EOF', then the text, then EOF."#,
+                    spokenNames: ["Hermes"], destination: .iMessage(handle: "")),
         AgentPreset(id: "claude", name: "Claude Code", program: "npx", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
                     draftOptions: [.option(id: "model", value: "haiku"), .option(id: "effort", value: "low")],
-                    taskOptions: [], spokenNames: ["Claude"], destination: .t3Code(T3Destination())),
+                    taskOptions: [], talkOptions: [.option(id: "effort", value: "low")],
+                    spokenNames: ["Claude"], destination: .t3Code(T3Destination())),
         AgentPreset(id: "codex", name: "Codex", program: "npx", command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
                     draftOptions: [.model("gpt-6-luna[low]")], taskOptions: [], spokenNames: ["Codex"], destination: .t3Code(T3Destination())),
         AgentPreset(id: "opencode", name: "OpenCode", program: "opencode", command: ["opencode", "acp"],
@@ -46,7 +54,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
     public func connection() -> AgentConnection {
         AgentConnection(id: id == "custom" ? "custom-\(UUID().uuidString.prefix(8))" : id, name: id == "custom" ? "My agent" : name,
                         presetID: id, command: command, spokenNames: spokenNames, draftOptions: draftOptions, taskOptions: taskOptions,
-                        destination: destination)
+                        talkOptions: talkOptions, talkNote: talkNote, destination: destination)
     }
 }
 
@@ -63,12 +71,39 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
     public var spokenNames: [String]
     public var draftOptions: [ConfigChoice]
     public var taskOptions: [ConfigChoice]
+    /// Set on each live talk's session, after the agent's own defaults.
+    public var talkOptions: [ConfigChoice]
+    /// Added to the voice note on every turn of a talk, such as how Hermes sends a message.
+    public var talkNote: String
     public var destination: Destination
 
     public init(id: String, name: String, presetID: String, command: [String], remoteHost: String? = nil, spokenNames: [String],
-                draftOptions: [ConfigChoice], taskOptions: [ConfigChoice], destination: Destination) {
+                draftOptions: [ConfigChoice], taskOptions: [ConfigChoice], talkOptions: [ConfigChoice] = [], talkNote: String = "",
+                destination: Destination) {
         (self.id, self.name, self.presetID, self.command, self.remoteHost) = (id, name, presetID, command, remoteHost)
         (self.spokenNames, self.draftOptions, self.taskOptions, self.destination) = (spokenNames, draftOptions, taskOptions, destination)
+        (self.talkOptions, self.talkNote) = (talkOptions, talkNote)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, presetID, command, remoteHost, spokenNames, draftOptions, taskOptions, talkOptions, talkNote, destination
+    }
+
+    /// An agent saved before live talk existed gets its preset's talk settings.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        presetID = try container.decode(String.self, forKey: .presetID)
+        command = try container.decode([String].self, forKey: .command)
+        remoteHost = try container.decodeIfPresent(String.self, forKey: .remoteHost)
+        spokenNames = try container.decode([String].self, forKey: .spokenNames)
+        draftOptions = try container.decode([ConfigChoice].self, forKey: .draftOptions)
+        taskOptions = try container.decode([ConfigChoice].self, forKey: .taskOptions)
+        destination = try container.decode(Destination.self, forKey: .destination)
+        let preset = AgentPreset.with(id: presetID)
+        talkOptions = (try? container.decodeIfPresent([ConfigChoice].self, forKey: .talkOptions)) ?? preset?.talkOptions ?? []
+        talkNote = (try? container.decodeIfPresent(String.self, forKey: .talkNote)) ?? preset?.talkNote ?? ""
     }
 
     /// The first letter, for the round avatar on the bar and the card.

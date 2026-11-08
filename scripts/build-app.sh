@@ -40,6 +40,7 @@ done
 # text-to-speech model files that the app does not ship, and the LuxTTS English G2P tables. Those tables are derived
 # from espeak-ng output (GPL-3.0) and live in FluidAudio's separate LuxTtsG2pResources resource bundle, which the
 # TTS trait links but which this script never copies into the app. The check below stops the build if one is copied.
+# Live talk downloads its voice's model files at run time, under their own licenses, and the app ships none of them.
 fluid="$root/Vendor/FluidAudio"
 linked=(fastcluster-LICENSE.md vbx-LICENSE.md JapaneseG2P-LICENSE.md)
 not_linked=(NemoTextProcessing-LICENSE.md KokoroANE-v3 KokoroAneSpanishFrenchG2P-LICENSE.md LuxTtsEnglishG2P-LICENSE.md)

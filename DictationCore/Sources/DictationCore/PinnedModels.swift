@@ -53,5 +53,36 @@ public enum PinnedModels {
             ModelFile("vocab.json", size: 16086, sha256: "319d386eead79aadc80df9c3ecc8340d1a727efb7c02a8847eb940380dd61e1f"),
         ])
 
-    public static let all = [parakeetTDT, parakeetCTC]
+    public static let phonon = PinnedModel(
+        repo: "FluidInference/pocket-tts-coreml",
+        commit: "c2e998e269e4d4b51f74061faddb8450cd8f9a9a",
+        folder: "pocket-tts",
+        subdirectory: "phonon/phonon-31m-en",
+        files: [
+            ModelFile("LICENSE", size: 11357, sha256: "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"),
+            ModelFile("arch.json", size: 811, sha256: "15f402005db3f2cf2274cfa6173c3661ee906111b2a7722d967af30e188e32d8"),
+            ModelFile("constants_bin/bos_emb.bin", size: 128, sha256: "1010476e005ac8b08a2fb3d73d853327148d818ec09e4df99611840233081fac"),
+            ModelFile("constants_bin/text_embed_table.bin", size: 8194048, sha256: "4a41cf481b98ddad78ec6f50dda7eca2a5033ea75cd1fa54d7381231d65818e7"),
+            ModelFile("constants_bin/tokenizer.model", size: 65045, sha256: "82e4572006d64d483317074c22c368e87779640b6f3a9dcd07b7caae32b030ce"),
+            ModelFile("mimi_decoder.mlmodelc/analytics/coremldata.bin", size: 243, sha256: "12f9e3aea28056a789b9a35c7ffcb6eeb53a607d8358998c1d25a41fdc49ee17"),
+            ModelFile("mimi_decoder.mlmodelc/coremldata.bin", size: 1852, sha256: "89525846d461c4dbc7a593c9719bfee18a7284b8d11f464d8860f37199dc875a"),
+            ModelFile("mimi_decoder.mlmodelc/model.mil", size: 95070, sha256: "f6ca7ee07fe0cacb6fea7558a1f5c8b10ed80e8e94f965585946326f731db830"),
+            ModelFile("mimi_decoder.mlmodelc/weights/weight.bin", size: 44897216, sha256: "fc998dd13becc51a05e74b2f7efd4bc0f05defafdc6baefe0a424ee6f7427e5a"),
+            ModelFile("pocket_state.json", size: 2918, sha256: "9675b15fd9d221ea935df8f9ed60698735e14a5855693c65de2a125efab3b62c"),
+            ModelFile("pocket_state.mlmodelc/analytics/coremldata.bin", size: 243, sha256: "931c1ec027815fbcfd55c4757a3d21c3c46ad12586a366ec24b16ed64e8439ef"),
+            ModelFile("pocket_state.mlmodelc/coremldata.bin", size: 4771, sha256: "10091f1e21e7be6ad7be9f7509697b8ff075cdce3806f2eef3f582f5d45556c2"),
+            ModelFile("pocket_state.mlmodelc/model.mil", size: 744313, sha256: "70df3c50476ba5c9526bfc3e5a9f8a2d2912652bb8d4a41f91904f45a1d23070"),
+            ModelFile("pocket_state.mlmodelc/weights/weight.bin", size: 79068864, sha256: "cbe7fe8d1843021a9ad2995fda682ef85f949290ef65a58b8976b2c2e2a64502"),
+            ModelFile("voices/en_gb_Freya.safetensors", size: 256208, sha256: "09609a149e2e6331b6ddc75168441e9bea013ad277c17dc8d01806afe7526e03"),
+            ModelFile("voices/en_gb_Hugh.safetensors", size: 256208, sha256: "7ce9388b0e5122009280be57d0ce0a46151e92e1a1ec927f88e386b9e6d402a0"),
+            ModelFile("voices/en_us_Easton.safetensors", size: 256208, sha256: "3fb875c9b120b314d7dac804812aeaf50f5d0c6e3a8be798951b792483078cd1"),
+            ModelFile("voices/en_us_Harper.safetensors", size: 256208, sha256: "44bbecc069b7c1872ba548ceddde8064ff674feed9989313191449fce72d2a08"),
+            ModelFile("voices/en_us_Miles.safetensors", size: 256208, sha256: "eb0e61e9354e1fa7c1647530ff0c5ce4ea6f96fa65729594e443765208fe761e"),
+            ModelFile("voices/en_us_Preston.safetensors", size: 256208, sha256: "e3448287e6555990069383a6e0bc3f3a27baa6be69b30e28844d6d569f3239c4"),
+            ModelFile("voices/en_us_Zoey.safetensors", size: 256208, sha256: "d867f9f751360f32540c0cfb32055f95b607e51f1b023b429edd739de2ad04ef"),
+        ])
+
+    public static let speech = [parakeetTDT, parakeetCTC]
+    public static let voices = [phonon]
+    public static let all = speech + voices
 }
