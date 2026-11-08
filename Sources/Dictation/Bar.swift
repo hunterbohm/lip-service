@@ -602,34 +602,18 @@ private struct Print: View {
     }
 }
 
-/// The dots of the halo for one capsule size, rebuilt only when the size changes.
-@MainActor private final class HaloDots {
-    private var size = CGSize.zero
-    private var dots: [HaloGlow.Dot] = []
-
-    func dots(for size: CGSize) -> [HaloGlow.Dot] {
-        if size != self.size {
-            self.size = size
-            dots = HaloGlow.dots(capsuleWidth: size.width, capsuleHeight: size.height)
-        }
-        return dots
-    }
-}
-
-/// A ring of small blue dots around the capsule that light up with the voice, drawn in the halo panel, which reaches
-/// `BarStyle.haloMargin` past the capsule on every side. It fades in while listening and out while the words are
-/// finished. Each frame it puts
-/// every lit dot into one of `shades` paths by its opacity and fills each path once. With Reduce Motion there is no halo.
+/// The glow around the capsule, drawn in the halo panel, which reaches `BarStyle.haloMargin` past the capsule on every
+/// side: a soft blue haze, a blue rim just outside the outline, and a bright glimmer running around the rim. The rim
+/// and haze brighten with the voice. It fades in while listening and out while the words are finished. With Reduce
+/// Motion the rim stays still and evenly lit, with no glimmer.
 private struct HaloView: View {
     let meter: VoiceMeter
     let listening: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var aura = Eased()
-    @State private var grid = HaloDots()
 
-    private static let shades = 24
     private static let blue = Color(red: HaloGlow.color.red, green: HaloGlow.color.green, blue: HaloGlow.color.blue)
-    private static let shadeStep = HaloGlow.opacityGain / Double(shades - 1)
+    private static let glimmer = Color(red: HaloGlow.glimmerColor.red, green: HaloGlow.glimmerColor.green, blue: HaloGlow.glimmerColor.blue)
 
     var body: some View {
         Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
@@ -638,25 +622,30 @@ private struct HaloView: View {
     }
 
     private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
-        guard !reduceMotion else { return }
         let target = listening ? 1.0 : 0.0
-        let light = meter.frozenAt != nil ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
-        guard light > 0.004 else { return }
-        let margin = BarStyle.haloMargin
-        let dots = grid.dots(for: CGSize(width: size.width - 2 * margin, height: size.height - 2 * margin))
-        let voice = meter.reading(at: time)
+        let fade = meter.frozenAt != nil || reduceMotion ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
+        guard fade > 0.004 else { return }
+        let margin = BarStyle.haloMargin, rim = CGFloat(HaloGlow.rimWidth)
+        let capsule = CGRect(x: margin, y: margin, width: size.width - 2 * margin, height: size.height - 2 * margin)
+        let ring = capsule.insetBy(dx: -rim / 2, dy: -rim / 2)
+        let rimPath = Path(roundedRect: ring, cornerRadius: ring.height / 2)
+        let light = reduceMotion ? HaloGlow.restingLight : HaloGlow.light(glow: meter.reading(at: time).glow(delay: 0))
 
-        var paths = [Path](repeating: Path(), count: Self.shades)
-        for dot in dots {
-            let strength = HaloGlow.strength(of: dot, glow: voice.glow(delay: dot.delay))
-            guard strength >= HaloGlow.faintest else { continue }
-            let radius = HaloGlow.radius(strength: strength)
-            let shade = min(Self.shades - 1, Int(((HaloGlow.opacity(strength: strength) - HaloGlow.faintestOpacity) / Self.shadeStep).rounded()))
-            paths[shade].addEllipse(in: CGRect(x: margin + dot.x - radius, y: margin + dot.y - radius, width: 2 * radius, height: 2 * radius))
-        }
-        for (shade, path) in paths.enumerated() where !path.isEmpty {
-            let opacity = (HaloGlow.faintestOpacity + Double(shade) * Self.shadeStep) * light
-            context.fill(path, with: .color(Self.blue.opacity(opacity)))
+        var haze = context
+        haze.addFilter(.blur(radius: HaloGlow.hazeRadius(light: light)))
+        haze.fill(Path(roundedRect: capsule, cornerRadius: capsule.height / 2), with: .color(Self.blue.opacity(HaloGlow.hazeOpacity(light: light) * fade)))
+
+        context.stroke(rimPath, with: .color(Self.blue.opacity(HaloGlow.rimOpacity(light: light) * fade)), lineWidth: rim)
+        guard !reduceMotion else { return }
+
+        let perimeter = HaloGlow.perimeter(capsuleWidth: capsule.width, capsuleHeight: capsule.height)
+        var bloom = context
+        bloom.addFilter(.blur(radius: 3))
+        for slice in HaloGlow.glimmer(at: time, perimeter: perimeter) {
+            let piece = rimPath.trimmedPath(from: slice.from, to: slice.to)
+            let opacity = slice.light * (0.75 + 0.25 * light) * fade
+            bloom.stroke(piece, with: .color(Self.glimmer.opacity(opacity * 0.55)), style: StrokeStyle(lineWidth: rim * 2))
+            context.stroke(piece, with: .color(Self.glimmer.opacity(opacity)), style: StrokeStyle(lineWidth: rim))
         }
     }
 }

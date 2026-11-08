@@ -1,86 +1,69 @@
 import Foundation
 
-/// The glow around the recording bar's capsule: a ring of small blue dots on a hex grid that light up with the voice.
-/// The light starts at the print and spreads out, so a dot far from the print lights later and fainter. This holds the
-/// dots of one capsule size and how strongly each one is lit; the view only draws them.
+/// The glow around the recording bar's capsule: a blue rim hugging the outline, a soft blue haze past it, and a bright
+/// glimmer that runs around the rim at a steady speed. The rim and haze brighten with the voice, so the bar stands out
+/// on a dark window. This holds the sizes and the glimmer's place at a time; the view only draws them.
 public enum HaloGlow {
-    /// Dots are drawn this far past the capsule's outline, at most, in points.
+    /// Room the halo needs past the capsule's outline on every side, for the rim and its haze, in points.
     public static let reach = 26.0
-    /// Dots closer to the outline than this are left out, so the capsule's edge stays clear.
-    public static let gap = 2.0
-    /// Distance between neighbouring dots in a row, the distance between rows, and how far odd rows shift.
-    public static let spacing = 5.0
-    public static let rowSpacing = 5.0 * 0.866
-    public static let rowShift = 2.5
-    /// How far a dot's light fades with its distance from the outline, past `gap`.
-    public static let edgeFalloff = 11.0
-    /// How far it fades with its distance from the print, measured with y stretched by `stretch`.
-    public static let printFalloff = 520.0
-    public static let stretch = 1.6
-    /// Seconds the voice takes to travel one point from the print.
-    public static let secondsPerPoint = 1.0 / 900
-    /// Distance from the capsule's left edge to the print glyph, which is the bar's padding. The light centres on the
-    /// glyph's middle.
-    public static let printInset = 18.0
-    /// The share of a dot's light that stays on when the voice is silent, and what the voice adds to it.
-    public static let restingLight = 0.12
-    /// A dot dimmer than this is not drawn.
-    public static let faintest = 0.015
-    public static let smallestRadius = 0.4
-    public static let radiusGain = 1.1
-    public static let faintestOpacity = 0.05
-    public static let opacityGain = 0.62
-    /// The dots' colour, #5A84F0.
+    /// The rim's width, drawn just outside the outline so the capsule never covers it.
+    public static let rimWidth = 3.0
+    /// How fast the glimmer runs along the rim, in points a second, so it laps a short bar sooner than a long one
+    /// without changing speed.
+    public static let speed = 300.0
+    /// The glimmer's length along the rim, from its faint tail to its bright head, and the slices it is drawn in.
+    public static let tail = 150.0
+    public static let slices = 24
+    /// The share of the light that stays on when the voice is silent, and what the voice adds to it.
+    public static let restingLight = 0.4
+    /// The rim's colour, #5A84F0, and the glimmer's, #C8DCFF.
     public static let color = (red: 0x5A / 255.0, green: 0x84 / 255.0, blue: 0xF0 / 255.0)
+    public static let glimmerColor = (red: 0xC8 / 255.0, green: 0xDC / 255.0, blue: 0xFF / 255.0)
 
-    /// A dot of the grid. `x` runs from the capsule's left edge and `y` from its top edge, down, so both are negative
-    /// above and left of it.
-    public struct Dot: Equatable, Sendable {
-        public let x: Double
-        public let y: Double
-        /// How long ago the voice that lights this dot was heard: the further from the print, the older.
-        public let delay: Double
-        /// How much of the light survives at this dot, from its distance to the outline and to the print. It never changes.
-        public let weight: Double
+    /// A piece of the glimmer: the share of the rim's length it runs over, from 0 to 1 along the rim, and how bright it is.
+    public struct Slice: Equatable, Sendable {
+        public let from: Double
+        public let to: Double
+        public let light: Double
     }
 
-    /// The grid for a capsule `capsuleWidth` by `capsuleHeight`, which moves with the capsule's top-left corner. Dots that
-    /// are inside the capsule, within `gap` of it, past `reach`, or too weak ever to show are left out.
-    public static func dots(capsuleWidth: Double, capsuleHeight: Double) -> [Dot] {
-        let radius = capsuleHeight / 2
-        let printX = printInset + HalftonePrint.width / 2, printY = radius
-        var dots: [Dot] = []
-        var row = 0
-        var y = -reach
-        while y <= capsuleHeight + reach {
-            let shift = row % 2 == 1 ? rowShift : 0
-            var column = 0
-            var x = -reach + shift
-            while x <= capsuleWidth + reach {
-                let beyondEnds = max(radius - x, 0, x - (capsuleWidth - radius))
-                let edge = hypot(beyondEnds, y - printY) - radius
-                if edge >= gap && edge <= reach {
-                    let far = hypot(x - printX, stretch * (y - printY))
-                    let weight = exp(-pow((edge - gap) / edgeFalloff, 2)) * exp(-far / printFalloff)
-                    if weight >= faintest { dots.append(Dot(x: x, y: y, delay: far * secondsPerPoint, weight: weight)) }
-                }
-                column += 1
-                x = -reach + shift + Double(column) * spacing
+    /// The length of the rim's centre line around a capsule `capsuleWidth` by `capsuleHeight`.
+    public static func perimeter(capsuleWidth: Double, capsuleHeight: Double) -> Double {
+        let width = capsuleWidth + rimWidth, height = capsuleHeight + rimWidth
+        return 2 * max(width - height, 0) + .pi * height
+    }
+
+    /// The glimmer at `time`, as slices from its tail to its head, each brighter than the last. A slice that crosses
+    /// the rim's start is split in two, so every `from` is below its `to`.
+    public static func glimmer(at time: Double, perimeter: Double) -> [Slice] {
+        guard perimeter > 0 else { return [] }
+        let head = (time * speed).truncatingRemainder(dividingBy: perimeter)
+        let length = min(tail, perimeter), step = length / Double(slices)
+        var out: [Slice] = []
+        for index in 0..<slices {
+            let light = pow(Double(index + 1) / Double(slices), 2)
+            let start = wrap(head - length + Double(index) * step, perimeter) / perimeter
+            let end = start + step / perimeter
+            if end <= 1 {
+                out.append(Slice(from: start, to: end, light: light))
+            } else {
+                out.append(Slice(from: start, to: 1, light: light))
+                out.append(Slice(from: 0, to: end - 1, light: light))
             }
-            row += 1
-            y = -reach + Double(row) * rowSpacing
         }
-        return dots
+        return out
     }
 
-    /// How brightly the dot is lit, 0 to 1. `glow` is the glow level at the dot's `delay`, 0 to 1.
-    public static func strength(of dot: Dot, glow: Double) -> Double {
-        (restingLight + (1 - restingLight) * glow) * dot.weight
+    /// How brightly the halo is lit, 0 to 1. `glow` is the voice's glow level, 0 to 1.
+    public static func light(glow: Double) -> Double { restingLight + (1 - restingLight) * min(max(glow, 0), 1) }
+
+    /// The rim's opacity, the haze's opacity, and the haze's blur radius in points, for a light.
+    public static func rimOpacity(light: Double) -> Double { 0.35 + 0.5 * light }
+    public static func hazeOpacity(light: Double) -> Double { 0.12 + 0.33 * light }
+    public static func hazeRadius(light: Double) -> Double { 6 + 9 * light }
+
+    private static func wrap(_ value: Double, _ period: Double) -> Double {
+        let remainder = value.truncatingRemainder(dividingBy: period)
+        return remainder < 0 ? remainder + period : remainder
     }
-
-    /// The dot's radius in points for a strength.
-    public static func radius(strength: Double) -> Double { smallestRadius + radiusGain * strength }
-
-    /// The dot's opacity for a strength, before the halo as a whole fades in or out.
-    public static func opacity(strength: Double) -> Double { faintestOpacity + opacityGain * strength }
 }
