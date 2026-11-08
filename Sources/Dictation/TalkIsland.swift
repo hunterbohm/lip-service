@@ -72,12 +72,11 @@ import SwiftUI
         hiding?.cancel()
         hiding = nil
         if model.bar == nil || !window.isVisible {
-            if !placedByHand {
-                place(on: screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main)
-                watchPointer()
-            }
+            if !placedByHand { place(on: screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main) }
             window.orderFrontRegardless()
         }
+        // Also after a hide that a new talk cut short, which had stopped the watching.
+        if !placedByHand { watchPointer() }
         model.bar = bar
         if !model.visible { DispatchQueue.main.async { self.model.visible = true } }
     }

@@ -247,7 +247,7 @@ public struct TalkEar: Sendable {
             guard time >= graceUntil else { return nil }
             loud = level > (speaking ? thresholds.cutIn : thresholds.start) ? loud + 1 : 0
             guard loud >= timing.cutInBlocks else { return nil }
-            begin(at: time)
+            begin(at: time, after: timing.cutInBlocks)
             return .cutIn
         }
     }
@@ -278,11 +278,12 @@ public struct TalkEar: Sendable {
         if preroll.count > timing.prerollBlocks { preroll.removeFirst(preroll.count - timing.prerollBlocks) }
     }
 
-    private mutating func begin(at time: Instant) {
+    /// Starts your turn, which began `blocks` loud blocks ago: the ones it took to tell it was you.
+    private mutating func begin(at time: Instant, after blocks: Int? = nil) {
         heard = preroll.flatMap { $0 }
         preroll = []
         loud = 0
-        phase = .hearing(startedAt: time + -Double(timing.startBlocks) * timing.block, lastLoud: time, paused: false)
+        phase = .hearing(startedAt: time + -Double(blocks ?? timing.startBlocks) * timing.block, lastLoud: time, paused: false)
     }
 }
 

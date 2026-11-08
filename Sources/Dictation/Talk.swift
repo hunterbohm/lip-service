@@ -589,6 +589,12 @@ enum TalkEnd: Equatable {
         onCard?(.permissionAnswered)
         log.info("talk permission \(allowed ? "allowed" : "denied", privacy: .public)")
         guard !ended else { return }
+        // The rest of the question isn't said, so its echo can't be taken for you talking over the agent and cancel
+        // what you just allowed.
+        if permission.turn == turn {
+            hushedThrough = queuedLines
+            speaker.stop()
+        }
         bar = TalkBar(agent: bar.agent, phase: .thinking, activity: allowed ? "Going ahead" : "Skipping that")
         ear.agentWorking(at: .now)
     }

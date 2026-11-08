@@ -166,6 +166,17 @@ import Testing
         #expect(ear.isHearing)
     }
 
+    @Test func aQuickNoOverTheAgentIsATurn() throws {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        ear.agentSpeaking(at: Instant(seconds: 2.4))
+        _ = run(&ear, Array(repeating: echo, count: 30), from: 3.1)
+        // About 0.24 s of voice: the six blocks it takes to cut in, and two more. They all count toward the turn.
+        let events = run(&ear, Array(repeating: voice, count: 8) + Array(repeating: quiet, count: 30), from: 4)
+        #expect(events.first?.0 == .cutIn)
+        guard case .ended = try #require(events.last?.0) else { Issue.record("a quick no over the agent was dropped: \(events)"); return }
+    }
+
     @Test func afterTheAgentFinishesTheNextTurnStartsFresh() {
         var ear = calibrated()
         _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
