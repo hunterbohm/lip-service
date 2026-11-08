@@ -30,6 +30,9 @@ enum BarEvent: Equatable {
     private var state = BarState(body: .hidden)
     private var edge = BarEdge.bottom
     private var screen: NSScreen?
+    /// The area `screen` had clear of other apps' bars when the bar last came up, read once per showing.
+    private var cleared = NSRect.zero
+    private weak var clearedScreen: NSScreen?
     private var drag: Drag?
     private var sampler: Timer?
 
@@ -55,7 +58,7 @@ enum BarEvent: Equatable {
     /// the user's text field.
     func render(_ next: BarState, edge nextEdge: BarEdge) {
         let toastOnHiddenBar = next.body == .hidden && next.toast != nil && state.toast == nil
-        if next.body.isActive && !state.body.isActive || toastOnHiddenBar { screen = nil }
+        if next.body.isActive && !state.body.isActive || toastOnHiddenBar { (screen, clearedScreen) = (nil, nil) }
         let movedEdge = nextEdge != edge
         (state, edge) = (next, nextEdge)
         sampleLevels(state.body.isListening)
@@ -73,7 +76,10 @@ enum BarEvent: Equatable {
         if screen == nil || !NSScreen.screens.contains(where: { $0 === screen }) {
             screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         }
-        return area?(screen) ?? screen?.visibleFrame ?? .zero
+        if let area { return area(screen) }
+        guard let screen else { return .zero }
+        if screen !== clearedScreen { (clearedScreen, cleared) = (screen, OtherBars.clear(screen)) }
+        return cleared
     }
 
     /// The body's frame, or nil when hidden.
@@ -200,6 +206,34 @@ enum BarEvent: Equatable {
         outlinePanel.setFrame(currentArea(), display: true)
         outlineHost.rootView = AnyView(SnapOutlines(nearest: nearest))
         outlinePanel.orderFrontRegardless()
+    }
+}
+
+/// Bars other apps draw along a screen's edges, which macOS leaves inside the visible frame: the top bar of a tiling
+/// window manager such as OmniWM or AeroSpace with SketchyBar, or a strip another app keeps at a side. Read from the
+/// window list, whose bounds need no permission.
+@MainActor enum OtherBars {
+    static func clear(_ screen: NSScreen) -> NSRect {
+        let visible = screen.visibleFrame
+        guard let primary = NSScreen.screens.first?.frame,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return visible }
+        let me = ProcessInfo.processInfo.processIdentifier
+        let normal = Int(CGWindowLevelForKey(.normalWindow)), saver = Int(CGWindowLevelForKey(.screenSaverWindow))
+        let bars: [BarRect] = list.compactMap { window in
+            // Above ordinary windows but under the screen saver, and more than a hairline such as a window border. The Dock, already outside the visible frame, and
+            // the hidden menu bar, which slides over everything only while the mouse is at the top, are not bars to
+            // avoid.
+            guard let layer = window[kCGWindowLayer as String] as? Int, layer > normal, layer < saver,
+                  window[kCGWindowOwnerPID as String] as? Int32 != me,
+                  !["Dock", "Window Server"].contains(window[kCGWindowOwnerName as String] as? String ?? ""),
+                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds), rect.width >= 4, rect.height >= 4
+            else { return nil }
+            // The window list measures from the top of the main screen, AppKit from its bottom.
+            return BarRect(x: rect.minX, y: primary.maxY - rect.maxY, width: rect.width, height: rect.height)
+        }
+        return NSRect(BarRect(visible).clear(of: bars))
     }
 }
 

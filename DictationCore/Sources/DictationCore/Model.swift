@@ -128,6 +128,28 @@ public struct BarRect: Equatable, Sendable {
         BarRect(x: min(max(x, area.minX), area.maxX - width), y: min(max(y, area.minY), area.maxY - height),
                 width: width, height: height)
     }
+
+    /// This area less the strips that other apps' bars cover along its edges, such as the top bar of a tiling window
+    /// manager like OmniWM or SketchyBar, which macOS leaves out of the visible frame. A window counts as a bar when
+    /// it touches an edge, runs along at least half of it, and is at most `maxThickness` deep. Anything else, like a
+    /// floating window or a full-screen overlay, is ignored.
+    public func clear(of windows: [BarRect], maxThickness: Double = 80) -> BarRect {
+        let touch = 2.0
+        var (top, bottom, left, right) = (maxY, minY, minX, maxX)
+        for window in windows {
+            let alongX = Swift.min(window.maxX, maxX) - Swift.max(window.minX, minX)
+            let alongY = Swift.min(window.maxY, maxY) - Swift.max(window.minY, minY)
+            if alongX >= width / 2, window.height <= maxThickness {
+                if window.maxY >= maxY - touch, window.minY < maxY { top = Swift.min(top, window.minY) }
+                if window.minY <= minY + touch, window.maxY > minY { bottom = Swift.max(bottom, window.maxY) }
+            }
+            if alongY >= height / 2, window.width <= maxThickness {
+                if window.minX <= minX + touch, window.maxX > minX { left = Swift.max(left, window.maxX) }
+                if window.maxX >= maxX - touch, window.minX < maxX { right = Swift.min(right, window.minX) }
+            }
+        }
+        return BarRect(x: left, y: bottom, width: right - left, height: top - bottom)
+    }
 }
 
 public enum MicrophoneChoice: Equatable, Codable, Sendable {
