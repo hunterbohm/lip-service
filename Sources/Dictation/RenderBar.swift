@@ -14,6 +14,8 @@ import DictationCore
         /// How long to let the animations run before the snapshot. Short, and a word is caught mid-print.
         var settle = 1.2
         var card: CardModel?
+        /// Cards a talk put up, newest last.
+        var talkCards: [TalkCardEvent] = []
     }
 
     private static let hermes = BarAgent(initial: "H", name: "Hermes")
@@ -79,6 +81,46 @@ import DictationCore
         ]
     }
 
+    private static func talk(_ phase: TalkBar.Phase, line: String = "", activity: String? = nil, endingSoon: Bool = false) -> BarState.Body {
+        .talk(TalkBar(agent: hermes, phase: phase, line: line, activity: activity, endingSoon: endingSoon))
+    }
+
+    private static let chart = """
+        <div style="font:600 13px -apple-system;color:#ECEDEE;margin-bottom:8px">Dictations this week</div>
+        <svg viewBox="0 0 420 150" width="420" height="150" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#3B82F6">\((0..<7).map { i in
+            let h = [62, 88, 74, 120, 96, 40, 28][i]
+            return "<rect x=\"\(i * 60 + 10)\" y=\"\(130 - h)\" width=\"40\" height=\"\(h)\" rx=\"4\"/>"
+        }.joined())</g>
+        <g fill="#9A9BA0" font-size="11" font-family="-apple-system">\(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].enumerated().map { i, day in
+            "<text x=\"\(i * 60 + 30)\" y=\"146\" text-anchor=\"middle\">\(day)</text>"
+        }.joined())</g></svg>
+        """
+
+    /// Every state of a live talk, which always sits at the top.
+    private static var talkScenes: [Scene] {
+        [
+            Scene(name: "50-talk-connecting", state: BarState(body: talk(.connecting)), edge: .top, quiet: true),
+            Scene(name: "51-talk-started-toast", state: BarState(body: talk(.listening), toast: .talkStarted(agent: "Hermes")), edge: .top, quiet: true),
+            Scene(name: "52-talk-listening", state: BarState(body: talk(.listening)), edge: .top, quiet: true),
+            Scene(name: "53-talk-you-talking", state: BarState(body: talk(.hearing, line: "what's on my calendar this afternoon")), edge: .top),
+            Scene(name: "54-talk-thinking", state: BarState(body: talk(.thinking)), edge: .top, quiet: true),
+            Scene(name: "55-talk-tool", state: BarState(body: talk(.thinking, activity: "Checking your calendar")), edge: .top, quiet: true),
+            Scene(name: "56-talk-agent-talking", state: BarState(body: talk(.speaking, line: "You have two meetings this afternoon, the first at three.")),
+                  edge: .top),
+            Scene(name: "57-talk-ending-soon", state: BarState(body: talk(.listening, endingSoon: true), toast: .talkEndingSoon(seconds: 20)),
+                  edge: .top, quiet: true),
+            Scene(name: "58-talk-cards", state: BarState(body: talk(.speaking, line: "The link is on your screen.")), edge: .top,
+                  talkCards: [.show(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")),
+                              .show(.link(URL(string: "https://www.swift.org/documentation/")!))]),
+            Scene(name: "59-talk-permission", state: BarState(body: talk(.speaking, line: "Hermes wants your OK for this: Running a command. Say yes or no.")),
+                  edge: .top,
+                  talkCards: [.permission(agent: "Hermes", phrase: "Running a command", detail: "hermes send -t photon \"Call Theo at five\"")]),
+            Scene(name: "60-talk-visual", state: BarState(body: talk(.speaking, line: "Here's your week.")), edge: .top, settle: 2.5,
+                  talkCards: [.show(.html(chart))]),
+        ]
+    }
+
     /// Mid-speech: loud now, with swells before it that the print carries rightward, so the print rises and falls from left to right.
     nonisolated private static func speaking(_ age: Double) -> Float {
         Float(min(max(0.45 + 0.4 * cos(age * 10) * exp(-age * 0.7), 0), 1))
@@ -134,7 +176,8 @@ import DictationCore
         }
         let bar = Bar(level: { 0 }, area: { _ in stage })
         let cards = CardPanel()
-        for scene in scenes + agentScenes {
+        let talkCards = TalkCardPanel()
+        for scene in scenes + agentScenes + talkScenes {
             bar.render(BarState(body: .hidden), edge: scene.edge)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
             bar.meter.freeze(at: frozenAt, profile: scene.quiet ? { _ in 0 } : speaking)
@@ -142,10 +185,15 @@ import DictationCore
             bar.showOutlines(nearest: scene.dragNearest)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             if let card = scene.card { cards.show(card, above: bar.anchor()) } else { cards.hide() }
+            talkCards.closeAll()
+            for event in scene.talkCards { talkCards.handle(event, agent: hermes, under: bar.anchor()) }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
             let shown = bar.visiblePanels + (cards.isVisible ? [(panel: cards.window, shadow: true)] : [])
+                + (talkCards.isVisible ? [(panel: talkCards.window, shadow: true)] : [])
+            let webShots = talkCards.isVisible ? webSnapshots(talkCards) : []
             let panels = shown.map {
-                (frame: $0.panel.frame.offsetBy(dx: -stage.minX, dy: -stage.minY), image: snapshot($0.panel), shadow: $0.shadow)
+                (frame: $0.panel.frame.offsetBy(dx: -stage.minX, dy: -stage.minY),
+                 image: $0.panel === talkCards.window ? snapshot($0.panel, adding: webShots) : snapshot($0.panel), shadow: $0.shadow)
             }
             let stagePath = directory.appending(path: "\(scene.name).png")
             let closeUpPath = directory.appending(path: "\(scene.name)-closeup.png")
@@ -158,6 +206,24 @@ import DictationCore
             print(stagePath.path)
         }
         return 0
+    }
+
+    /// A web view draws in its own process, so drawing the panel leaves it blank. Its snapshots go on top instead.
+    private static func webSnapshots(_ panel: TalkCardPanel) -> [(frame: NSRect, image: NSImage)] {
+        var shots: [(frame: NSRect, image: NSImage)]?
+        panel.webSnapshots { shots = $0 }
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while shots == nil, Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+        return shots ?? []
+    }
+
+    private static func snapshot(_ panel: NSPanel, adding shots: [(frame: NSRect, image: NSImage)]) -> NSImage {
+        let image = snapshot(panel)
+        guard !shots.isEmpty else { return image }
+        image.lockFocusFlipped(false)
+        for shot in shots { shot.image.draw(in: shot.frame) }
+        image.unlockFocus()
+        return image
     }
 
     private static func snapshot(_ panel: NSPanel) -> NSImage {

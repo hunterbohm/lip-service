@@ -263,6 +263,8 @@ public struct Settings: Equatable, Codable, Sendable {
     /// Held, what you say goes to the agent's own app as a task. Nil turns Hand off off.
     public var handOffKey: Shortcut? = Shortcut(key: 63, modifiers: [.option])
     public var agents = AgentSettings()
+    /// Double-tap Left Control to talk with an agent out loud.
+    public var liveTalk = LiveTalkSettings()
     /// Sends one anonymous report a day, the first time you use the app. See the README's Privacy section.
     public var sendUsageCount = true
     /// Asks GitHub once a day for the newest release and says so when it is newer. It installs nothing.
@@ -310,6 +312,7 @@ public struct Settings: Equatable, Codable, Sendable {
         handOffKey = (container.contains(.handOffKey) ? value(.handOffKey, Shortcut?.none) : defaults.handOffKey)
             .flatMap { hotkeys.contains($0) ? nil : $0 }
         agents = value(.agents, defaults.agents)
+        liveTalk = value(.liveTalk, defaults.liveTalk)
         sendUsageCount = value(.sendUsageCount, defaults.sendUsageCount)
         checkForUpdates = value(.checkForUpdates, defaults.checkForUpdates)
     }
@@ -317,7 +320,7 @@ public struct Settings: Equatable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
         case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, smartFormatting, ghostwriteKey, handOffKey, agents
-        case sendUsageCount, checkForUpdates
+        case liveTalk, sendUsageCount, checkForUpdates
     }
 
     /// Written out by hand so a paste shortcut turned off is stored as null. The synthesized encoder leaves a nil out,
@@ -343,6 +346,7 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(ghostwriteKey, forKey: .ghostwriteKey)
         try container.encode(handOffKey, forKey: .handOffKey)
         try container.encode(agents, forKey: .agents)
+        try container.encode(liveTalk, forKey: .liveTalk)
         try container.encode(sendUsageCount, forKey: .sendUsageCount)
         try container.encode(checkForUpdates, forKey: .checkForUpdates)
     }
@@ -430,6 +434,12 @@ public enum BarNotice: Equatable, Sendable {
     case learned(String)
     /// The user's own agent changed the setup through `Dictation setup apply`.
     case setupApplied(by: String, changes: Int)
+    /// A live talk started: how to end it.
+    case talkStarted(agent: String)
+    /// No one has talked in a live talk for a while.
+    case talkEndingSoon(seconds: Int)
+    /// A live talk could not start or stopped on a failure.
+    case talkFailed(String)
 
     public var title: String {
         switch self {
@@ -441,6 +451,9 @@ public enum BarNotice: Equatable, Sendable {
         case .fnKeySetting: "macOS also acts on fn"
         case .learned(let word): "Learned \(word)"
         case .setupApplied(let by, _): "\(by) set up Lip Service"
+        case .talkStarted(let agent): "Talking with \(agent)"
+        case .talkEndingSoon: "Still there?"
+        case .talkFailed: "The talk stopped"
         }
     }
 
@@ -455,6 +468,9 @@ public enum BarNotice: Equatable, Sendable {
         case .fnKeySetting: "Set Keyboard > Press fn key to > Do Nothing."
         case .learned: "Added to your dictionary from your fix."
         case .setupApplied(_, let changes): changes == 1 ? "1 change. Open Lip Service to see it." : "\(changes) changes. Open Lip Service to see them."
+        case .talkStarted: "To end, double-tap Left Control or say goodbye."
+        case .talkEndingSoon(let seconds): "The talk ends in \(seconds) s unless you say something."
+        case .talkFailed(let reason): reason
         }
     }
 
@@ -466,9 +482,9 @@ public enum BarNotice: Equatable, Sendable {
 
     public var tone: NoticeTone {
         switch self {
-        case .copied, .nothingToPaste, .learned, .setupApplied: .info
-        case .microphoneMissing, .fnKeySetting: .warning
-        case .failed, .modelFailed: .failure
+        case .copied, .nothingToPaste, .learned, .setupApplied, .talkStarted: .info
+        case .microphoneMissing, .fnKeySetting, .talkEndingSoon: .warning
+        case .failed, .modelFailed, .talkFailed: .failure
         }
     }
 
@@ -530,6 +546,8 @@ public struct BarState: Equatable, Sendable {
         /// The agent is on it: "Hermes is writing…", "Ready". `busy` while something is under way rather than waiting
         /// on the user, and only then does the print move.
         case working(status: String, busy: Bool)
+        /// A live talk, which always sits at the top of the screen.
+        case talk(TalkBar)
     }
 
     public var body: Body
@@ -548,7 +566,9 @@ public struct BarState: Equatable, Sendable {
     /// `agent` is set while a Ghostwrite or Hand off capture runs, and `working` while the agent is on it.
     public static func derive(hotkey: HotkeyMachine, words: String, pending: Int, engine: EngineStatus,
                               notice: BarNotice?, showsIdle: Bool, agent: BarAgent? = nil, working: String? = nil,
-                              busy: Bool = false) -> BarState {
+                              busy: Bool = false, talk: TalkBar? = nil) -> BarState {
+        // A talk keeps the microphone, so no dictation runs beside it, and it owns the bar while it lasts.
+        if let talk { return BarState(body: .talk(talk), toast: notice) }
         let body: Body
         if hotkey.showsListening {
             body = .listening(words: words, handsFree: hotkey.isHandsFree)

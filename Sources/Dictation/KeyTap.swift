@@ -44,6 +44,20 @@ import os
     private var swallowedKey: Int?
     private var recorder: ShortcutRecorder?
     private var recorded: ((ShortcutRecorder.Outcome) -> Void)?
+    /// Double-tapping Left Control alone, which starts and ends a live talk. Off while the setting is off or a dictation
+    /// key uses Left Control.
+    var talkKey = false {
+        didSet { if !talkKey { stopWatchingClicks() } }
+    }
+    var onDoubleTap: (() -> Void)?
+    /// While a talk runs, the dictation keys do nothing, since the talk has the microphone.
+    var suspended = false {
+        didSet { if suspended, machine != .idle { abort() } }
+    }
+    private var doubleTap = DoubleTapDetector()
+    /// A click while Left Control is down, as in Control-click, means the press was not a tap. Watched only while it is
+    /// down, so clicks cost nothing the rest of the time, and by a monitor that never holds up the click.
+    private var clickWatch: Any?
 
     init(keys: CaptureKeys, pasteLast: Shortcut?) {
         self.keys = keys
@@ -116,6 +130,13 @@ import os
                             characters: () -> String?) -> Bool {
         guard marker != Self.syntheticMarker else { return false }
         if recorder != nil { return record(kind: kind, keyCode: keyCode, flags: flags) }
+        if talkKey, let tapInput = DoubleTapDetector.input(kind: kind, keyCode: keyCode, flags: flags) {
+            if tapInput == .down { watchClicks() } else { stopWatchingClicks() }
+            if doubleTap.feed(tapInput, at: .now) {
+                DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.onDoubleTap?() } }
+            }
+        }
+        if suspended { return false }
         var input: KeyInput?
         switch CaptureRouting.route(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat, machine: machine, active: active,
                                     keys: keys, at: .now) {
@@ -152,6 +173,22 @@ import os
             swallow = true
         }
         return swallow
+    }
+
+    private func watchClicks() {
+        guard clickWatch == nil else { return }
+        clickWatch = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                _ = self.doubleTap.feed(.other, at: .now)
+                self.stopWatchingClicks()
+            }
+        }
+    }
+
+    private func stopWatchingClicks() {
+        if let clickWatch { NSEvent.removeMonitor(clickWatch) }
+        clickWatch = nil
     }
 
     /// Typing keys are swallowed while recording, so they do not type into the window. Modifier changes pass, so

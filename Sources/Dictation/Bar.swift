@@ -7,6 +7,8 @@ enum BarEvent: Equatable {
     case stop, cancel
     case moved(BarEdge)
     case toastAction(BarToastAction)
+    /// The close button on a live talk.
+    case endTalk
 }
 
 /// The floating bar: a body at the chosen screen edge and a toast attached to it, each in its own panel. Renders a
@@ -60,9 +62,11 @@ enum BarEvent: Equatable {
     func render(_ next: BarState, edge nextEdge: BarEdge) {
         let toastOnHiddenBar = next.body == .hidden && next.toast != nil && state.toast == nil
         if next.body.isActive && !state.body.isActive || toastOnHiddenBar { (screen, clearedScreen) = (nil, nil) }
+        // A talk sits at the top, under the menu bar and any other top bar, whatever edge dictation uses.
+        let nextEdge = next.body.isTalk ? BarEdge.top : nextEdge
         let movedEdge = nextEdge != edge
         (state, edge) = (next, nextEdge)
-        sampleLevels(state.body.isListening)
+        sampleLevels(state.body.isListening || state.body.isTalk)
         guard drag == nil else { return }
         layout(animated: !movedEdge)
     }
@@ -97,17 +101,17 @@ enum BarEvent: Equatable {
                                              onDrag: { [weak self] ended in self?.dragged(ended: ended) }))
         let inset = BarStyle.inset(of: state.body, edge: edge)
         let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area), inset: inset))
-        // While the words bar shows, its panel covers the widest the capsule can grow to on this edge, and the halo
-        // past it, and never resizes. The capsule grows inside it, so macOS never shows a panel mid-resize with its
+        // While the words bar or a talk shows, its panel covers the widest the capsule can grow to on this edge, and the
+        // halo past it, and never resizes. The capsule grows inside it, so macOS never shows a panel mid-resize with its
         // old content stretched across the new frame.
-        let panelFrame = state.body.wordsBar == nil ? frame
+        let panelFrame = !state.body.hasHalo ? frame
             : NSRect(edge.place(width: max(BarStyle.maxWidth, size.width), height: size.height, in: BarRect(area), inset: inset))
                 .insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin)
         capsuleFrame = frame
         followPointer()
-        // The words bar draws its own shadow; the system's would follow the halo.
-        bodyPanel.hasShadow = state.body.wordsBar == nil
-        if animated, bodyPanel.isVisible, bodyPanel.frame.height == panelFrame.height, bodyPanel.frame != panelFrame, state.body.wordsBar == nil {
+        // The words bar and a talk draw their own shadow; the system's would follow the halo.
+        bodyPanel.hasShadow = !state.body.hasHalo
+        if animated, bodyPanel.isVisible, bodyPanel.frame.height == panelFrame.height, bodyPanel.frame != panelFrame, !state.body.hasHalo {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.25
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
@@ -120,11 +124,11 @@ enum BarEvent: Equatable {
         return frame
     }
 
-    /// The words bar's panel is larger than its capsule, and an empty part of a panel still takes clicks. So while it
-    /// shows, the panel takes the mouse only while the pointer is over the capsule or a drag is on, checked 30 times a
+    /// The words bar's and a talk's panel is larger than its capsule, and an empty part of a panel still takes clicks. So
+    /// while one shows, the panel takes the mouse only while the pointer is over the capsule or a drag is on, checked 30 times a
     /// second, and a click beside the bar reaches the app under it.
     private func followPointer() {
-        guard state.body.acceptsMouse, state.body.wordsBar != nil else {
+        guard state.body.acceptsMouse, state.body.hasHalo else {
             pointer?.invalidate()
             pointer = nil
             bodyPanel.ignoresMouseEvents = !state.body.acceptsMouse
@@ -162,6 +166,7 @@ enum BarEvent: Equatable {
     /// The body follows the mouse while dashed outlines mark the four snap spots. The drop snaps to the nearest,
     /// which the owner saves.
     private func dragged(ended: Bool) {
+        guard !state.body.isTalk else { return }
         let mouse = NSEvent.mouseLocation
         let drag = drag ?? beginDrag(at: mouse)
         let nearest = BarEdge.nearest(x: mouse.x, y: mouse.y, in: BarRect(drag.area))
@@ -376,7 +381,25 @@ struct VoiceReading {
             CGSize(width: padding + agentWidth(agent) + glyphWidth + glyphGap + measure(status, statusFont) + padding, height: height)
         case .transcribing(_, .some(let phase)), .preparing(let phase):
             CGSize(width: padding + 16 + 10 + measure(Self.describe(phase), statusFont) + padding, height: height)
+        case .talk(let talk): CGSize(width: talkLayout(talk).width, height: height)
         }
+    }
+
+    static let closeSize: CGFloat = 22
+    /// Wide enough that the bar keeps still as the talk moves from listening to thinking.
+    static let talkMinWidth: CGFloat = 300
+
+    /// A talk's width, and the layout of its words when it shows words.
+    static func talkLayout(_ talk: TalkBar) -> (width: CGFloat, words: WordsLayout?) {
+        let fixed = padding + agentWidth(talk.agent) + glyphWidth + glyphGap + closeSize + padding
+        guard let words = talk.words else {
+            return (max(talkMinWidth, fixed + glyphGap + measure(talk.status, statusFont)), nil)
+        }
+        let natural = measure(tokens(words).joined(separator: " "), wordsFont)
+        let room = maxWidth - fixed - glyphGap
+        let textWidth = min(natural, room)
+        let width = max(talkMinWidth, fixed + glyphGap + textWidth)
+        return (width, WordsLayout(textWidth: textWidth, naturalWidth: natural, overflows: natural > room, capsuleWidth: width))
     }
 
     struct WordsLayout: Equatable {
@@ -441,6 +464,7 @@ struct VoiceReading {
 
 private extension BarState.Body {
     var isListening: Bool { if case .listening = self { true } else { false } }
+    var isTalk: Bool { if case .talk = self { true } else { false } }
     /// The capsule with the glyph and the words, while listening and while the last words are finished. It is one
     /// view in both, so the glyph can crossfade from one to the other.
     var wordsBar: (words: String, handsFree: Bool, finishing: Bool)? {
@@ -450,10 +474,12 @@ private extension BarState.Body {
         default: nil
         }
     }
+    /// The words bar and a talk glow around their capsule, which grows inside a panel that never resizes.
+    var hasHalo: Bool { wordsBar != nil || isTalk }
     /// Anything but hidden and idle, which keep the screen the bar was last on.
     var isActive: Bool { self != .hidden && self != .idle }
     /// The idle pill and the listening capsule can be dragged, and hands-free has buttons.
-    var acceptsMouse: Bool { self == .idle || isListening }
+    var acceptsMouse: Bool { self == .idle || isListening || isTalk }
 }
 
 extension BarRect {
@@ -469,7 +495,7 @@ private struct BodyView: View {
     let agent: BarAgent?
     let edge: BarEdge
     let meter: VoiceMeter
-    /// The words bar's capsule width. Its panel is wider, and a new width animates inside it.
+    /// The words bar's or a talk's capsule width. Its panel is wider, and a new width animates inside it.
     let capsuleWidth: CGFloat
     let onEvent: (BarEvent) -> Void
     let onDrag: (_ ended: Bool) -> Void
@@ -477,16 +503,21 @@ private struct BodyView: View {
 
     var body: some View {
         if let bar = shown.wordsBar {
-            GrowingBar(width: capsuleWidth, meter: meter, listening: !bar.finishing, capsule: wordsBar(bar))
-                .animation(reduceMotion ? nil : .timingCurve(0.2, 0.9, 0.3, 1, duration: 0.25), value: capsuleWidth)
+            growing(GrowingBar(width: capsuleWidth, capsule: wordsBar(bar), halo: HaloView(meter: meter, listening: !bar.finishing)))
                 .gesture(dragging)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .left ? .leading : edge == .right ? .trailing : .center)
-                .padding(BarStyle.haloMargin)
+        } else if case .talk(let talk) = shown {
+            growing(GrowingBar(width: capsuleWidth, capsule: talkBar(talk), halo: TalkHaloView(meter: meter, speaker: talk.speaker)))
         } else {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .gesture(dragging)
         }
+    }
+
+    private func growing(_ bar: some View) -> some View {
+        bar.animation(reduceMotion ? nil : .timingCurve(0.2, 0.9, 0.3, 1, duration: 0.25), value: capsuleWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .left ? .leading : edge == .right ? .trailing : .center)
+            .padding(BarStyle.haloMargin)
     }
 
     private var dragging: some Gesture {
@@ -507,12 +538,33 @@ private struct BodyView: View {
         }
     }
 
+    private func talkBar(_ talk: TalkBar) -> some View {
+        let layout = BarStyle.talkLayout(talk)
+        return capsule(behind: Print(meter: meter, finishing: talk.phase == .thinking || talk.phase == .connecting,
+                                     offset: BarStyle.agentWidth(talk.agent))) {
+            AgentChip(agent: talk.agent)
+            Color.clear.frame(width: BarStyle.glyphWidth)
+            if let words = talk.words, let wordsLayout = layout.words {
+                Words(words: words, layout: wordsLayout, dimmed: false)
+            } else {
+                Text(talk.status)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(talk.endingSoon ? Theme.color(.warning) : Theme.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.leading, BarStyle.glyphGap)
+            }
+            Spacer(minLength: 0)
+            TalkCloseButton { onEvent(.endTalk) }
+        }
+    }
+
     @ViewBuilder private var content: some View {
-        if shown.wordsBar != nil {
+        if shown.hasHalo {
             EmptyView()
         } else {
             switch shown {
-            case .hidden, .listening, .transcribing(_, nil):
+            case .hidden, .listening, .transcribing(_, nil), .talk:
                 EmptyView()
             case .working(let status, let busy):
                 capsule(behind: Print(meter: meter, finishing: true, resting: !busy, offset: BarStyle.agentWidth(agent))) {
@@ -555,14 +607,13 @@ private struct BodyView: View {
     }
 }
 
-/// The words bar's capsule at `width`, with its shadow and its halo. Animatable, so while a new width animates SwiftUI
-/// draws it at every width in between, and the capsule and the halo grow together frame by frame.
-private struct GrowingBar<Capsule: View>: View, Animatable {
+/// The words bar's or a talk's capsule at `width`, with its shadow and its halo. Animatable, so while a new width
+/// animates SwiftUI draws it at every width in between, and the capsule and the halo grow together frame by frame.
+private struct GrowingBar<Capsule: View, Halo: View>: View, Animatable {
     // SwiftUI reads and writes the animated width off the main actor; a CGFloat is safe to share.
     nonisolated(unsafe) var width: CGFloat
-    let meter: VoiceMeter
-    let listening: Bool
     let capsule: Capsule
+    let halo: Halo
 
     nonisolated var animatableData: CGFloat {
         get { width }
@@ -573,7 +624,7 @@ private struct GrowingBar<Capsule: View>: View, Animatable {
         capsule
             .frame(width: width, height: BarStyle.height)
             .shadow(color: .black.opacity(0.28), radius: 5, y: 1)
-            .background { HaloView(meter: meter, listening: listening).padding(-BarStyle.haloMargin) }
+            .background { halo.padding(-BarStyle.haloMargin) }
     }
 }
 
@@ -668,7 +719,7 @@ private struct HaloView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var aura = Eased()
 
-    private static let blues = Gradient(colors: (HaloGlow.rimColors + [HaloGlow.rimColors[0]]).map { Color(red: $0.red, green: $0.green, blue: $0.blue) })
+    private static let blues = HaloPaint.gradient(HaloGlow.rimColors)
 
     var body: some View {
         Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
@@ -680,42 +731,122 @@ private struct HaloView: View {
         let target = listening ? 1.0 : 0.0
         let fade = meter.frozenAt != nil || reduceMotion ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
         guard fade > 0.004 else { return }
+        let light = reduceMotion ? HaloGlow.restingLight : HaloGlow.light(glow: meter.reading(at: time).glow(delay: 0))
+        let beam = reduceMotion ? nil : HaloPaint.Beam(slices: { HaloGlow.beam(at: time, perimeter: $0) }, color: HaloGlow.beamColor(along:),
+                                                       opacity: HaloGlow.beamOpacity(light: light) * fade)
+        HaloPaint.draw(into: &context, size: size, fade: fade, light: light, colors: Self.blues,
+                       angle: reduceMotion ? 0 : HaloGlow.turn(at: time), beam: beam)
+    }
+}
+
+/// Paints the rim, the halo and the beam, for dictation's glow and a talk's. `beam` gives the beam's slices for the rim's
+/// length; nil draws none.
+@MainActor private enum HaloPaint {
+    struct Beam {
+        var slices: (_ perimeter: Double) -> [HaloGlow.Slice]
+        var color: (_ along: Double) -> HaloGlow.RGB
+        var opacity: Double
+    }
+
+    static func gradient(_ colors: [HaloGlow.RGB]) -> Gradient {
+        Gradient(colors: (colors + colors.prefix(1)).map { Color(red: $0.red, green: $0.green, blue: $0.blue) })
+    }
+
+    static func draw(into context: inout GraphicsContext, size: CGSize, fade: Double, light: Double, colors: Gradient, angle: Double,
+                     beam: Beam?) {
         let margin = BarStyle.haloMargin, rim = CGFloat(HaloGlow.rimWidth)
         let capsule = CGRect(x: margin, y: margin, width: size.width - 2 * margin, height: size.height - 2 * margin)
         let ring = capsule.insetBy(dx: -rim / 2, dy: -rim / 2)
         let rimPath = Path(roundedRect: ring, cornerRadius: ring.height / 2)
         let haloRing = capsule.insetBy(dx: -3, dy: -3)
-        let light = reduceMotion ? HaloGlow.restingLight : HaloGlow.light(glow: meter.reading(at: time).glow(delay: 0))
-        let blues = GraphicsContext.Shading.conicGradient(Self.blues, center: CGPoint(x: capsule.midX, y: capsule.midY),
-                                                          angle: .radians(reduceMotion ? 0 : HaloGlow.turn(at: time)))
+        let shading = GraphicsContext.Shading.conicGradient(colors, center: CGPoint(x: capsule.midX, y: capsule.midY), angle: .radians(angle))
 
         var halo = context
         halo.opacity = HaloGlow.haloOpacity(light: light) * fade
         halo.addFilter(.blur(radius: HaloGlow.haloRadius(light: light)))
-        halo.stroke(Path(roundedRect: haloRing, cornerRadius: haloRing.height / 2), with: blues, lineWidth: 10)
+        halo.stroke(Path(roundedRect: haloRing, cornerRadius: haloRing.height / 2), with: shading, lineWidth: 10)
 
         let rimOpacity = HaloGlow.rimOpacity(light: light) * fade
         var feather = context
         feather.opacity = rimOpacity * 0.7
         feather.addFilter(.blur(radius: 2.5))
-        feather.stroke(rimPath, with: blues, lineWidth: rim * 2.2)
+        feather.stroke(rimPath, with: shading, lineWidth: rim * 2.2)
         var core = context
         core.opacity = rimOpacity
-        core.stroke(rimPath, with: blues, lineWidth: rim)
-        guard !reduceMotion else { return }
+        core.stroke(rimPath, with: shading, lineWidth: rim)
+        guard let beam else { return }
 
         let perimeter = HaloGlow.perimeter(capsuleWidth: capsule.width, capsuleHeight: capsule.height)
-        let beamOpacity = HaloGlow.beamOpacity(light: light) * fade
         var bloom = context
         bloom.opacity = 0.9
         bloom.addFilter(.blur(radius: 5))
-        for slice in HaloGlow.beam(at: time, perimeter: perimeter) {
+        for slice in beam.slices(perimeter) {
             let piece = rimPath.trimmedPath(from: slice.from, to: slice.to)
-            let rgb = HaloGlow.beamColor(along: slice.along)
-            let color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue).opacity(slice.light * beamOpacity)
+            let rgb = beam.color(slice.along)
+            let color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue).opacity(slice.light * beam.opacity)
             bloom.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim * 3, lineCap: .round))
             context.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim, lineCap: .butt))
         }
+    }
+}
+
+/// A talk's glow: dictation's rim, halo and beam, made to read differently. The light breathes slowly; your turn is teal
+/// with the beam running clockwise, the agent's turn is violet with the beam running back the other way, and while no one
+/// talks the beam slows to a dim drift. With Reduce Motion the glow is still, with no beam.
+private struct TalkHaloView: View {
+    let meter: VoiceMeter
+    let speaker: TalkGlow.Speaker
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var aura = Eased()
+    @State private var mix = Eased()
+    @State private var motion = TalkMotion()
+
+    var body: some View {
+        Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
+            Canvas { context, size in draw(into: &context, size: size, time: time) }
+        }
+    }
+
+    private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
+        let frozen = meter.frozenAt != nil, settled = frozen || reduceMotion
+        if speaker != .nobody { motion.last = speaker }
+        let fade = settled ? aura.settle(at: 1) : aura.step(toward: 1, tau: 0.35, at: time)
+        let target = TalkGlow.mix(for: speaker, last: motion.last)
+        let lean = settled ? mix.settle(at: target) : mix.step(toward: target, tau: 0.6, at: time)
+        let voice = reduceMotion ? 0 : meter.reading(at: time).glow(delay: 0)
+        let light = TalkGlow.light(breath: reduceMotion ? 0.5 : TalkGlow.breath(at: time), voice: voice, speaker: speaker)
+        let speed = TalkGlow.beamSpeed(speaker)
+        // A still shows the beam where it would be after running at this speed, since there are no frames to carry it there.
+        let head = frozen ? time * speed : motion.beam.advance(to: time, target: speed)
+        let backward = frozen ? speed < 0 : motion.beam.speed < 0
+        let beam = reduceMotion ? nil : HaloPaint.Beam(
+            slices: { TalkGlow.beam(head: head, perimeter: $0, backward: backward) },
+            color: { TalkGlow.beamColor(along: $0, mix: lean) },
+            opacity: HaloGlow.beamOpacity(light: light) * TalkGlow.beamOpacity(speaker) * fade)
+        HaloPaint.draw(into: &context, size: size, fade: fade, light: light, colors: HaloPaint.gradient(TalkGlow.rimColors(mix: lean)),
+                       angle: reduceMotion ? 0 : HaloGlow.turn(at: time), beam: beam)
+    }
+}
+
+/// What a talk's glow carries from frame to frame.
+@MainActor private final class TalkMotion {
+    var beam = TalkGlow.BeamClock()
+    var last = TalkGlow.Speaker.nobody
+}
+
+private struct TalkCloseButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Circle().fill(Color.white.opacity(0.14))
+                .overlay(Image(systemName: "xmark").font(.system(size: 9.5, weight: .bold)).foregroundStyle(.white.opacity(0.9)))
+                .frame(width: BarStyle.closeSize, height: BarStyle.closeSize)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("End the talk")
+        .padding(.leading, BarStyle.glyphGap)
+        .padding(.trailing, -6)
     }
 }
 

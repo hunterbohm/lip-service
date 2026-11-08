@@ -53,6 +53,9 @@ case .t3Connect(let home, let code):
 case .setup(let command):
     Task { @MainActor in exit(await Headless.setup(command)) }
     dispatchMain()
+case .talkTest(let options):
+    Task { @MainActor in exit(await TalkTest.run(options)) }
+    dispatchMain()
 case .handOffTest(let options):
     Task { @MainActor in exit(await HandOffTest.run(options)) }
     dispatchMain()

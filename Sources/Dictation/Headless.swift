@@ -17,6 +17,7 @@ enum Mode {
     case installFormatter(URL)
     case agentBench(AgentBench.Options)
     case handOffTest(HandOffTest.Options)
+    case talkTest(TalkTest.Options)
     case t3Connect(home: String?, code: String)
     case setup(Headless.SetupCommand)
     case usage(String)
@@ -59,6 +60,13 @@ enum Mode {
                Dictation --hand-off DESTINATION.json [--dry-run] [--window-text] WORDS
                    Sends WORDS through one Hand off destination, as the app does. --dry-run builds it and sends nothing.
                    --window-text includes the sample window text, as with Send the window's text with hand-offs on.
+               Dictation --test-talk [--preset ID] [--command 'hermes acp'] [--host HOST] [--voice VOICE]
+                         [--voice-server URL [--voice-name NAME]] [--note TEXT] [--out PATH.wav] [--models DIR] CLIP.wav...
+                   Holds a live talk with no microphone or speakers: each clip is played in as your next turn, in real
+                   time, and the agent's voice is made but not played. One JSON line per turn with its timings, in
+                   seconds after your speech ended, then one with the session, to delete it from the agent's history.
+                   --voice is an on-Mac voice such as kokoro:am_michael. --out writes what the voice said.
+                   --note replaces the preset's per-agent talk note.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
                Dictation setup show
@@ -183,6 +191,32 @@ enum Mode {
                 }
                 if options.command.isEmpty { throw DictationError("--agent-bench needs --command") }
                 self = .agentBench(options)
+            case "--test-talk":
+                var options = TalkTest.Options()
+                var server: String?, serverVoice = ""
+                while let argument = rest.popFirst() {
+                    switch argument {
+                    case "--preset":
+                        options.preset = try Self.value(of: argument, from: &rest)
+                        guard AgentPreset.with(id: options.preset) != nil else { throw DictationError("--preset is one of \(AgentPreset.all.map(\.id).joined(separator: ", "))") }
+                    case "--command": options.command = ShellWords.split(try Self.value(of: argument, from: &rest))
+                    case "--host": options.remoteHost = try Self.value(of: argument, from: &rest)
+                    case "--voice":
+                        let parts = try Self.value(of: argument, from: &rest).split(separator: ":", maxSplits: 1).map(String.init)
+                        guard parts.count == 2, let model = OnMacVoice.Model(rawValue: parts[0]) else { throw DictationError("--voice takes MODEL:VOICE, such as kokoro:am_michael") }
+                        options.voice = .onMac(OnMacVoice(model: model, voice: parts[1]))
+                    case "--voice-server": server = try Self.value(of: argument, from: &rest)
+                    case "--voice-name": serverVoice = try Self.value(of: argument, from: &rest)
+                    case "--note": options.note = try Self.value(of: argument, from: &rest)
+                    case "--out": options.out = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case "--models": options.models = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case let flag where flag.hasPrefix("--"): throw DictationError("unknown option \(flag)")
+                    default: options.clips.append(URL(fileURLWithPath: argument))
+                    }
+                }
+                if let server { options.voice = .server(url: server, voice: serverVoice) }
+                if options.clips.isEmpty { throw DictationError("--test-talk needs at least one CLIP.wav") }
+                self = .talkTest(options)
             case "--t3-connect":
                 let code = try Self.value(of: "--t3-connect", from: &rest)
                 self = .t3Connect(home: rest.popFirst(), code: code)

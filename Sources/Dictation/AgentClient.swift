@@ -277,6 +277,20 @@ actor ACPClient {
         return (client, info.id)
     }
 
+    /// A fresh session for a live talk, with the agent's live-talk options, such as a quicker model. An option the agent
+    /// turns down leaves its own default, so the talk still starts.
+    func talkSession(_ agent: AgentConnection) async throws -> (ACPClient, String) {
+        let client = try await client(for: agent)
+        let info = try await client.newSession(cwd: agent.sessionDirectory(local: workingDirectory.path))
+        remember(info, for: agent.id)
+        for choice in agent.talkOptions {
+            do { try await client.set(choice, session: info.id) } catch {
+                log.error("\(agent.name, privacy: .public) turned down a live-talk option: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        return (client, info.id)
+    }
+
     /// Stops an agent, for a changed command or a Test that should start it fresh.
     func stop(_ agentID: String) {
         starting[agentID]?.cancel()

@@ -263,7 +263,7 @@ struct LabeledField: View {
     }
 }
 
-/// The fast model for drafts and the full one for tasks, filled from what the agent reported the last time it ran.
+/// The fast model for drafts, the full one for tasks, and the quick one for live talks, filled from what the agent reported the last time it ran.
 struct ModelMenus: View {
     let agent: AgentConnection
     let catalog: SessionInfo?
@@ -287,6 +287,14 @@ struct ModelMenus: View {
                 }
                 picker("Tasks use", models, current: Self.value(agent.taskOptions, model?.id), usesConfig: model != nil, defaultTitle: "Its own default") { choice in
                     update { $0.taskOptions = Self.replace($0.taskOptions, id: model?.id, with: choice, usesConfig: model != nil) }
+                }
+                picker("Live talk uses", models, current: Self.value(agent.talkOptions, model?.id), usesConfig: model != nil, defaultTitle: "Its own default") { choice in
+                    update { $0.talkOptions = Self.replace($0.talkOptions, id: model?.id, with: choice, usesConfig: model != nil) }
+                }
+                if let effort {
+                    picker("Talk effort", effort.choices, current: Self.value(agent.talkOptions, effort.id), usesConfig: true, defaultTitle: "Its own default") { choice in
+                        update { $0.talkOptions = Self.replace($0.talkOptions, id: effort.id, with: choice, usesConfig: true) }
+                    }
                 }
             }
         }

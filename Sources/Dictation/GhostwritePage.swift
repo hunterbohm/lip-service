@@ -36,6 +36,8 @@ struct GhostwritePage: View {
                         ListRow { voiceRow(settings.agents.voiceNotes) }
                     }
                     .padding(.top, 16)
+                    LiveTalkSection(settings: settings, preferences: preferences)
+                        .padding(.top, 26)
                 } else {
                     EmptyTile { services.openSetup(.ghostwrite) }
                 }
@@ -213,5 +215,101 @@ private struct EmptyTile: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 16)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.tile))
+    }
+}
+
+/// Live talk: double-tap Left Control to talk with an agent out loud, and which agent and voice.
+private struct LiveTalkSection: View {
+    let settings: DictationCore.Settings
+    let preferences: Preferences
+    @State private var serverURL = ""
+    @State private var serverVoice = ""
+
+    private var talk: LiveTalkSettings { settings.liveTalk }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Live talk").font(.system(size: 15, weight: .semibold))
+            Text("Double-tap Left Control and talk with your agent out loud. It answers in a voice made on this Mac. "
+                 + "Double-tap again, say goodbye, or stay quiet for two minutes to end.")
+                .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+            if let clash = LiveTalkKey.conflict(with: settings.captureKeys), talk.enabled {
+                Text("Live talk is off while \(clash) is Left Control alone. Pick another key for it to talk.")
+                    .font(.system(size: 13)).foregroundStyle(Theme.amber).padding(.top, 10)
+            }
+            RowList {
+                ListRow(divider: false) {
+                    Text("Double-tap Left Control to talk").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
+                    SquareCheck(isOn: preferences.binding(\.liveTalk.enabled))
+                }
+                if settings.agents.agents.count > 1 {
+                    ListRow {
+                        Text("Talk with").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
+                        Picker("Talk with", selection: Binding(get: { talk.agentID ?? "" },
+                                                               set: { id in preferences.change { $0.liveTalk.agentID = id.isEmpty ? nil : id } })) {
+                            Text("The default agent").tag("")
+                            ForEach(settings.agents.agents) { Text($0.name).tag($0.id) }
+                        }
+                        .labelsHidden().fixedSize()
+                    }
+                }
+                ListRow {
+                    Text("Voice").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
+                    Picker("Voice", selection: Binding(get: { voiceTag }, set: { pickVoice($0) })) {
+                        ForEach(OnMacVoice.offered) { Text($0.title).tag($0.id) }
+                        if case .onMac(let voice) = talk.voice, !OnMacVoice.offered.contains(voice) { Text(voice.title).tag(voice.id) }
+                        Divider()
+                        Text("A voice server").tag("server")
+                    }
+                    .labelsHidden().fixedSize()
+                }
+                if case .server = talk.voice {
+                    ListRow {
+                        VStack(alignment: .leading, spacing: 8) {
+                            LabeledField(title: "Server", text: $serverURL, prompt: "http://192.168.1.20:8000",
+                                         help: "Lip Service sends POST /speak with {text, voice, format: \"wav\"} and plays the WAV it gets back.")
+                            LabeledField(title: "Voice name", text: $serverVoice, prompt: "Optional")
+                            HStack {
+                                Spacer()
+                                Button("Save") { saveServer() }.buttonStyle(DarkButtonStyle())
+                                    .disabled(TalkVoiceChoice.speakURL(serverURL) == nil)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.top, 12)
+            Text("The first talk downloads the voice, about 90 MB, from Hugging Face. What you say and what the agent says stay on this Mac, "
+                 + "except what goes to the agent itself and, if you pick one, the voice server.")
+                .font(.system(size: 12)).foregroundStyle(Theme.tertiary).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+        }
+        .onAppear(perform: loadServer)
+        .onChange(of: talk.voice) { loadServer() }
+    }
+
+    private var voiceTag: String {
+        switch talk.voice {
+        case .onMac(let voice): voice.id
+        case .server: "server"
+        }
+    }
+
+    private func pickVoice(_ tag: String) {
+        if tag == "server" {
+            guard case .onMac = talk.voice else { return }
+            return preferences.change { $0.liveTalk.voice = .server(url: "", voice: "") }
+        }
+        guard let voice = (OnMacVoice.offered + [OnMacVoice.standard]).first(where: { $0.id == tag }) else { return }
+        preferences.change { $0.liveTalk.voice = .onMac(voice) }
+    }
+
+    private func loadServer() {
+        guard case .server(let url, let voice) = talk.voice else { return }
+        (serverURL, serverVoice) = (url, voice)
+    }
+
+    private func saveServer() {
+        let url = serverURL.trimmingCharacters(in: .whitespaces), voice = serverVoice.trimmingCharacters(in: .whitespaces)
+        preferences.change { $0.liveTalk.voice = .server(url: url, voice: voice) }
     }
 }
