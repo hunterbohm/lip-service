@@ -603,17 +603,16 @@ private struct Print: View {
 }
 
 /// The glow around the capsule, drawn in the halo panel, which reaches `BarStyle.haloMargin` past the capsule on every
-/// side: a soft blue haze, a blue rim just outside the outline, and a bright glimmer running around the rim. The rim
-/// and haze brighten with the voice. It fades in while listening and out while the words are finished. With Reduce
-/// Motion the rim stays still and evenly lit, with no glimmer.
+/// side: a blurred halo and a soft rim in shades of blue that turn slowly around the capsule, and a bright beam that
+/// runs around the rim. All three brighten with the voice. It fades in while listening and out while the words are
+/// finished. With Reduce Motion the rim and halo stay still, with no beam.
 private struct HaloView: View {
     let meter: VoiceMeter
     let listening: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var aura = Eased()
 
-    private static let blue = Color(red: HaloGlow.color.red, green: HaloGlow.color.green, blue: HaloGlow.color.blue)
-    private static let glimmer = Color(red: HaloGlow.glimmerColor.red, green: HaloGlow.glimmerColor.green, blue: HaloGlow.glimmerColor.blue)
+    private static let blues = Gradient(colors: (HaloGlow.rimColors + [HaloGlow.rimColors[0]]).map { Color(red: $0.red, green: $0.green, blue: $0.blue) })
 
     var body: some View {
         Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
@@ -629,23 +628,40 @@ private struct HaloView: View {
         let capsule = CGRect(x: margin, y: margin, width: size.width - 2 * margin, height: size.height - 2 * margin)
         let ring = capsule.insetBy(dx: -rim / 2, dy: -rim / 2)
         let rimPath = Path(roundedRect: ring, cornerRadius: ring.height / 2)
+        let haloRing = capsule.insetBy(dx: -3, dy: -3)
         let light = reduceMotion ? HaloGlow.restingLight : HaloGlow.light(glow: meter.reading(at: time).glow(delay: 0))
+        let blues = GraphicsContext.Shading.conicGradient(Self.blues, center: CGPoint(x: capsule.midX, y: capsule.midY),
+                                                          angle: .radians(reduceMotion ? 0 : HaloGlow.turn(at: time)))
 
-        var haze = context
-        haze.addFilter(.blur(radius: HaloGlow.hazeRadius(light: light)))
-        haze.fill(Path(roundedRect: capsule, cornerRadius: capsule.height / 2), with: .color(Self.blue.opacity(HaloGlow.hazeOpacity(light: light) * fade)))
+        var halo = context
+        halo.opacity = HaloGlow.haloOpacity(light: light) * fade
+        halo.addFilter(.blur(radius: HaloGlow.haloRadius(light: light)))
+        halo.stroke(Path(roundedRect: haloRing, cornerRadius: haloRing.height / 2), with: blues, lineWidth: 10)
 
-        context.stroke(rimPath, with: .color(Self.blue.opacity(HaloGlow.rimOpacity(light: light) * fade)), lineWidth: rim)
+        let rimOpacity = HaloGlow.rimOpacity(light: light) * fade
+        var feather = context
+        feather.opacity = rimOpacity * 0.7
+        feather.addFilter(.blur(radius: 2.5))
+        feather.stroke(rimPath, with: blues, lineWidth: rim * 2.2)
+        var core = context
+        core.opacity = rimOpacity
+        core.addFilter(.blur(radius: 0.8))
+        core.stroke(rimPath, with: blues, lineWidth: rim)
         guard !reduceMotion else { return }
 
         let perimeter = HaloGlow.perimeter(capsuleWidth: capsule.width, capsuleHeight: capsule.height)
+        let beamOpacity = HaloGlow.beamOpacity(light: light) * fade
         var bloom = context
-        bloom.addFilter(.blur(radius: 3))
-        for slice in HaloGlow.glimmer(at: time, perimeter: perimeter) {
+        bloom.opacity = 0.9
+        bloom.addFilter(.blur(radius: 5))
+        var beam = context
+        beam.addFilter(.blur(radius: 0.7))
+        for slice in HaloGlow.beam(at: time, perimeter: perimeter) {
             let piece = rimPath.trimmedPath(from: slice.from, to: slice.to)
-            let opacity = slice.light * (0.75 + 0.25 * light) * fade
-            bloom.stroke(piece, with: .color(Self.glimmer.opacity(opacity * 0.55)), style: StrokeStyle(lineWidth: rim * 2))
-            context.stroke(piece, with: .color(Self.glimmer.opacity(opacity)), style: StrokeStyle(lineWidth: rim))
+            let rgb = HaloGlow.beamColor(along: slice.along)
+            let color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue).opacity(slice.light * beamOpacity)
+            bloom.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim * 3, lineCap: .round))
+            beam.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim, lineCap: .round))
         }
     }
 }
