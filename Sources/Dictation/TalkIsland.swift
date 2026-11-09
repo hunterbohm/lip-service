@@ -270,6 +270,7 @@ private struct IslandView: View {
 
     var body: some View {
         let open = model.open, screen = model.screen, step = model.compactStep
+        let rim = TalkIsland.edgeColor(TalkIsland.mood(bar.phase)), light = Color(red: rim.red, green: rim.green, blue: rim.blue)
         VStack(spacing: 0) {
             header(open: open)
             if open {
@@ -283,9 +284,9 @@ private struct IslandView: View {
         .padding(.horizontal, screen.hasNotch ? CGFloat(TalkIsland.earCurve) : 0)
         .background { shape(open: open).fill(.black) }
         .clipShape(shape(open: open))
-        .overlay { IslandEdge(shape: shape(open: open), notch: screen.hasNotch) }
-        // A faint light halo lifts it off a black window; the dark shadow lifts it off a light one.
-        .background { shape(open: open).fill(.black).shadow(color: .white.opacity(open ? 0.09 : 0.07), radius: open ? 14 : 8) }
+        .overlay { IslandEdge(shape: shape(open: open), notch: screen.hasNotch, light: light) }
+        // A glow in the rim's colour lifts it off a black window; the dark shadow lifts it off a light one.
+        .background { shape(open: open).fill(.black).shadow(color: light.opacity(TalkIsland.glowOpacity), radius: CGFloat(TalkIsland.glowReach)) }
         .shadow(color: .black.opacity(open ? 0.5 : 0.3), radius: open ? 22 : 10, y: open ? 10 : 4)
         .scaleEffect(model.visible ? 1 : (screen.hasNotch ? 0.55 : 0.7), anchor: .top)
         .opacity(model.visible ? 1 : 0)
@@ -333,7 +334,7 @@ private struct IslandView: View {
                         .transition(.opacity)
                 }
             }
-            .padding(.leading, open ? 18 : 10)
+            .padding(.leading, open ? 18 : (screen.hasNotch ? 10 : 12))
             .frame(width: side, alignment: .leading)
 
             Group {
@@ -341,8 +342,8 @@ private struct IslandView: View {
                     StepChip(model: model, step: step)
                 } else if !screen.hasNotch && !open {
                     Text(TalkIsland.headline(bar))
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.8))
                         .lineLimit(1)
                         .contentTransition(.opacity)
                 } else {
@@ -360,7 +361,7 @@ private struct IslandView: View {
                     EarView(model: model, ear: TalkIsland.ear(bar.phase))
                 }
             }
-            .padding(.trailing, open ? 20 : 14)
+            .padding(.trailing, open ? 20 : (screen.hasNotch ? 14 : 18))
             .frame(width: side, alignment: .trailing)
         }
         .frame(height: CGFloat(screen.barHeight))
@@ -418,7 +419,11 @@ private struct IslandView: View {
                 .transition(.opacity.combined(with: .offset(y: 6)))
             }
             if model.hovering && bar.phase != .ringing {
-                HStack {
+                HStack(spacing: 12) {
+                    Text(TalkIsland.endHint)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
                     Spacer()
                     EndButton { model.onEnd() }
                 }
@@ -480,16 +485,18 @@ private struct IslandShape: Shape {
     }
 }
 
-/// The island's edge, so it reads on a black window: a hairline that is brightest along the top and fades down the
-/// sides. Under a notch the top edge is the screen's, so the line starts below it.
+/// The island's edge, so it reads on a black window: a rim of light in the mood's colour, brightest along the top.
+/// Under a notch the top edge is the screen's, so the line starts below it.
 private struct IslandEdge: View {
     let shape: IslandShape
     let notch: Bool
+    let light: Color
 
     var body: some View {
         shape
-            .stroke(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.1), .white.opacity(0.16)],
-                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            // Half of a stroke falls outside the shape and is clipped away, so it is drawn twice as wide.
+            .stroke(LinearGradient(colors: [light.opacity(TalkIsland.edgeBrightest), light.opacity(TalkIsland.edgeFaintest)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 2 * CGFloat(TalkIsland.edgeWidth))
             .clipShape(shape)
             .mask {
                 VStack(spacing: 0) {

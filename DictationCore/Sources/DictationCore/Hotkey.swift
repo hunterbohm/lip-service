@@ -246,9 +246,14 @@ public struct HotkeyTiming: Equatable, Sendable {
 public enum CaptureCommand: Equatable, Sendable { case start, cancel, finish }
 
 /// The sound for one step of the machine. Only a bar the user saw makes a sound, so a fn chord that ends before
-/// `barDelay` stays silent.
-public enum Cue: Equatable, Sendable {
+/// `barDelay` stays silent. A live talk has its own two, so the ear tells a talk from a dictation.
+public enum Cue: String, CaseIterable, Equatable, Sendable {
     case start, stop, cancel
+    case talkStart = "talk-start"
+    case talkEnd = "talk-end"
+
+    /// The cue's file in the app's resources, without `.wav`.
+    public var file: String { rawValue }
 
     public static func after(_ commands: [CaptureCommand], wasListening: Bool, isListening: Bool) -> Cue? {
         if commands.contains(.finish), wasListening { return .stop }

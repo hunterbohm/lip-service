@@ -484,11 +484,42 @@ import Testing
 
     @Test func aTalkOwnsTheBar() {
         let talk = TalkBar(agent: hermes, phase: .listening)
-        let state = BarState.derive(hotkey: .idle, words: "", pending: 0, engine: .ready(boosting: .off), notice: .talkStarted(agent: "Hermes"),
+        let state = BarState.derive(hotkey: .idle, words: "", pending: 0, engine: .ready(boosting: .off), notice: nil,
                                     showsIdle: true, talk: talk)
         #expect(state.body == .talk(talk))
-        #expect(state.toast == .talkStarted(agent: "Hermes"))
-        #expect(BarNotice.talkStarted(agent: "Hermes").detail == "To end, double-tap Left Control or say goodbye.")
+        // Starting a talk pops nothing up under the island: how to end it is inside, beside the button that ends it.
+        #expect(state.toast == nil)
+        #expect(TalkIsland.endHint == "Double-tap Left Control or say goodbye to end")
+    }
+
+    @Test func theRimStandsOutOnABlackWindow() {
+        let moods: [TalkIsland.Mood] = [.connecting, .you, .thinking, .speaking, .ringing]
+        for mood in moods {
+            // Even where it is faintest, an edge needs a contrast of 3 against black to be seen.
+            #expect(TalkIsland.edgeContrast(mood) >= 3)
+            #expect(TalkIsland.edgeContrast(mood, opacity: TalkIsland.edgeBrightest) > TalkIsland.edgeContrast(mood))
+        }
+        // The rim takes the mood's colour: bluer while you talk, warmer while the agent does.
+        #expect(TalkIsland.edgeColor(.you).blue > TalkIsland.edgeColor(.you).red)
+        #expect(TalkIsland.edgeColor(.speaking).red > TalkIsland.edgeColor(.speaking).blue)
+        #expect(TalkIsland.edgeColor(.you).red != TalkIsland.edgeColor(.thinking).red)
+    }
+
+    @Test func aTalkSoundsUnlikeADictation() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let build = try String(contentsOf: root.appending(path: "scripts/build-app.sh"), encoding: .utf8)
+        var sounds: [Cue: Data] = [:]
+        for cue in Cue.allCases {
+            sounds[cue] = try Data(contentsOf: root.appending(path: "Resources/\(cue.file).wav"))
+            // A sound the build leaves out of the app is silence.
+            #expect(build.contains(" \(cue.file).wav "))
+        }
+        #expect(Set(sounds.values).count == Cue.allCases.count)
+        #expect(Cue.talkStart.file == "talk-start" && Cue.talkEnd.file == "talk-end")
+        // The fn key still makes a dictation's sounds, never a talk's.
+        #expect(Cue.after([.start], wasListening: false, isListening: true) == .start)
+        #expect(Cue.after([.finish], wasListening: true, isListening: false) == .stop)
     }
 
     @Test func theIslandSaysWhatIsHappening() {
@@ -514,7 +545,9 @@ import Testing
     @Test func theIslandFitsTheNotch() {
         let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
         #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 54)
-        #expect(TalkIsland.compactWidth(.plain) == 104 + 2 * 52)
+        // Floating, it is a little bigger than the bar a dictation shows, which is 220 by 40.
+        #expect(TalkIsland.compactWidth(.plain) == 132 + 2 * 62)
+        #expect(TalkIsland.compactWidth(.plain) > 220 && TalkIsland.Screen.plain.barHeight > 40)
         // The globe fits the header with room to float, under a notch too.
         for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 2) }
         #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))

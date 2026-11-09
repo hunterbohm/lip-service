@@ -370,7 +370,6 @@ enum TalkEnd: Equatable {
             if connected { transcribe(utterance) } else { waitingTurn = utterance }
         case .idleWarning:
             bar.endingSoon = true
-            onNotice?(.talkEndingSoon(seconds: Int(ear.timing.idleEnd - ear.timing.idleWarning)))
         case .idleEnded:
             end(.quiet)
         }

@@ -18,8 +18,8 @@ public enum TalkIsland {
             (self.hasNotch, self.notchWidth, self.barHeight) = (hasNotch, notchWidth, barHeight)
         }
 
-        /// A screen without a notch: the island floats, as tall as a menu bar.
-        public static let plain = Screen(hasNotch: false, notchWidth: 0, barHeight: 38)
+        /// A screen without a notch: the island floats, a little bigger than the bar a dictation shows.
+        public static let plain = Screen(hasNotch: false, notchWidth: 0, barHeight: 44)
     }
 
     /// How far the island sits below the top of a screen without a notch, or below another app's bar.
@@ -58,9 +58,9 @@ public enum TalkIsland {
 
     /// Each ear's width: the room for the globe on the left and the voice on the right. Around a notch, a step the
     /// agent is on widens both, for its app's icon and a word or two on the right and the time on the left.
-    public static func earWidth(_ screen: Screen, step: Bool = false) -> Double { screen.hasNotch ? (step ? 132 : 54) : 52 }
+    public static func earWidth(_ screen: Screen, step: Bool = false) -> Double { screen.hasNotch ? (step ? 132 : 54) : 62 }
     /// The width between the ears: the notch, or room for a word of status, or for a step's icon and a word or two.
-    public static func centerWidth(_ screen: Screen, step: Bool = false) -> Double { screen.hasNotch ? screen.notchWidth : (step ? 172 : 104) }
+    public static func centerWidth(_ screen: Screen, step: Bool = false) -> Double { screen.hasNotch ? screen.notchWidth : (step ? 196 : 132) }
     public static func compactWidth(_ screen: Screen, step: Bool = false) -> Double {
         centerWidth(screen, step: step) + 2 * earWidth(screen, step: step)
     }
@@ -129,6 +129,37 @@ public enum TalkIsland {
         }
     }
 
+    /// The island's rim: the globe's leading colour, lightened halfway to white so it reads as light. It turns with the
+    /// mood, so the edge says who has the turn even at a glance.
+    public static func edgeColor(_ mood: Mood) -> RGB {
+        let lead = orbColors(mood)[0]
+        return ((lead.red + 1) / 2, (lead.green + 1) / 2, (lead.blue + 1) / 2)
+    }
+
+    /// How solid the rim is along the top, where it is brightest, and down the sides, where it is faintest.
+    public static let edgeBrightest = 0.75
+    public static let edgeFaintest = 0.5
+    /// The rim's width in points.
+    public static let edgeWidth = 1.0
+    /// How solid the glow around the island is, in the rim's colour, and how far it reaches in points.
+    public static let glowOpacity = 0.4
+    public static let glowReach = 9.0
+
+    /// How much the rim stands out from a black window, as a contrast ratio, where it is `opacity` solid. An edge needs
+    /// 3 to be seen (WCAG 1.4.11); a white hairline a quarter solid, which the island had, is under 2.
+    public static func edgeContrast(_ mood: Mood, opacity: Double = edgeFaintest) -> Double {
+        let color = edgeColor(mood)
+        func linear(_ channel: Double) -> Double {
+            let value = channel * opacity
+            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
+        return (luminance + 0.05) / 0.05
+    }
+
+    /// How to end the talk, beside the button that ends it.
+    public static let endHint = "Double-tap Left Control or say goodbye to end"
+
     /// How fast the globe's colours turn, in radians a second: quick while the agent works, slow while it waits on you.
     public static func orbSpeed(_ mood: Mood) -> Double {
         switch mood {
@@ -145,7 +176,7 @@ public enum TalkIsland {
     }
 
     /// The globe's size in points: as big as the header allows, with room to float.
-    public static func globeSize(_ screen: Screen) -> Double { min(30, screen.barHeight - 6) }
+    public static func globeSize(_ screen: Screen) -> Double { min(34, screen.barHeight - 6) }
 
     /// Dots across the globe, so each is a few pixels: the globe reads as a grid of dots, not a solid ball.
     public static let globeGrid = 11
