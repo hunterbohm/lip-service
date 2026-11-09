@@ -86,8 +86,19 @@ import Foundation
             if let failed = report.failed { row["failed"] = .string(failed) }
             print(String(decoding: JSONValue.object(row).data(), as: UTF8.self))
         }
+        var lastSteps: [TalkStep] = []
+        talk.onBar = { bar in
+            // What the island would show of the agent's work: each step with its app, and whether it failed.
+            let steps = bar.trail + (bar.step.map { [$0] } ?? [])
+            guard !steps.isEmpty, steps != lastSteps else { return }
+            lastSteps = steps
+            let line = steps.map { "\($0.line) [\($0.app?.rawValue ?? "-")\($0.failed ? ", failed" : "")]" }.joined(separator: " > ")
+            FileHandle.standardError.write(Data("steps: \(line)\n".utf8))
+        }
         talk.onCard = { [weak talk] event in
             if case .show(let card) = event { FileHandle.standardError.write(Data("card: \(card)\n".utf8)) }
+            if case .result(let card) = event { FileHandle.standardError.write(Data("result: \(card)\n".utf8)) }
+            if case .callBackPromised = event { FileHandle.standardError.write(Data("call back promised\n".utf8)) }
             // A question about a tool waits for your answer, so the next clip is it, once the question has been said.
             if case .permission(_, let phrase, _, let byVoice) = event {
                 FileHandle.standardError.write(Data("asked: \(phrase) (\(byVoice ? "by voice" : "click only"))\n".utf8))

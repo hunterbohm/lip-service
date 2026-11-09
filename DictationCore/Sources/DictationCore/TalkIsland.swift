@@ -56,22 +56,50 @@ public enum TalkIsland {
         return Placement(screen: .plain, drop: max(covered, notch) + floatingGap)
     }
 
-    /// Each ear's width: the room for the globe on the left and the voice on the right.
-    public static func earWidth(_ screen: Screen) -> Double { screen.hasNotch ? 54 : 52 }
-    /// The width between the ears: the notch, or room for a word of status.
-    public static func centerWidth(_ screen: Screen) -> Double { screen.hasNotch ? screen.notchWidth : 104 }
-    public static func compactWidth(_ screen: Screen) -> Double { centerWidth(screen) + 2 * earWidth(screen) }
+    /// Each ear's width: the room for the globe on the left and the voice on the right. Around a notch, a step the
+    /// agent is on widens both, for its app's icon and a word or two on the right and the time on the left.
+    public static func earWidth(_ screen: Screen, step: Bool = false) -> Double { screen.hasNotch ? (step ? 132 : 54) : 52 }
+    /// The width between the ears: the notch, or room for a word of status, or for a step's icon and a word or two.
+    public static func centerWidth(_ screen: Screen, step: Bool = false) -> Double { screen.hasNotch ? screen.notchWidth : (step ? 172 : 104) }
+    public static func compactWidth(_ screen: Screen, step: Bool = false) -> Double {
+        centerWidth(screen, step: step) + 2 * earWidth(screen, step: step)
+    }
     public static func openWidth(_ screen: Screen) -> Double { min(widest, max(compactWidth(screen) + 170, 500)) }
 
-    /// Whether the island is open for the talk now, with the pointer over it or not.
-    public static func isOpen(_ bar: TalkBar, hovering: Bool) -> Bool {
+    /// How long the island stays open on one step, or on plain thinking, before it folds down to its closed look, which
+    /// then carries the step's icon and a word or two. A new step opens it again.
+    public static let settleAfter = 20.0
+
+    /// Whether the agent has been on the same thing long enough for the island to fold down. A question it waits on you
+    /// for, which is an activity without a step, never folds.
+    public static func isSettled(_ bar: TalkBar, at now: Instant) -> Bool {
+        guard bar.phase == .thinking, let since = bar.since, bar.step != nil || bar.activity == nil else { return false }
+        return now - since >= settleAfter
+    }
+
+    /// Whether the closed island shows the step the agent is on.
+    public static func showsStep(_ bar: TalkBar) -> Bool { bar.phase == .thinking && bar.step != nil }
+
+    /// Whether the island is open for the talk now, with the pointer over it or not. `settled` folds a long wait down.
+    public static func isOpen(_ bar: TalkBar, hovering: Bool, settled: Bool = false) -> Bool {
         if hovering || bar.endingSoon { return true }
         switch bar.phase {
-        case .thinking: return !bar.line.isEmpty || bar.activity != nil
+        case .thinking: return !settled && (!bar.line.isEmpty || bar.activity != nil)
         case .speaking: return !bar.line.isEmpty
         case .ringing: return true
         case .connecting, .listening, .hearing: return false
         }
+    }
+
+    /// The timer shows once a step has run this long, in seconds, so quick steps stay quiet.
+    public static let timerFrom = 5.0
+
+    /// "0:42", "2:14", "1:02:05".
+    public static func elapsed(_ seconds: Double) -> String {
+        let total = Int(max(0, seconds))
+        let (hours, minutes, rest) = (total / 3600, total / 60 % 60, total % 60)
+        let tail = (rest < 10 ? "0" : "") + String(rest)
+        return hours > 0 ? "\(hours):\(minutes < 10 ? "0" : "")\(minutes):\(tail)" : "\(minutes):\(tail)"
     }
 
     /// What the globe's colours say: blues while you can talk, violet and pink while the agent thinks, amber while it
@@ -191,10 +219,36 @@ public enum TalkIsland {
 
     /// The longest line the island shows as a notice, in characters; anything longer stays a card.
     public static let noticeLongest = 240
-    /// How many notices the island keeps, newest first, how long a new one holds the island open, and how long one stays.
+    /// How many lines the island keeps, newest first.
     public static let noticeMost = 2
-    public static let noticeOpenFor = 6.0
-    public static let noticeLifetime = 120.0
+
+    /// How long a new notice holds the island open, in seconds: a line long enough to read, a result long enough to
+    /// take in, and one with buttons long enough to decide.
+    public static func noticeHold(_ content: IslandNotice.Content) -> Double {
+        switch content {
+        case .text: 6
+        case .callBack: 8
+        case .rich(let card): card.actions.isEmpty ? 14 : 30
+        }
+    }
+
+    /// How long a notice stays, to be read again under the pointer.
+    public static func noticeLife(_ content: IslandNotice.Content) -> Double {
+        if case .rich = content { 600 } else { 120 }
+    }
+
+    /// The island's notices with a new one added, newest first. One with the same key takes the old one's place, so
+    /// flights that come in again update the card they are on. One result is kept at a time, with one line beside it,
+    /// since a result takes most of the island; without a result, `noticeMost` lines.
+    public static func adding(_ content: IslandNotice.Content, to notices: [IslandNotice], at now: Instant) -> [IslandNotice] {
+        let new = IslandNotice(content: content, added: now)
+        var all = notices.filter { now - $0.added < noticeLife($0.content) && $0.key != new.key && !(new.isRich && $0.isRich) }
+        all.insert(new, at: 0)
+        let lines = all.contains(where: \.isRich) ? 1 : noticeMost
+        var kept: [IslandNotice] = []
+        for notice in all where notice.isRich || kept.filter({ !$0.isRich }).count < lines { kept.append(notice) }
+        return kept
+    }
 
     /// What the agent put on screen, as a notice inside the island, when it is a short line such as what it just did:
     /// "PP-3 · ProfitPilot outreach · due Nov 9". Links, images, visuals, code and long text stay cards. Nil for those.

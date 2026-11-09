@@ -16,37 +16,49 @@ import SwiftUI
     var drop = TalkIsland.floatingGap
     /// The island's drawn size, reported by the view, so clicks beside it pass through and cards sit under it.
     var islandSize: CGSize = .zero
-    /// Short lines the agent put on screen, such as what it just did, newest first. The island opens to show a new one for
-    /// a few seconds, and again under the pointer.
+    /// What the agent put on screen that the island keeps: a line of what it just did, its word that it will call back,
+    /// or a result such as flights, newest first. The island opens to show a new one for a while, and again under the
+    /// pointer.
     var notices: [IslandNotice] = []
     var noticeOpen = false
-    /// Set by --render-bar: the time every view draws for.
+    /// The agent has been on one step long enough that the island folded down; the step shows beside the notch.
+    var settled = false
+    /// Set by --render-bar: the time every view draws for, and the moment its timers read.
     var frozenAt: Double?
+    var frozenNow: Instant?
     /// The level of whoever is talking, 0 to 1. Read every frame, not observed.
     @ObservationIgnored var level: () -> Double = { 0 }
     @ObservationIgnored var onEnd: () -> Void = {}
     /// Answer and Decline on a call back that is ringing.
     @ObservationIgnored var onAnswer: () -> Void = {}
     @ObservationIgnored var onDecline: () -> Void = {}
+    /// A button on a result was pressed: its label, to send as your next words.
+    @ObservationIgnored var onAction: (String) -> Void = { _ in }
     /// The island's drawn size changed.
     @ObservationIgnored var sizeChanged: (() -> Void)?
 
-    var open: Bool { visible && bar.map { TalkIsland.isOpen($0, hovering: hovering) || showsNotices } ?? false }
+    var open: Bool { visible && bar.map { TalkIsland.isOpen($0, hovering: hovering, settled: settled) || showsNotices } ?? false }
     /// Whether the notices are on the island now: a new one just came, or the pointer is over it.
     var showsNotices: Bool { !notices.isEmpty && (noticeOpen || hovering) && bar?.phase != .ringing }
-}
+    /// Something waits to be read again under the pointer, which a dot on the globe says.
+    var keepsNotices: Bool { !notices.isEmpty && !showsNotices && bar?.phase != .ringing }
+    /// The step the closed island carries beside the notch.
+    var compactStep: TalkStep? { open ? nil : bar.flatMap { TalkIsland.showsStep($0) ? $0.step : nil } }
 
-struct IslandNotice: Identifiable, Equatable {
-    let id = UUID()
-    let text: String
-    let added: Instant
+    /// Presses `label` on the result `key`. A result's buttons work once.
+    func choose(_ label: String, on key: String) {
+        guard let index = notices.firstIndex(where: { $0.key == key }), notices[index].chosen == nil else { return }
+        notices[index].chosen = label
+        onAction(label)
+    }
 }
 
 /// The island a live talk shows at the top of the screen, in a see-through panel across the top centre that never takes
 /// focus and lets clicks through everywhere except over the island. While a talk runs the panel checks the pointer 30
 /// times a second, so the island opens under it and its button can be clicked.
 @MainActor final class TalkIslandPanel {
-    static let size = NSSize(width: 680, height: 360)
+    /// Tall enough for the steps and a card of flights under them.
+    static let size = NSSize(width: 680, height: 660)
     let model = TalkIslandModel()
     let window: NSPanel
     /// The island's place on screen changed: it opened, closed, or moved to another screen.
@@ -55,6 +67,7 @@ struct IslandNotice: Identifiable, Equatable {
     private var hiding: Task<Void, Never>?
     private var noticeClosing: Task<Void, Never>?
     private var noticeExpiry: Task<Void, Never>?
+    private var settling: Task<Void, Never>?
     /// Placed on a stand-in screen by --render-bar: shown there, with no pointer watching.
     private var placedByHand = false
 
@@ -97,21 +110,45 @@ struct IslandNotice: Identifiable, Equatable {
         // Also after a hide that a new talk cut short, which had stopped the watching.
         if !placedByHand { watchPointer() }
         model.bar = bar
+        settle()
         if !model.visible { DispatchQueue.main.async { self.model.visible = true } }
     }
 
-    /// Takes what the agent put on screen when it is a short line, as a notice inside the island. False for anything the
-    /// cards show instead.
+    /// Folds the island down once the agent has been on one step for `settleAfter`, and opens it again for the next.
+    private func settle() {
+        settling?.cancel()
+        settling = nil
+        let now = model.frozenNow ?? .now
+        let settled = model.bar.map { TalkIsland.isSettled($0, at: now) } ?? false
+        if model.settled != settled { model.settled = settled }
+        guard !settled, let bar = model.bar, bar.phase == .thinking, let since = bar.since, model.frozenNow == nil else { return }
+        settling = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0.1, since + TalkIsland.settleAfter - now)))
+            guard let self, !Task.isCancelled else { return }
+            settle()
+        }
+    }
+
+    /// Takes what the agent put on screen when the island shows it itself: a short line, a result such as flights, or
+    /// its word that it will call back. False for anything the cards show instead.
     func take(_ event: TalkCardEvent) -> Bool {
-        guard case .show(let card) = event, let text = TalkIsland.notice(card) else { return false }
-        let now = Instant.now
-        var kept = model.notices.filter { now - $0.added < TalkIsland.noticeLifetime && $0.text != text }
-        kept.insert(IslandNotice(text: text, added: now), at: 0)
-        model.notices = Array(kept.prefix(TalkIsland.noticeMost))
+        let content: IslandNotice.Content
+        switch event {
+        case .show(let card):
+            guard let text = TalkIsland.notice(card) else { return false }
+            content = .text(text)
+        case .result(let card): content = .rich(card)
+        case .callBackPromised(let agent): content = .callBack(agent: agent)
+        case .permission, .permissionAnswered: return false
+        }
+        let now = model.frozenNow ?? .now
+        model.notices = TalkIsland.adding(content, to: model.notices, at: now)
         model.noticeOpen = true
         noticeClosing?.cancel()
+        // Open until the last of them has had its time.
+        let until = model.notices.map { $0.added + TalkIsland.noticeHold($0.content) }.max() ?? now
         noticeClosing = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(TalkIsland.noticeOpenFor))
+            try? await Task.sleep(for: .seconds(max(0.5, until - now)))
             guard let self, !Task.isCancelled else { return }
             model.noticeOpen = false
         }
@@ -119,14 +156,14 @@ struct IslandNotice: Identifiable, Equatable {
         return true
     }
 
-    /// Drops notices once they are `noticeLifetime` old, each on time, whether or not another comes.
+    /// Drops each notice once its time is up, whether or not another comes.
     private func expireNotices() {
         noticeExpiry?.cancel()
-        let now = Instant.now
-        model.notices.removeAll { now - $0.added >= TalkIsland.noticeLifetime }
-        guard let oldest = model.notices.map(\.added).min() else { return }
+        let now = model.frozenNow ?? .now
+        model.notices.removeAll { now - $0.added >= TalkIsland.noticeLife($0.content) }
+        guard let first = model.notices.map({ $0.added + TalkIsland.noticeLife($0.content) }).min() else { return }
         noticeExpiry = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(max(0.5, oldest + TalkIsland.noticeLifetime - now)))
+            try? await Task.sleep(for: .seconds(max(0.5, first - now)))
             guard let self, !Task.isCancelled else { return }
             expireNotices()
         }
@@ -169,7 +206,8 @@ struct IslandNotice: Identifiable, Equatable {
             guard let self, !Task.isCancelled else { return }
             // Gone, not just invisible: nothing animates or redraws between talks.
             model.bar = nil
-            (model.notices, model.noticeOpen) = ([], false)
+            (model.notices, model.noticeOpen, model.settled) = ([], false, false)
+            settling?.cancel()
             window.orderOut(nil)
             hiding = nil
         }
@@ -231,7 +269,7 @@ private struct IslandView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let open = model.open, screen = model.screen
+        let open = model.open, screen = model.screen, step = model.compactStep
         VStack(spacing: 0) {
             header(open: open)
             if open {
@@ -241,7 +279,7 @@ private struct IslandView: View {
                         removal: .opacity.animation(.easeOut(duration: 0.12))))
             }
         }
-        .frame(width: CGFloat(open ? TalkIsland.openWidth(screen) : TalkIsland.compactWidth(screen)))
+        .frame(width: CGFloat(open ? TalkIsland.openWidth(screen) : TalkIsland.compactWidth(screen, step: step != nil)))
         .padding(.horizontal, screen.hasNotch ? CGFloat(TalkIsland.earCurve) : 0)
         .background { shape(open: open).fill(.black) }
         .clipShape(shape(open: open))
@@ -253,6 +291,7 @@ private struct IslandView: View {
         .opacity(model.visible ? 1 : 0)
         .animation(reduceMotion ? .easeOut(duration: 0.2) : islandSpring, value: open)
         .animation(reduceMotion ? .easeOut(duration: 0.2) : islandSpring, value: model.visible)
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : islandSpring, value: step?.id)
         .animation(.easeInOut(duration: 0.25), value: bar.phase)
     }
 
@@ -264,11 +303,23 @@ private struct IslandView: View {
     }
 
     private func header(open: Bool) -> some View {
-        let screen = model.screen
-        let side = CGFloat((open ? TalkIsland.openWidth(screen) : TalkIsland.compactWidth(screen)) - TalkIsland.centerWidth(screen)) / 2
+        let screen = model.screen, step = model.compactStep
+        let width = open ? TalkIsland.openWidth(screen) : TalkIsland.compactWidth(screen, step: step != nil)
+        let center = TalkIsland.centerWidth(screen, step: !open && step != nil)
+        let side = CGFloat(width - center) / 2
         return HStack(spacing: 0) {
             HStack(spacing: 8) {
                 Globe(model: model, mood: TalkIsland.mood(bar.phase), size: CGFloat(TalkIsland.globeSize(screen)))
+                    .overlay(alignment: .topTrailing) {
+                        if model.keepsNotices {
+                            Circle().fill(Color(red: 0.3, green: 0.9, blue: 0.5))
+                                .frame(width: 7, height: 7)
+                                .overlay(Circle().strokeBorder(.black, lineWidth: 1.5))
+                                .offset(x: 2, y: -1)
+                                .transition(.scale.combined(with: .opacity))
+                                .accessibilityLabel("Results to read again")
+                        }
+                    }
                 if open {
                     Text(TalkIsland.headline(bar))
                         .font(.system(size: 14, weight: .semibold))
@@ -276,13 +327,19 @@ private struct IslandView: View {
                         .lineLimit(1)
                         .contentTransition(.opacity)
                         .transition(.opacity.combined(with: .offset(x: -6)))
+                } else if step != nil, screen.hasNotch {
+                    // Beside a notch the step takes the right ear, so the time, or the dots until it shows, sit here.
+                    StepTimer(model: model, since: bar.since) { EarView(model: model, ear: .working) }
+                        .transition(.opacity)
                 }
             }
             .padding(.leading, open ? 18 : 10)
             .frame(width: side, alignment: .leading)
 
             Group {
-                if !screen.hasNotch && !open {
+                if let step, !screen.hasNotch {
+                    StepChip(model: model, step: step)
+                } else if !screen.hasNotch && !open {
                     Text(TalkIsland.headline(bar))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.75))
@@ -292,17 +349,27 @@ private struct IslandView: View {
                     Color.clear
                 }
             }
-            .frame(width: CGFloat(TalkIsland.centerWidth(screen)))
+            .frame(width: CGFloat(center))
 
-            EarView(model: model, ear: TalkIsland.ear(bar.phase))
-                .padding(.trailing, open ? 20 : 14)
-                .frame(width: side, alignment: .trailing)
+            Group {
+                if let step, screen.hasNotch {
+                    StepChip(model: model, step: step)
+                } else if step != nil {
+                    StepTimer(model: model, since: bar.since) { EarView(model: model, ear: .working) }
+                } else {
+                    EarView(model: model, ear: TalkIsland.ear(bar.phase))
+                }
+            }
+            .padding(.trailing, open ? 20 : 14)
+            .frame(width: side, alignment: .trailing)
         }
         .frame(height: CGFloat(screen.barHeight))
+        .animation(.easeOut(duration: 0.25), value: model.keepsNotices)
     }
 
     private var details: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let showsResult = model.showsNotices && model.notices.contains(where: \.isRich)
+        return VStack(alignment: .leading, spacing: 10) {
             if bar.phase == .ringing {
                 if !bar.line.isEmpty {
                     Text("About \(bar.line)")
@@ -332,29 +399,22 @@ private struct IslandView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                // The steps sit on top of each other, so one fades out as the next rises in.
-                ZStack(alignment: .leading) {
-                    StepRow(model: model, text: bar.activity ?? "Thinking")
-                        .id(bar.activity ?? "")
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .offset(y: 7)).animation(.easeOut(duration: 0.38).delay(0.08)),
-                            removal: .opacity.combined(with: .offset(y: -5)).animation(.easeIn(duration: 0.26))))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                StepRows(model: model, bar: bar)
             } else if bar.phase == .speaking && !bar.line.isEmpty {
                 Text(bar.line)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(4)
+                    // A result under it needs the room.
+                    .lineLimit(showsResult ? 2 : 4)
                     .fixedSize(horizontal: false, vertical: true)
                     .id(bar.line)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity))
             }
             if model.showsNotices {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(model.notices) { NoticeRow(text: $0.text) }
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(model.notices) { NoticeView(model: model, notice: $0, working: bar.phase == .thinking) }
                 }
-                .padding(.top, TalkIsland.isOpen(bar, hovering: false) ? 4 : 0)
+                .padding(.top, TalkIsland.isOpen(bar, hovering: false, settled: model.settled) ? 4 : 0)
                 .transition(.opacity.combined(with: .offset(y: 6)))
             }
             if model.hovering && bar.phase != .ringing {
@@ -442,7 +502,7 @@ private struct IslandEdge: View {
 }
 
 /// Redraws at most 60 times a second, or once at the time --render-bar froze, or once with Reduce Motion.
-private struct IslandClock<Content: View>: View {
+struct IslandClock<Content: View>: View {
     let model: TalkIslandModel
     @ViewBuilder let content: (Double) -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -495,7 +555,7 @@ private struct Globe: View {
 }
 
 /// The right ear: bars that move with the voice while someone talks, three rising dots while the agent works.
-private struct EarView: View {
+struct EarView: View {
     let model: TalkIslandModel
     let ear: TalkIsland.Ear
 
@@ -520,58 +580,6 @@ private struct EarView: View {
             }
         }
         .frame(height: CGFloat(TalkIsland.barTallest))
-    }
-}
-
-/// What the agent is doing now: a small icon for the kind of step and its line, with a light sweeping across it.
-private struct StepRow: View {
-    let model: TalkIslandModel
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: ToolLine.symbol(text))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.09)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-            IslandClock(model: model) { time in
-                let sweep = (time * 0.7).truncatingRemainder(dividingBy: 1.6) - 0.3
-                let dim = Color.white.opacity(0.45)
-                Text(text)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(1)
-                    .foregroundStyle(LinearGradient(stops: [.init(color: dim, location: sweep - 0.25), .init(color: .white, location: sweep),
-                                                            .init(color: dim, location: sweep + 0.25)],
-                                                    startPoint: .leading, endPoint: .trailing))
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(text)
-    }
-}
-
-/// Something the agent did or found, such as a task it added: a check in the step icon's style, and the line.
-private struct NoticeRow: View {
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color(red: 0.45, green: 0.95, blue: 0.6))
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.3, green: 0.9, blue: 0.5).opacity(0.14)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-            Text(text)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 

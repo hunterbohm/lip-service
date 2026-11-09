@@ -22,6 +22,10 @@ import DictationCore
         /// How deep another app's bar is across the top of the stand-in screen, such as a tiling window manager's, or nil
         /// for none. The island floats below it.
         var topBar: Double?
+        /// The notices a talk put in the island have had their time, so they wait under the pointer.
+        var noticesClosed = false
+        /// A button pressed on the result in the island.
+        var press: String?
     }
 
     private static let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
@@ -95,6 +99,41 @@ import DictationCore
         .talk(TalkBar(agent: hermes, phase: phase, line: line, activity: activity, endingSoon: endingSoon))
     }
 
+    /// The moment every scene's timers read.
+    private static let renderNow = Instant(seconds: 100_000)
+
+    /// The agent at work on `step`, which it has been on for `seconds`, after `trail`.
+    private static func working(_ step: TalkStep, for seconds: Double, after trail: [TalkStep] = [], line: String = "") -> BarState.Body {
+        .talk(TalkBar(agent: hermes, phase: .thinking, line: line, activity: step.line, step: step, trail: trail, since: renderNow - seconds))
+    }
+
+    private static let trail = [
+        TalkStep(line: "Loading media-request skill", id: 1),
+        TalkStep(line: "Checking Gmail", app: .gmail, id: 2),
+        TalkStep(line: "Checking your calendar", app: .calendar, id: 3),
+    ]
+    private static let threadStep = TalkStep(line: "Starting a thread in T3 Code", app: .t3Code, id: 4)
+
+    private static func result(_ json: String) -> TalkCardEvent { .result(RichCard.parse(json)!) }
+
+    private static let flights = """
+        {"type":"flights","from":"AUS","to":"SFO","date":"Fri, Nov 14","note":"1 adult · nonstop","options":[
+        {"airline":"United","depart":"7:05a","arrive":"9:00a","duration":"3h 55m","stops":"Nonstop","price":214,"best":true,"url":"https://www.united.com"},
+        {"airline":"Alaska","depart":"9:40a","arrive":"11:42a","duration":"4h 02m","stops":"Nonstop","price":238},
+        {"airline":"Southwest","depart":"1:15p","arrive":"3:20p","duration":"4h 05m","stops":"Nonstop","price":"$189"}],
+        "actions":["Hold the 7:05","Text me these"]}
+        """
+    private static let flightsSoFar = """
+        {"type":"flights","from":"AUS","to":"SFO","date":"Fri, Nov 14","note":"1 adult · nonstop","options":[
+        {"airline":"United","depart":"7:05a","arrive":"9:00a","duration":"3h 55m","stops":"Nonstop","price":214}]}
+        """
+    private static let rows = """
+        [{"type":"task","id":"PP-3","title":"ProfitPilot outreach","status":"todo","due":"Nov 9","where":"vault","url":"obsidian://open?vault=vault&file=PP-3"},
+        {"type":"event","title":"Design review with Dana","date":"2026-11-12","time":"3:00 PM","where":"Zoom"},
+        {"type":"email","from":"Theo","subject":"Launch video cut","time":"2:14 PM","url":"https://mail.google.com"},
+        {"type":"task","title":"Send the invoice","done":true}]
+        """
+
     private static let chart = """
         <div style="font:600 13px -apple-system;color:#ECEDEE;margin-bottom:8px">Dictations this week</div>
         <svg viewBox="0 0 420 150" width="420" height="150" xmlns="http://www.w3.org/2000/svg">
@@ -154,6 +193,38 @@ import DictationCore
             Scene(name: "70-call-back-ringing", state: BarState(body: talk(.ringing, line: "the flight search")), edge: .top, quiet: true),
             Scene(name: "71-call-back-ringing-notch", state: BarState(body: talk(.ringing, line: "the flight search")), edge: .top, quiet: true,
                   notch: true),
+            Scene(name: "72-talk-steps", state: BarState(body: working(threadStep, for: 2, after: trail, line: "what's left on the media request")),
+                  edge: .top, quiet: true),
+            Scene(name: "73-talk-steps-long", state: BarState(body: working(TalkStep(line: "Running t3-run status", app: .t3Code, id: 5), for: 12, after: [
+                TalkStep(line: "Checking Slack", app: .slack, id: 2), TalkStep(line: "Checking Stripe", app: .stripe, failed: true, id: 3),
+                TalkStep(line: "Searching the web for flight prices", app: .browser, id: 4),
+            ])), edge: .top, quiet: true),
+            Scene(name: "74-talk-step-failed", state: BarState(body: working(TalkStep(line: "Checking Notion", app: .notion, failed: true, id: 2), for: 3,
+                                                                              after: [TalkStep(line: "Reading a note in your vault", app: .obsidian, id: 1)])),
+                  edge: .top, quiet: true),
+            Scene(name: "75-talk-call-back-promised", state: BarState(body: working(threadStep, for: 134, after: Array(trail.suffix(1)))), edge: .top,
+                  quiet: true, talkCards: [.callBackPromised(agent: "Hermes")]),
+            Scene(name: "76-talk-step-closed", state: BarState(body: working(threadStep, for: 134)), edge: .top, quiet: true),
+            Scene(name: "77-talk-step-closed-notch", state: BarState(body: working(threadStep, for: 134)), edge: .top, quiet: true, notch: true),
+            Scene(name: "78-talk-step-closed-notch-bar", state: BarState(body: working(TalkStep(line: "Checking Gmail", app: .gmail, id: 2), for: 31)),
+                  edge: .top, quiet: true, notch: true, topBar: tilerBar),
+            Scene(name: "79-talk-step-closed-quick", state: BarState(body: working(TalkStep(line: "Searching the web for flights", app: .browser, id: 2), for: 21)),
+                  edge: .top, quiet: true, notch: true),
+            Scene(name: "80-talk-flights", state: BarState(body: talk(.speaking, line: "Three nonstops on Friday. The 7:05 on United is the best.")),
+                  edge: .top, settle: 2.2, talkCards: [result(flights)]),
+            Scene(name: "81-talk-flights-coming", state: BarState(body: working(TalkStep(line: "Searching the web for flights", app: .browser, id: 2),
+                                                                                 for: 8, after: Array(trail.prefix(1)))),
+                  edge: .top, quiet: true, settle: 2.2, talkCards: [result(flightsSoFar)]),
+            Scene(name: "82-talk-flights-chosen", state: BarState(body: talk(.thinking, line: "Hold the 7:05")), edge: .top, quiet: true, settle: 2.2,
+                  talkCards: [result(flights)], press: "Hold the 7:05"),
+            Scene(name: "83-talk-flights-notch", state: BarState(body: talk(.speaking, line: "Three nonstops on Friday.")), edge: .top, settle: 2.2,
+                  talkCards: [result(flights)], notch: true),
+            Scene(name: "84-talk-results", state: BarState(body: talk(.speaking, line: "Here's what's on your plate.")), edge: .top, settle: 1.6,
+                  talkCards: [result(rows)]),
+            Scene(name: "85-talk-results-waiting", state: BarState(body: talk(.listening)), edge: .top, quiet: true, talkCards: [result(rows)],
+                  noticesClosed: true),
+            Scene(name: "86-talk-results-waiting-notch", state: BarState(body: talk(.listening)), edge: .top, quiet: true, talkCards: [result(rows)],
+                  notch: true, noticesClosed: true),
         ]
     }
 
@@ -170,7 +241,7 @@ import DictationCore
     private static let short = "Teo Yep, I'll share the latest version in a few minutes"
     private static let long = "Okay so the plan for Friday is to ship the new onboarding flow to everyone, then check the "
         + "Beehiiv numbers on Monday and ask ProfitPilot to draft the follow-up email for the people who signed up late"
-    private static let stage = NSRect(x: -9000, y: -9000, width: 1000, height: 620)
+    private static let stage = NSRect(x: -9000, y: -9000, width: 1000, height: 700)
     private static let scale: CGFloat = 2
 
     private static let scenes: [Scene] = [
@@ -220,6 +291,7 @@ import DictationCore
         let talkCards = TalkCardPanel()
         let island = TalkIslandPanel()
         island.model.frozenAt = frozenAt
+        island.model.frozenNow = renderNow
         island.model.level = { [bar] in bar.meter.reading(at: frozenAt).level(delay: 0) }
         island.onMoved = { [bar] rect in bar.talkAnchor = rect }
         for scene in scenes + agentScenes + talkScenes {
@@ -242,6 +314,8 @@ import DictationCore
             }
             talkCards.closeAll()
             for event in scene.talkCards where !island.take(event) { talkCards.handle(event, agent: hermes, under: (island.islandRect, .top)) }
+            if let press = scene.press, let result = island.model.notices.first(where: \.isRich) { island.model.choose(press, on: result.key) }
+            if scene.noticesClosed { island.model.noticeOpen = false }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
             let shown = bar.visiblePanels + (island.isVisible && scene.state.body.isTalkBody ? [(panel: island.window, shadow: false)] : [])
                 + (cards.isVisible ? [(panel: cards.window, shadow: true)] : [])

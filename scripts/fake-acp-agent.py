@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A stand-in ACP agent for testing Lip Service. Speaks newline-delimited JSON-RPC on stdio.
 
-usage: fake-acp-agent.py [--mode draft|permission|tool|steps|report|echo|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
+usage: fake-acp-agent.py [--mode draft|permission|tool|steps|visuals|report|echo|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
                          [--spawn-child TAG]
                          [--resume] [--load] [--sessions FILE] [--unknown replace|null|error]
 
@@ -9,6 +9,7 @@ draft       streams --reply in a few chunks after --delay
 permission  asks session/request_permission first, then says which option it got
 tool        starts a tool call (a tool_call update) first, then streams --reply
 steps       runs four tools in a row with Hermes's titles, each for --step-time seconds, then streams --reply
+visuals     runs a step that fails and one that sets up a call back, then shows flights as data in its reply
 report      replies with the _meta its session/new carried and the config options set on its sessions, as JSON
 echo        replies "You said: " and the prompt's last line, so a test can see what reached the agent; every prompt is
             also appended to $FAKE_ACP_PROMPTS when that is set
@@ -135,6 +136,22 @@ def prompt(rid, params):
                     "title": title, "kind": kind, "status": status}}})
                 if status == "pending":
                     time.sleep(args.step_time)
+    if args.mode == "visuals":
+        # What the island draws: a step that fails, one that sets up a call back, and flights shown as data.
+        for n, (title, kind, end) in enumerate([("skill_view: travel/flights", "read", "completed"),
+                                                ("terminal: stripe-invoices --unpaid", "execute", "failed"),
+                                                ("terminal: call-me-back run --about 'the flight search' -- sleep 1", "execute", "completed"),
+                                                ("web_search: flights AUS to SFO Friday", "fetch", "completed")]):
+            for status in ("pending", end):
+                send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": session, "update": {
+                    "sessionUpdate": "tool_call" if status == "pending" else "tool_call_update", "toolCallId": f"v{n}",
+                    "title": title, "kind": kind, "status": status}}})
+                if status == "pending":
+                    time.sleep(args.step_time)
+        reply = ('Two nonstops on Friday. <show>{"type":"flights","from":"AUS","to":"SFO","date":"Fri, Nov 14","options":['
+                 '{"airline":"United","depart":"7:05a","arrive":"9:00a","duration":"3h 55m","price":214,"best":true},'
+                 '{"airline":"Alaska","depart":"9:40a","arrive":"11:42a","price":238}],"actions":["Hold the 7:05"]}</show>'
+                 ' The 7:05 on United is the best.')
     if args.mode == "permission":
         ask = "perm-" + uuid.uuid4().hex[:6]
         got = threading.Event()
