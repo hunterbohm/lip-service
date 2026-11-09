@@ -64,7 +64,7 @@ import os
         updates = UpdateNotice(UpdateCheck.checker(preferences: preferences))
         keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
-        bar = Bar(level: { [microphone, live] in live.talk?.level ?? microphone.level })
+        bar = Bar(voice: { [microphone, live] in live.talk?.voiceTap ?? microphone.voice })
         menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter, updates: updates)
         agents.talkExtras = { agent in await TalkT3.extras(for: agent, secrets: Keychain()) }
         ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,

@@ -24,8 +24,8 @@ import Synchronization
     /// Where this capture records from, when it starts and again when a device change restarts it.
     var onSource: ((MicrophoneSource) -> Void)?
 
-    /// RMS of the latest converted buffer, for the bar's meter.
-    var level: Float { sink.level }
+    /// The voice in 10 ms hops, for the bar's waves and the talk island.
+    var voice: VoiceTap { sink.voice }
 
     /// The capture in progress, for previews while the key is held.
     var audio: any LiveAudio { sink }
@@ -292,6 +292,7 @@ private final class InputDevice: @unchecked Sendable {
     private func arm(_ binding: Binding, start: Bool) throws {
         let input = engine.inputNode
         try input.installTapOrThrow(bufferSize: 1024, format: binding.format, block: sink.tapBlock())
+        attachVoice(to: engine, format: binding.format)
         engine.prepare()
         if start {
             do { try engine.start() } catch {
@@ -300,6 +301,20 @@ private final class InputDevice: @unchecked Sendable {
             }
         }
         phase = start ? .running(binding) : .ready(binding)
+    }
+
+    /// Connects a sink node to the input, which the engine calls for every hardware buffer, about every 10 ms, where the
+    /// tap gets about 100 ms at a time. The bar's waves read the voice from it. When the engine refuses the connection,
+    /// the tap feeds them instead, ten times a second.
+    private func attachVoice(to engine: AVAudioEngine, format: AVAudioFormat) {
+        let node = sink.voice.makeSinkNode()
+        engine.attach(node)
+        if LSCatchException({ engine.connect(engine.inputNode, to: node, format: format) }) == nil {
+            sink.voice.useSink(at: format.sampleRate)
+        } else {
+            engine.detach(node)
+            sink.voice.useSink(at: nil)
+        }
     }
 
     /// An engine stopped a moment ago still gets property callbacks from its I/O unit on AVFAudio's own queue, and
@@ -380,13 +395,12 @@ final class SampleSink: LiveAudio {
         var open = false
         var converter: SampleConverter?
         var samples: [Float] = []
-        var level: Float = 0
         var firstAudio: Instant?
     }
 
     private let state = Mutex(State())
-
-    var level: Float { state.withLock { $0.level } }
+    /// Measured outside the lock, on the audio thread, in hops far shorter than the tap's chunks.
+    let voice = VoiceTap(chunkLatency: 0.13)
 
     var firstAudio: Instant? { state.withLock { $0.firstAudio } }
 
@@ -417,7 +431,10 @@ final class SampleSink: LiveAudio {
     /// Formed here rather than in Microphone, because a closure formed inside a @MainActor method is inferred
     /// main-actor and traps when the audio thread calls it.
     func tapBlock() -> AVAudioNodeTapBlock {
-        { [self] buffer, when in append(buffer, at: when) }
+        { [self] buffer, when in
+            voice.tap(buffer, at: when)
+            append(buffer, at: when)
+        }
     }
 
     private func append(_ buffer: AVAudioPCMBuffer, at when: AVAudioTime) {
@@ -431,7 +448,6 @@ final class SampleSink: LiveAudio {
                 state.firstAudio = when.isHostTimeValid ? Instant(seconds: AVAudioTime.seconds(forHostTime: when.hostTime)) : .now
             }
             state.samples += chunk
-            state.level = (chunk.reduce(0) { $0 + $1 * $1 } / Float(chunk.count)).squareRoot()
         }
     }
 }

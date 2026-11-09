@@ -14,12 +14,16 @@ public enum LightWave {
     public static let loudestAmplitude = 16.0
     /// Half the waves' height while the words are finished.
     public static let finishingAmplitude = 1.2
-    /// How long a sound takes to ripple from the middle out to the ends, in seconds.
-    public static let spread = 0.45
+    /// How long a sound takes to ripple from the middle out to the ends, in seconds. Short, so the ends still read as
+    /// the voice now: with the old half second they showed what was said a beat ago.
+    public static let spread = 0.15
+    /// How much of a wave's height follows its own band of the voice rather than the whole voice.
+    public static let bandShare = 0.6
 
     public typealias RGB = (red: Double, green: Double, blue: Double)
 
-    /// One wave: its colour, its height as a share of the amplitude, its phase, and how fast it travels.
+    /// One wave: its colour, its height as a share of the amplitude, its phase, how fast it travels, and the band of the
+    /// voice it follows: 0 the low body of a voice, 1 its vowels, 2 the hiss of "s" and "f".
     public struct Strand: Sendable {
         public let red: Double
         public let green: Double
@@ -27,14 +31,15 @@ public enum LightWave {
         public let share: Double
         public let phase: Double
         public let speed: Double
+        public let band: Int
         public var color: RGB { (red, green, blue) }
     }
 
     /// Sky, blue, and near white, so the waves match the rim and the beam.
     public static let strands: [Strand] = [
-        Strand(red: 0x38 / 255, green: 0xBD / 255, blue: 0xF8 / 255, share: 1, phase: 0, speed: 5),
-        Strand(red: 0x3B / 255, green: 0x82 / 255, blue: 0xF6 / 255, share: 0.8, phase: 2.1, speed: 4),
-        Strand(red: 0xBA / 255, green: 0xF0 / 255, blue: 0xFF / 255, share: 0.55, phase: 4.2, speed: 4.5),
+        Strand(red: 0x38 / 255, green: 0xBD / 255, blue: 0xF8 / 255, share: 1, phase: 0, speed: 5, band: 0),
+        Strand(red: 0x3B / 255, green: 0x82 / 255, blue: 0xF6 / 255, share: 0.8, phase: 2.1, speed: 4, band: 1),
+        Strand(red: 0xBA / 255, green: 0xF0 / 255, blue: 0xFF / 255, share: 0.55, phase: 4.2, speed: 4.5, band: 2),
     ]
 
     private static func clamped(_ level: Double) -> Double { min(max(level, 0), 1) }
@@ -47,6 +52,12 @@ public enum LightWave {
     /// How long ago the voice that shapes the waves at `along` was heard: now in the middle, `spread` at the ends. It
     /// grows with the square of the distance from the middle, so the middle has no crease where the two sides meet.
     public static func delay(along: Double) -> Double { pow(abs(min(max(along, 0), 1) - 0.5) * 2, 2) * spread }
+
+    /// The voice level a wave swells with: mostly its own band, so a deep vowel and an "s" move different waves, and
+    /// partly the whole voice, so every wave still moves with every word.
+    public static func level(overall: Double, band: Double) -> Double {
+        clamped(overall) * (1 - bandShare) + clamped(band) * bandShare
+    }
 
     /// How fast the waves travel for a voice level, as a multiple of their resting speed: up to two and a half times as
     /// fast at the loudest.
@@ -67,6 +78,28 @@ public enum LightWave {
     public static func taper(_ along: Double) -> Double {
         let u = min(max(along, 0), 1)
         return pow(sin(.pi * u), 1.5)
+    }
+
+    /// One sample point of the waves across their width: where it is, how long ago its sound was heard, how much of the
+    /// amplitude it gets, and the phase it starts the wave at. They never change, so the view builds them once.
+    public struct Column: Sendable {
+        public let along: Double
+        public let delay: Double
+        public let taper: Double
+        public let angle: Double
+    }
+
+    /// `steps` + 1 columns from the left end to the right.
+    public static func columns(steps: Int) -> [Column] {
+        (0...steps).map { index in
+            let along = Double(index) / Double(steps)
+            return Column(along: along, delay: delay(along: along), taper: taper(along), angle: along * .pi * 2 * cycles)
+        }
+    }
+
+    /// A wave's height above the centre line at `column`, as `offset` gives it, without the per-point sine setup.
+    public static func offset(_ strand: Strand, column: Column, travel: Double, amplitude: Double) -> Double {
+        sin(column.angle + travel * strand.speed + strand.phase) * amplitude * strand.share * column.taper
     }
 
     /// A wave's height above the centre line at `along`, after the waves have travelled for `travel` seconds at their

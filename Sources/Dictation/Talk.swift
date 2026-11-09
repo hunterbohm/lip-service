@@ -8,7 +8,8 @@ import Synchronization
     func start() throws
     /// The 16 kHz samples that arrived since the last read.
     func read() -> [Float]
-    var level: Float { get }
+    /// What the bar's waves and the island read your voice from. Nil when nothing is measured, as for clips.
+    var voice: VoiceTap? { get }
     func stop()
 }
 
@@ -21,7 +22,7 @@ import Synchronization
 
     func start() throws { try microphone.start(from: choice) }
     func read() -> [Float] { microphone.drain() }
-    var level: Float { microphone.level }
+    var voice: VoiceTap? { microphone.voice }
     func stop() { microphone.cancel() }
 }
 
@@ -31,7 +32,7 @@ import Synchronization
     private var playing: [Float] = []
     private var position = 0
     private var last: Instant?
-    private(set) var level: Float = 0
+    var voice: VoiceTap? { nil }
 
     init(clips: [[Float]]) { self.clips = clips }
 
@@ -58,7 +59,6 @@ import Synchronization
             out.replaceSubrange(0..<take, with: playing[position..<position + take])
             position += take
         }
-        level = TalkEar.rms(out)
         return out
     }
 
@@ -179,8 +179,8 @@ enum TalkEnd: Equatable {
         bar = TalkBar(agent: BarAgent(initial: agent.initial, name: agent.name), phase: .connecting)
     }
 
-    /// The level the bar's meter shows: the agent's voice while it talks, yours otherwise.
-    var level: Float { bar.phase == .speaking ? speaker.level : input.level }
+    /// The voice the bar's meter shows: the agent's while it talks, yours otherwise.
+    var voiceTap: VoiceTap? { bar.phase == .speaking ? speaker.voice : input.voice }
 
     func start() {
         do {
