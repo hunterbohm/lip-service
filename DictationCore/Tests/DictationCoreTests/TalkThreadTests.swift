@@ -30,24 +30,21 @@ import Testing
         let settings: [String: JSONValue] = ["configOptions": [["id": "model", "name": "Model", "currentValue": "fast", "options": []]],
                                              "models": ["currentModelId": "fast", "availableModels": [["modelId": "fast", "name": "Fast"]]]]
         // No id in the answer: the session asked for, with the settings it reports.
-        guard case .same(let same) = ReopenAnswer.read(.object(settings), method: "session/resume", asked: "old") else {
-            return Issue.record("not the same session")
-        }
+        let first = ReopenAnswer.read(.object(settings), method: "session/resume", asked: "old")
+        guard case .same(let same) = first else { Issue.record("not the same session"); return }
         #expect(same.id == "old" && same.options.first?.id == "model" && same.currentModel == "fast")
         // Hermes names the session it opened for an id it doesn't know, in its own metadata.
         var replaced = settings
         replaced["_meta"] = ["hermes": ["sessionProvenance": ["acpSessionId": "new", "currentHermesSessionId": "inner"]]]
-        guard case .replaced(let other) = ReopenAnswer.read(.object(replaced), method: "session/resume", asked: "old") else {
-            return Issue.record("not a replaced session")
-        }
+        let moved = ReopenAnswer.read(.object(replaced), method: "session/resume", asked: "old")
+        guard case .replaced(let other) = moved else { Issue.record("not a replaced session"); return }
         #expect(other.id == "new")
         // The same id in its metadata is the same session, as after a compression moved Hermes's inner session.
         replaced["_meta"] = ["hermes": ["sessionProvenance": ["acpSessionId": "old", "currentHermesSessionId": "inner"]]]
         #expect(ReopenAnswer.read(.object(replaced), method: "session/resume", asked: "old") == .same(same))
         // Another agent names it in sessionId.
-        guard case .replaced(let named) = ReopenAnswer.read(["sessionId": "else"], method: "session/resume", asked: "old") else {
-            return Issue.record("not a replaced session")
-        }
+        let elsewhere = ReopenAnswer.read(["sessionId": "else"], method: "session/resume", asked: "old")
+        guard case .replaced(let named) = elsewhere else { Issue.record("not a replaced session"); return }
         #expect(named.id == "else")
         // Hermes's load says null for a session it lost.
         #expect(ReopenAnswer.read(.null, method: "session/load", asked: "old") == .missing)
@@ -68,16 +65,21 @@ import Testing
     @Test func aSessionIsRememberedPerAgentAndOnlyForTheCommandThatMadeIt() {
         var threads = TalkThreads()
         #expect(threads.session(for: "hermes", launch: "exec hermes acp") == nil)
-        #expect(threads.remember("s-1", for: "hermes", launch: "exec hermes acp"))
-        #expect(!threads.remember("s-1", for: "hermes", launch: "exec hermes acp"), "nothing changed, nothing to save")
+        let added = threads.remember("s-1", for: "hermes", launch: "exec hermes acp")
+        let again = threads.remember("s-1", for: "hermes", launch: "exec hermes acp")
+        #expect(added)
+        #expect(!again, "nothing changed, nothing to save")
         #expect(threads.session(for: "hermes", launch: "exec hermes acp") == "s-1")
         #expect(threads.session(for: "claude", launch: "exec hermes acp") == nil)
         // Another machine or command made a different set of ids.
         #expect(threads.session(for: "hermes", launch: "exec ssh mini hermes acp") == nil)
-        #expect(threads.remember("s-2", for: "hermes", launch: "exec hermes acp"))
+        let replaced = threads.remember("s-2", for: "hermes", launch: "exec hermes acp")
+        #expect(replaced)
         #expect(threads.session(for: "hermes", launch: "exec hermes acp") == "s-2")
-        #expect(threads.forget(agent: "hermes"))
-        #expect(!threads.forget(agent: "hermes"))
+        let forgot = threads.forget(agent: "hermes")
+        let forgotTwice = threads.forget(agent: "hermes")
+        #expect(forgot)
+        #expect(!forgotTwice)
         #expect(threads.session(for: "hermes", launch: "exec hermes acp") == nil)
     }
 
