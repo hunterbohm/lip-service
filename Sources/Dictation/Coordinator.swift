@@ -246,6 +246,7 @@ import os
         keyTap.suspended = true
         // The island says the talk is on; how to end it is beside its End button, so nothing pops up under it.
         if settings.sounds { sounds.play(talk: .start) }
+        notice = nil
         render()
         talk.start()
     }
