@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """A stand-in ACP agent for testing Lip Service. Speaks newline-delimited JSON-RPC on stdio.
 
-usage: fake-acp-agent.py [--mode draft|permission|tool|report|echo|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
+usage: fake-acp-agent.py [--mode draft|permission|tool|steps|report|echo|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
                          [--spawn-child TAG]
 
 draft       streams --reply in a few chunks after --delay
 permission  asks session/request_permission first, then says which option it got
 tool        starts a tool call (a tool_call update) first, then streams --reply
+steps       runs four tools in a row with Hermes's titles, each for --step-time seconds, then streams --reply
 report      replies with the _meta its session/new carried and the config options set on its sessions, as JSON
 echo        replies "You said: " and the prompt's last line, so a test can see what reached the agent; every prompt is
             also appended to $FAKE_ACP_PROMPTS when that is set
@@ -23,6 +24,7 @@ import argparse, itertools, json, os, subprocess, sys, threading, time, uuid
 
 p = argparse.ArgumentParser()
 p.add_argument("--mode", default="draft")
+p.add_argument("--step-time", type=float, default=1.6)
 p.add_argument("--delay", type=float, default=0.3)
 p.add_argument("--start-delay", type=float, default=0.0)
 p.add_argument("--reply", default="Tuesday at 3 works. I'll bring the latest cut.")
@@ -93,6 +95,17 @@ def prompt(rid, params):
     if args.mode == "tool":
         send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": session, "update": {
             "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Run touch /tmp/injected", "kind": "execute", "status": "pending"}}})
+    if args.mode == "steps":
+        for n, (title, kind) in enumerate([("skill_view: productivity/media-request", "read"),
+                                           ("terminal: t3-run status 1a7431fb-4f9e-45ec", "execute"),
+                                           ("terminal: ~/bin/gog --account me@example.com gmail search 'from:zach' --max 5", "execute"),
+                                           ("read_file: plan.md", "read")]):
+            for status in ("pending", "completed"):
+                send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": session, "update": {
+                    "sessionUpdate": "tool_call" if status == "pending" else "tool_call_update", "toolCallId": f"s{n}",
+                    "title": title, "kind": kind, "status": status}}})
+                if status == "pending":
+                    time.sleep(args.step_time)
     if args.mode == "permission":
         ask = "perm-" + uuid.uuid4().hex[:6]
         got = threading.Event()

@@ -544,7 +544,8 @@ enum TalkEnd: Equatable {
     }
 
     private func putStep(_ line: String, turn current: Int) {
-        guard current == turn, !ended, permission == nil, bar.phase != .speaking, bar.activity != line else { return }
+        // While the agent speaks the step is kept, and shows when it goes back to work.
+        guard current == turn, !ended, permission == nil, bar.activity != line else { return }
         bar.activity = line
         stepShownAt = .now
     }
@@ -612,9 +613,18 @@ enum TalkEnd: Equatable {
 
     private func started(_ caption: String) {
         guard !ended else { return }
-        if openingTurn == turn, let report, !report.tools.contains(where: { Speech.caption($0 + ".") == caption }) { openingHeard = true }
+        let toolLine = report?.tools.contains(where: { Speech.caption($0 + ".") == caption }) ?? false
+        if openingTurn == turn, !toolLine, report != nil { openingHeard = true }
         clock?.mark(.firstAudio, at: .now)
         ear.agentSpeaking(at: .now)
+        if toolLine {
+            // A step said out loud shows as a step, under your words, not as something the agent is telling you.
+            let step = caption.hasSuffix(".") ? String(caption.dropLast()) : caption
+            bar = TalkBar(agent: bar.agent, phase: .thinking, line: bar.phase == .thinking ? bar.line : "",
+                          activity: permission == nil ? step : bar.activity)
+            if permission == nil { stepShownAt = .now }
+            return
+        }
         bar = TalkBar(agent: bar.agent, phase: .speaking, line: caption, endingSoon: false)
     }
 
