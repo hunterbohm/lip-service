@@ -331,6 +331,32 @@ import Testing
         #expect(ToolLine.symbol("Something new") == "sparkle")
     }
 
+    @Test func aShortLineFromTheAgentIsANoticeInTheIsland() {
+        let task = "PP-3 · ProfitPilot outreach: run it and improve overall, maybe add another channel · due Nov 9 · todo"
+        #expect(TalkIsland.notice(.text(task)) == task)
+        #expect(TalkIsland.notice(.text("  **Done.**\nAdded to Friday.  ")) == "Done.\nAdded to Friday.")
+        // Links, images, visuals, code and long text stay cards.
+        #expect(TalkIsland.notice(.link(URL(string: "https://example.com")!)) == nil)
+        #expect(TalkIsland.notice(.html("<b>x</b>")) == nil)
+        #expect(TalkIsland.notice(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")) == nil)
+        #expect(TalkIsland.notice(.text("let x = f()\nprint(x)")) == nil)
+        #expect(TalkIsland.notice(.text(String(repeating: "word ", count: 60))) == nil)
+        #expect(TalkIsland.notice(.text("a\nb\nc\nd")) == nil)
+        #expect(TalkIsland.notice(.text("   ")) == nil)
+        // What the agent wrote is kept, marks and all.
+        #expect(TalkIsland.notice(.text("Added #123 to task_notes.md")) == "Added #123 to task_notes.md")
+        #expect(TalkIsland.notice(.text("Moved the call (with Zach) to Friday")) == "Moved the call (with Zach) to Friday")
+        // One-line commands and Markdown links stay cards.
+        #expect(TalkIsland.notice(.text("echo \"$HOME\" > output_file")) == nil)
+        #expect(TalkIsland.notice(.text("git push -u origin main")) == nil)
+        for command in ["npm install", "git status", "python script.py", "./build.sh", "run scripts/test.sh now", "t3-run status"] {
+            #expect(TalkIsland.notice(.text(command)) == nil, "\(command)")
+        }
+        // Prose that only mentions a tool is still a notice.
+        #expect(TalkIsland.notice(.text("Pushed the fix to GitHub")) == "Pushed the fix to GitHub")
+        #expect(TalkIsland.notice(.text("See [the doc](https://example.com/a)")) == nil)
+    }
+
     @Test func stepsShowInTurnEachLongEnoughToRead() {
         var steps = StepQueue()
         let none = steps.next(at: Instant(seconds: 0))

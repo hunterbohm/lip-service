@@ -16,6 +16,10 @@ import SwiftUI
     var drop = TalkIsland.floatingGap
     /// The island's drawn size, reported by the view, so clicks beside it pass through and cards sit under it.
     var islandSize: CGSize = .zero
+    /// Short lines the agent put on screen, such as what it just did, newest first. The island opens to show a new one for
+    /// a few seconds, and again under the pointer.
+    var notices: [IslandNotice] = []
+    var noticeOpen = false
     /// Set by --render-bar: the time every view draws for.
     var frozenAt: Double?
     /// The level of whoever is talking, 0 to 1. Read every frame, not observed.
@@ -27,7 +31,15 @@ import SwiftUI
     /// The island's drawn size changed.
     @ObservationIgnored var sizeChanged: (() -> Void)?
 
-    var open: Bool { visible && bar.map { TalkIsland.isOpen($0, hovering: hovering) } ?? false }
+    var open: Bool { visible && bar.map { TalkIsland.isOpen($0, hovering: hovering) || showsNotices } ?? false }
+    /// Whether the notices are on the island now: a new one just came, or the pointer is over it.
+    var showsNotices: Bool { !notices.isEmpty && (noticeOpen || hovering) && bar?.phase != .ringing }
+}
+
+struct IslandNotice: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let added: Instant
 }
 
 /// The island a live talk shows at the top of the screen, in a see-through panel across the top centre that never takes
@@ -41,6 +53,8 @@ import SwiftUI
     var onMoved: ((NSRect) -> Void)?
     private var pointer: Timer?
     private var hiding: Task<Void, Never>?
+    private var noticeClosing: Task<Void, Never>?
+    private var noticeExpiry: Task<Void, Never>?
     /// Placed on a stand-in screen by --render-bar: shown there, with no pointer watching.
     private var placedByHand = false
 
@@ -86,6 +100,38 @@ import SwiftUI
         if !model.visible { DispatchQueue.main.async { self.model.visible = true } }
     }
 
+    /// Takes what the agent put on screen when it is a short line, as a notice inside the island. False for anything the
+    /// cards show instead.
+    func take(_ event: TalkCardEvent) -> Bool {
+        guard case .show(let card) = event, let text = TalkIsland.notice(card) else { return false }
+        let now = Instant.now
+        var kept = model.notices.filter { now - $0.added < TalkIsland.noticeLifetime && $0.text != text }
+        kept.insert(IslandNotice(text: text, added: now), at: 0)
+        model.notices = Array(kept.prefix(TalkIsland.noticeMost))
+        model.noticeOpen = true
+        noticeClosing?.cancel()
+        noticeClosing = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(TalkIsland.noticeOpenFor))
+            guard let self, !Task.isCancelled else { return }
+            model.noticeOpen = false
+        }
+        expireNotices()
+        return true
+    }
+
+    /// Drops notices once they are `noticeLifetime` old, each on time, whether or not another comes.
+    private func expireNotices() {
+        noticeExpiry?.cancel()
+        let now = Instant.now
+        model.notices.removeAll { now - $0.added >= TalkIsland.noticeLifetime }
+        guard let oldest = model.notices.map(\.added).min() else { return }
+        noticeExpiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0.5, oldest + TalkIsland.noticeLifetime - now)))
+            guard let self, !Task.isCancelled else { return }
+            expireNotices()
+        }
+    }
+
     /// Places the panel at the top centre of `area`, a stand-in screen, for --render-bar.
     func place(in area: NSRect, placement: TalkIsland.Placement) {
         placedByHand = true
@@ -123,6 +169,7 @@ import SwiftUI
             guard let self, !Task.isCancelled else { return }
             // Gone, not just invisible: nothing animates or redraws between talks.
             model.bar = nil
+            (model.notices, model.noticeOpen) = ([], false)
             window.orderOut(nil)
             hiding = nil
         }
@@ -303,6 +350,13 @@ private struct IslandView: View {
                     .id(bar.line)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity))
             }
+            if model.showsNotices {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.notices) { NoticeRow(text: $0.text) }
+                }
+                .padding(.top, TalkIsland.isOpen(bar, hovering: false) ? 4 : 0)
+                .transition(.opacity.combined(with: .offset(y: 6)))
+            }
             if model.hovering && bar.phase != .ringing {
                 HStack {
                     Spacer()
@@ -312,6 +366,8 @@ private struct IslandView: View {
             }
         }
         .animation(.easeOut(duration: 0.22), value: bar.line)
+        .animation(.easeOut(duration: 0.3), value: model.notices)
+        .animation(.easeOut(duration: 0.3), value: model.showsNotices)
         .padding(.horizontal, 22)
         .padding(.top, 6)
         .padding(.bottom, 20)
@@ -493,6 +549,29 @@ private struct StepRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(text)
+    }
+}
+
+/// Something the agent did or found, such as a task it added: a check in the step icon's style, and the line.
+private struct NoticeRow: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color(red: 0.45, green: 0.95, blue: 0.6))
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.3, green: 0.9, blue: 0.5).opacity(0.14)))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+            Text(text)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -125,6 +125,10 @@ import DictationCore
             Scene(name: "58-talk-cards", state: BarState(body: talk(.speaking, line: "The link is on your screen.")), edge: .top,
                   talkCards: [.show(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")),
                               .show(.link(URL(string: "https://www.swift.org/documentation/")!))]),
+            Scene(name: "58b-talk-notice", state: BarState(body: talk(.speaking, line: "I added it to your vault for today.")), edge: .top,
+                  talkCards: [.show(.text("PP-3 · ProfitPilot outreach: run it and improve overall, maybe add another channel · due Nov 9 · todo"))]),
+            Scene(name: "58c-talk-notice-listening", state: BarState(body: talk(.listening)), edge: .top, quiet: true,
+                  talkCards: [.show(.text("PP-3 · ProfitPilot outreach: run it and improve overall · due Nov 9"))]),
             Scene(name: "59-talk-permission", state: BarState(body: talk(.speaking, line: "Hermes wants your OK for this: Running a command. Click Allow on the screen, or say no.")),
                   edge: .top,
                   talkCards: [.permission(agent: "Hermes", phrase: "Running a command", detail: "terminal: hermes send -t photon", byVoice: false)]),
@@ -226,6 +230,7 @@ import DictationCore
             bar.showOutlines(nearest: scene.dragNearest)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             if let card = scene.card { cards.show(card, above: bar.anchor()) } else { cards.hide() }
+            (island.model.notices, island.model.noticeOpen) = ([], false)
             if case .talk(let talk) = scene.state.body {
                 let clear = scene.topBar.map { BarRect(x: stage.minX, y: stage.minY, width: stage.width, height: stage.height - $0) } ?? BarRect(stage)
                 island.place(in: stage, placement: TalkIsland.placement(frame: BarRect(stage), screen: scene.notch ? notched : .plain, clear: clear))
@@ -236,7 +241,7 @@ import DictationCore
                 island.show(nil)
             }
             talkCards.closeAll()
-            for event in scene.talkCards { talkCards.handle(event, agent: hermes, under: (island.islandRect, .top)) }
+            for event in scene.talkCards where !island.take(event) { talkCards.handle(event, agent: hermes, under: (island.islandRect, .top)) }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
             let shown = bar.visiblePanels + (island.isVisible && scene.state.body.isTalkBody ? [(panel: island.window, shadow: false)] : [])
                 + (cards.isVisible ? [(panel: cards.window, shadow: true)] : [])

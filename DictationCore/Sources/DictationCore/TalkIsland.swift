@@ -189,6 +189,47 @@ public enum TalkIsland {
     /// How far the globe floats above its place at `time`, in points.
     public static func globeFloat(time: Double) -> Double { globeBob * sin(time * 1.6) }
 
+    /// The longest line the island shows as a notice, in characters; anything longer stays a card.
+    public static let noticeLongest = 240
+    /// How many notices the island keeps, newest first, how long a new one holds the island open, and how long one stays.
+    public static let noticeMost = 2
+    public static let noticeOpenFor = 6.0
+    public static let noticeLifetime = 120.0
+
+    /// What the agent put on screen, as a notice inside the island, when it is a short line such as what it just did:
+    /// "PP-3 · ProfitPilot outreach · due Nov 9". Links, images, visuals, code and long text stay cards. Nil for those.
+    public static func notice(_ card: ShowCard) -> String? {
+        guard case .text(let raw) = card else { return nil }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = text.split(whereSeparator: \.isNewline).map { Speech.collapse(String($0)) }
+        guard !text.isEmpty, text.count <= noticeLongest, lines.count <= 3, !looksLikeCode(text, lines: lines.count) else { return nil }
+        // A link written in Markdown needs its address, which a card keeps.
+        guard text.firstMatch(of: /\[[^\]]+\]\([^)]+\)/) == nil else { return nil }
+        // Only bold marks around words go; every other character is kept as the agent wrote it.
+        return lines.map { $0.replacing(/\*\*([^*]+)\*\*/) { String($0.1) } }.joined(separator: "\n")
+    }
+
+    /// Code or a command reads better on a card: marks that prose seldom uses, a command's flags or `&&`, a prompt
+    /// sign, a line that starts with a common command or runs a script, or a fence. Over several lines, brackets and
+    /// semicolons count too.
+    static func looksLikeCode(_ text: String, lines: Int) -> Bool {
+        if text.contains(where: { "{}<>$`|\\=".contains($0) }) || text.contains("&&") || text.hasPrefix("$ ") { return true }
+        if text.firstMatch(of: /(^|\s)--?[A-Za-z]/) != nil { return true }
+        // A line that starts with a command, or runs a script: `git status`, `npm install`, `python script.py`.
+        let programs: Set<String> = ["git", "npm", "npx", "yarn", "pnpm", "bun", "node", "deno", "python", "python3", "pip",
+                                     "pip3", "uv", "swift", "xcodebuild", "brew", "cd", "ls", "cat", "curl", "wget", "ssh",
+                                     "scp", "make", "cargo", "go", "docker", "kubectl", "echo", "rm", "mv", "cp", "mkdir",
+                                     "touch", "chmod", "sudo", "open", "ruby", "gem", "bundle", "rails", "gh", "hermes",
+                                     "t3-run", "kb", "launchctl", "defaults", "tail", "grep", "rg", "sed", "awk", "export"]
+        let scripts = /(^|\s)(~|\.{0,2})\/?[\w.\/-]*\.(py|sh|js|mjs|ts|rb|swift|pl)(\s|$)/
+        for line in text.split(whereSeparator: \.isNewline) {
+            let first = line.split(separator: " ").first.map(String.init) ?? ""
+            if programs.contains(first) || first.hasPrefix("./") || first.hasPrefix("~/") { return true }
+            if line.firstMatch(of: scripts) != nil { return true }
+        }
+        return lines > 1 && text.contains(where: { "();".contains($0) })
+    }
+
     /// What the right ear shows.
     public enum Ear: Equatable, Sendable {
         /// Five bars that move with the voice, white for yours and amber for the agent's.
