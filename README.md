@@ -55,7 +55,7 @@ The same prompt updates Lip Service to the latest release.
 
 ## Download
 
-Download `Lip-Service-1.0.23.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
+Download `Lip-Service-1.0.24.zip` from the [latest release](https://github.com/hunterbohm/lip-service/releases/latest).
 
 ## Install
 
