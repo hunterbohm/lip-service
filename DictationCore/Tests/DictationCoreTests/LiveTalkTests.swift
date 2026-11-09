@@ -669,3 +669,20 @@ struct TalkT3Tests {
         #expect(ToolLine.phrase(title: "t3_project_list", kind: nil) == "Looking through your T3 projects")
     }
 }
+
+@Suite("Required session options") struct RequiredOptionsTests {
+    @Test func savedOptionCannotUndoRequiredMode() {
+        let saved: [ConfigChoice] = [.option(id: "mode", value: "auto"), .option(id: "effort", value: "low"), .model("opus")]
+        let kept = ConfigChoice.sparing(T3Talk.sessionOptions, from: saved)
+        #expect(kept == [.option(id: "effort", value: "low"), .model("opus")])
+    }
+
+    @Test func nothingRequiredKeepsEverything() {
+        let saved: [ConfigChoice] = [.option(id: "mode", value: "auto"), .model("opus")]
+        #expect(ConfigChoice.sparing([], from: saved) == saved)
+    }
+
+    @Test func requiredModelDropsSavedModel() {
+        #expect(ConfigChoice.sparing([.model("a")], from: [.model("b"), .option(id: "x", value: "1")]) == [.option(id: "x", value: "1")])
+    }
+}

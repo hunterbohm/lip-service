@@ -19,10 +19,11 @@ enum T3Bridge {
         }
         guard let token = client.token else { return fail("T3 Code isn't connected. Connect it on the Ghostwrite page.") }
         let upstream = Upstream(origin: client.origin, token: token.accessToken)
+        let launches = LaunchIDs()
         while let line = readLine(strippingNewline: true) {
             guard case .request(let id, let method, let params)? = RPCMessage.parse(Data(line.utf8)) else { continue }
             let reply: JSONValue
-            do { reply = RPCMessage.result(id: id, try await answer(method, params, upstream)) } catch let error as RPCError {
+            do { reply = RPCMessage.result(id: id, try await answer(method, params, upstream, launches)) } catch let error as RPCError {
                 reply = RPCMessage.error(id: id, code: error.code, message: error.message)
             } catch {
                 reply = RPCMessage.error(id: id, code: -32603, message: error.localizedDescription)
@@ -32,7 +33,7 @@ enum T3Bridge {
         return 0
     }
 
-    private static func answer(_ method: String, _ params: JSONValue, _ upstream: Upstream) async throws -> JSONValue {
+    private static func answer(_ method: String, _ params: JSONValue, _ upstream: Upstream, _ launches: LaunchIDs) async throws -> JSONValue {
         switch method {
         case "initialize":
             return ["protocolVersion": params["protocolVersion"] ?? "2025-06-18", "capabilities": ["tools": [:]],
@@ -49,7 +50,7 @@ enum T3Bridge {
             return ["tools": .array(T3Talk.exposed(all))]
         case "tools/call":
             guard let name = params["name"]?.string,
-                  let arguments = T3Talk.arguments(for: name, params["arguments"], requestID: UUID().uuidString) else {
+                  let arguments = T3Talk.arguments(for: name, params["arguments"], requestID: launches.id(for: params["arguments"])) else {
                 return refusal("That tool isn't available in a live talk.")
             }
             do { return try await upstream.request("tools/call", ["name": .string(name), "arguments": arguments]) } catch {
@@ -57,6 +58,20 @@ enum T3Bridge {
             }
         default:
             throw RPCError(code: RPCError.methodNotFound, message: "\(method) isn't offered here.")
+        }
+    }
+
+    /// One request id per distinct set of arguments for the life of this bridge, which is one talk. A launch the agent
+    /// retries after both replies were lost then reuses its id, and T3 Code starts the thread once.
+    private final class LaunchIDs {
+        private var ids: [JSONValue: String] = [:]
+
+        func id(for arguments: JSONValue?) -> String {
+            let key = arguments ?? .null
+            if let id = ids[key] { return id }
+            let id = UUID().uuidString
+            ids[key] = id
+            return id
         }
     }
 
