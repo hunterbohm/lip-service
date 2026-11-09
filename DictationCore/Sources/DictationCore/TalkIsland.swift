@@ -2,7 +2,7 @@ import Foundation
 
 /// The island a live talk shows at the top of the screen, in the style of the iPhone's Dynamic Island. On a screen with
 /// a notch it grows out of the notch, with ears on either side; elsewhere it floats just below the top edge. Compact, it
-/// shows a living orb on the left and the voice on the right. When another app's bar, such as a tiling window manager's,
+/// shows a floating globe of dots on the left and the voice on the right. When another app's bar, such as a tiling window manager's,
 /// covers the top of the screen, it floats just below that bar instead, with or without a notch. It opens up when there
 /// is something to read: your words while the agent thinks, the sentence the agent is saying, a warning that the talk
 /// ends soon, or your pointer over it, which also shows the button that ends the talk. This holds its shape, sizes,
@@ -19,7 +19,7 @@ public enum TalkIsland {
         }
 
         /// A screen without a notch: the island floats, as tall as a menu bar.
-        public static let plain = Screen(hasNotch: false, notchWidth: 0, barHeight: 34)
+        public static let plain = Screen(hasNotch: false, notchWidth: 0, barHeight: 38)
     }
 
     /// How far the island sits below the top of a screen without a notch, or below another app's bar.
@@ -27,11 +27,11 @@ public enum TalkIsland {
     /// How far the island's top corners curve out into the screen edge around a notch.
     public static let earCurve = 9.0
     /// The corner radius when open.
-    public static let openRadius = 30.0
+    public static let openRadius = 32.0
     /// The bottom corner radius when compact under a notch.
-    public static let notchRadius = 12.0
+    public static let notchRadius = 14.0
     /// The widest the island opens, so the panel that holds it never resizes.
-    public static let widest = 560.0
+    public static let widest = 600.0
 
     /// Where the island sits on its screen: the look it takes, and how far below the top edge of the screen its top is.
     public struct Placement: Equatable, Sendable {
@@ -56,12 +56,12 @@ public enum TalkIsland {
         return Placement(screen: .plain, drop: max(covered, notch) + floatingGap)
     }
 
-    /// Each ear's width: the room for the orb on the left and the voice on the right.
-    public static func earWidth(_ screen: Screen) -> Double { screen.hasNotch ? 46 : 44 }
+    /// Each ear's width: the room for the globe on the left and the voice on the right.
+    public static func earWidth(_ screen: Screen) -> Double { screen.hasNotch ? 54 : 52 }
     /// The width between the ears: the notch, or room for a word of status.
-    public static func centerWidth(_ screen: Screen) -> Double { screen.hasNotch ? screen.notchWidth : 96 }
+    public static func centerWidth(_ screen: Screen) -> Double { screen.hasNotch ? screen.notchWidth : 104 }
     public static func compactWidth(_ screen: Screen) -> Double { centerWidth(screen) + 2 * earWidth(screen) }
-    public static func openWidth(_ screen: Screen) -> Double { min(widest, max(compactWidth(screen) + 160, 470)) }
+    public static func openWidth(_ screen: Screen) -> Double { min(widest, max(compactWidth(screen) + 170, 500)) }
 
     /// Whether the island is open for the talk now, with the pointer over it or not.
     public static func isOpen(_ bar: TalkBar, hovering: Bool) -> Bool {
@@ -74,7 +74,7 @@ public enum TalkIsland {
         }
     }
 
-    /// What the orb's colours say: blues while you can talk, violet and pink while the agent thinks, amber while it
+    /// What the globe's colours say: blues while you can talk, violet and pink while the agent thinks, amber while it
     /// speaks, and greys while the talk connects.
     public enum Mood: Equatable, Sendable { case connecting, you, thinking, speaking, ringing }
 
@@ -90,7 +90,7 @@ public enum TalkIsland {
 
     public typealias RGB = (red: Double, green: Double, blue: Double)
 
-    /// The orb's three colours, which turn around it.
+    /// The globe's three colours, which turn around it.
     public static func orbColors(_ mood: Mood) -> [RGB] {
         switch mood {
         case .connecting: [(0.55, 0.55, 0.55), (0.9, 0.9, 0.9), (0.4, 0.4, 0.4)]
@@ -101,7 +101,7 @@ public enum TalkIsland {
         }
     }
 
-    /// How fast the orb's colours turn, in radians a second: quick while the agent works, slow while it waits on you.
+    /// How fast the globe's colours turn, in radians a second: quick while the agent works, slow while it waits on you.
     public static func orbSpeed(_ mood: Mood) -> Double {
         switch mood {
         case .thinking, .connecting, .ringing: 2.4
@@ -110,11 +110,84 @@ public enum TalkIsland {
         }
     }
 
-    /// The orb's scale: it swells with the voice, and breathes while the agent works.
+    /// The globe's scale: it swells with the voice, and breathes while the agent works.
     public static func orbScale(level: Double, mood: Mood, time: Double) -> Double {
         let breathe = mood == .thinking || mood == .connecting || mood == .ringing ? 0.07 * sin(time * 4.5) : 0
         return 1 + min(max(level, 0), 1) * 0.22 + breathe
     }
+
+    /// The globe's size in points: as big as the header allows, with room to float.
+    public static func globeSize(_ screen: Screen) -> Double { min(30, screen.barHeight - 6) }
+
+    /// Dots across the globe, so each is a few pixels: the globe reads as a grid of dots, not a solid ball.
+    public static let globeGrid = 11
+    /// How high the globe floats up and down, in points, and how many times a second.
+    public static let globeBob = 1.2
+
+    /// One dot of the globe, on a grid over the unit square the globe fills. `size` is the dot's diameter as a share of
+    /// its cell, in a few steps like the characters of ASCII art. `tint` is where its colour sits among the mood's three,
+    /// 0 to 3, so the colours turn around the globe as it spins.
+    public struct GlobeDot: Equatable, Sendable {
+        public var column: Int
+        public var row: Int
+        public var size: Double
+        public var brightness: Double
+        public var tint: Double
+    }
+
+    /// The tilted, spinning globe at `time`, lit from the upper left, with land brighter than sea. The voice brightens
+    /// every dot and sends ripples out from the middle; the mood sets how fast it turns. Cells outside the disc, and dots
+    /// too faint to see, are left out.
+    public static func globeDots(time: Double, level: Double, mood: Mood, grid: Int = globeGrid) -> [GlobeDot] {
+        let level = min(max(level, 0), 1)
+        let spin = time * orbSpeed(mood) * 0.35
+        let tilt = 0.41
+        let light = (x: -0.45, y: 0.55, z: 0.7)
+        let lightLength = (light.x * light.x + light.y * light.y + light.z * light.z).squareRoot()
+        var dots: [GlobeDot] = []
+        for row in 0..<grid {
+            for column in 0..<grid {
+                let x = (Double(column) + 0.5) / Double(grid) * 2 - 1
+                let y = 1 - (Double(row) + 0.5) / Double(grid) * 2
+                let r2 = x * x + y * y
+                guard r2 <= 1 else { continue }
+                let z = (1 - r2).squareRoot()
+                // The point on the globe under this cell, turned back by the tilt, as latitude and longitude.
+                let tiltedY = y * cos(tilt) - z * sin(tilt)
+                let tiltedZ = y * sin(tilt) + z * cos(tilt)
+                let latitude = asin(max(-1, min(1, tiltedY)))
+                let longitude = atan2(x, tiltedZ) + spin
+                let land = globeLand(latitude: latitude, longitude: longitude)
+                let lit = max(0, (x * light.x + y * light.y + z * light.z) / lightLength)
+                let ripple = level * 0.35 * max(0, sin(r2.squareRoot() * 9 - time * 11))
+                let brightness = min(1, (land ? 1 : 0.55) * (0.6 + 0.4 * lit) * (0.9 + 0.2 * level) + ripple)
+                let size = globeStep(0.35 + 0.65 * brightness)
+                guard brightness > 0.06 else { continue }
+                let turn = (longitude / (2 * Double.pi)).truncatingRemainder(dividingBy: 1)
+                dots.append(GlobeDot(column: column, row: row, size: size, brightness: brightness, tint: (turn < 0 ? turn + 1 : turn) * 3))
+            }
+        }
+        return dots
+    }
+
+    /// Made-up continents: a few waves over latitude and longitude, so land drifts past as the globe turns.
+    static func globeLand(latitude: Double, longitude: Double) -> Bool {
+        let wave = sin(3 * longitude + 1.3 * sin(2 * latitude)) * cos(2 * latitude + 0.5)
+            + 0.6 * sin(5 * longitude - 2 * latitude + 1) * cos(3 * latitude)
+        return wave > 0.15
+    }
+
+    /// Dot sizes come in four steps, as an ASCII ramp has a few characters.
+    static func globeStep(_ size: Double) -> Double {
+        let steps = [0.45, 0.62, 0.8, 0.95]
+        return steps.last { $0 <= size } ?? steps[0]
+    }
+
+    /// The globe swells half as much as the orb did, since it nearly fills the header already.
+    public static func globeScale(level: Double, mood: Mood, time: Double) -> Double { 1 + (orbScale(level: level, mood: mood, time: time) - 1) / 2 }
+
+    /// How far the globe floats above its place at `time`, in points.
+    public static func globeFloat(time: Double) -> Double { globeBob * sin(time * 1.6) }
 
     /// What the right ear shows.
     public enum Ear: Equatable, Sendable {

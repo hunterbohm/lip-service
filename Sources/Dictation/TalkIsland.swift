@@ -177,7 +177,7 @@ private struct IslandRoot: View {
     }
 }
 
-/// The black island: compact with the orb and the voice in its ears, open with what is being said.
+/// The black island: compact with the globe and the voice in its ears, open with what is being said.
 private struct IslandView: View {
     @Bindable var model: TalkIslandModel
     let bar: TalkBar
@@ -198,7 +198,10 @@ private struct IslandView: View {
         .padding(.horizontal, screen.hasNotch ? CGFloat(TalkIsland.earCurve) : 0)
         .background { shape(open: open).fill(.black) }
         .clipShape(shape(open: open))
-        .shadow(color: .black.opacity(open ? 0.5 : 0), radius: 22, y: 10)
+        .overlay { IslandEdge(shape: shape(open: open), notch: screen.hasNotch) }
+        // A faint light halo lifts it off a black window; the dark shadow lifts it off a light one.
+        .background { shape(open: open).fill(.black).shadow(color: .white.opacity(open ? 0.09 : 0.07), radius: open ? 14 : 8) }
+        .shadow(color: .black.opacity(open ? 0.5 : 0.3), radius: open ? 22 : 10, y: open ? 10 : 4)
         .scaleEffect(model.visible ? 1 : (screen.hasNotch ? 0.55 : 0.7), anchor: .top)
         .opacity(model.visible ? 1 : 0)
         .animation(reduceMotion ? .easeOut(duration: 0.2) : islandSpring, value: open)
@@ -218,23 +221,23 @@ private struct IslandView: View {
         let side = CGFloat((open ? TalkIsland.openWidth(screen) : TalkIsland.compactWidth(screen)) - TalkIsland.centerWidth(screen)) / 2
         return HStack(spacing: 0) {
             HStack(spacing: 8) {
-                Orb(model: model, mood: TalkIsland.mood(bar.phase), size: open ? 20 : 18)
+                Globe(model: model, mood: TalkIsland.mood(bar.phase), size: CGFloat(TalkIsland.globeSize(screen)))
                 if open {
                     Text(TalkIsland.headline(bar))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.8))
                         .lineLimit(1)
                         .contentTransition(.opacity)
                         .transition(.opacity.combined(with: .offset(x: -6)))
                 }
             }
-            .padding(.leading, open ? 16 : 12)
+            .padding(.leading, open ? 18 : 10)
             .frame(width: side, alignment: .leading)
 
             Group {
                 if !screen.hasNotch && !open {
                     Text(TalkIsland.headline(bar))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(1)
                         .contentTransition(.opacity)
@@ -245,7 +248,7 @@ private struct IslandView: View {
             .frame(width: CGFloat(TalkIsland.centerWidth(screen)))
 
             EarView(model: model, ear: TalkIsland.ear(bar.phase))
-                .padding(.trailing, open ? 18 : 12)
+                .padding(.trailing, open ? 20 : 14)
                 .frame(width: side, alignment: .trailing)
         }
         .frame(height: CGFloat(screen.barHeight))
@@ -256,14 +259,14 @@ private struct IslandView: View {
             if bar.phase == .ringing {
                 if !bar.line.isEmpty {
                     Text("About \(bar.line)")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 12) {
                     Text("Double-tap Left Control to answer")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.5))
                     Spacer()
                     CallButton(symbol: "phone.down.fill", color: Color(red: 1, green: 0.27, blue: 0.27), label: "Decline") { model.onDecline() }
@@ -271,23 +274,29 @@ private struct IslandView: View {
                 }
             } else if bar.endingSoon && bar.phase == .listening {
                 Text("Still there? This talk ends soon unless you say something.")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
             } else if bar.phase == .thinking {
                 if !bar.line.isEmpty {
                     Text(bar.line)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .foregroundStyle(.white.opacity(0.5))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                ThinkingText(model: model, text: bar.activity ?? "Thinking")
-                    .id(bar.activity ?? "")
-                    .transition(.opacity.combined(with: .offset(y: 4)))
+                // The steps sit on top of each other, so one fades out as the next rises in.
+                ZStack(alignment: .leading) {
+                    StepRow(model: model, text: bar.activity ?? "Thinking")
+                        .id(bar.activity ?? "")
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 7)).animation(.easeOut(duration: 0.38).delay(0.08)),
+                            removal: .opacity.combined(with: .offset(y: -5)).animation(.easeIn(duration: 0.26))))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if bar.phase == .speaking && !bar.line.isEmpty {
                 Text(bar.line)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -303,10 +312,9 @@ private struct IslandView: View {
             }
         }
         .animation(.easeOut(duration: 0.22), value: bar.line)
-        .animation(.easeOut(duration: 0.25), value: bar.activity)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 22)
         .padding(.top, 6)
-        .padding(.bottom, 18)
+        .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -356,6 +364,27 @@ private struct IslandShape: Shape {
     }
 }
 
+/// The island's edge, so it reads on a black window: a hairline that is brightest along the top and fades down the
+/// sides. Under a notch the top edge is the screen's, so the line starts below it.
+private struct IslandEdge: View {
+    let shape: IslandShape
+    let notch: Bool
+
+    var body: some View {
+        shape
+            .stroke(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.1), .white.opacity(0.16)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            .clipShape(shape)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: notch ? 3 : 0)
+                    Color.black
+                }
+            }
+            .allowsHitTesting(false)
+    }
+}
+
 /// Redraws at most 60 times a second, or once at the time --render-bar froze, or once with Reduce Motion.
 private struct IslandClock<Content: View>: View {
     let model: TalkIslandModel
@@ -373,8 +402,9 @@ private struct IslandClock<Content: View>: View {
     }
 }
 
-/// The agent's living orb: its colours say what is happening, and it swells with the voice.
-private struct Orb: View {
+/// The agent's globe: a grid of dots, like ASCII art, that turns and floats. Its colours say what is happening, the land
+/// drifts past faster while the agent works, and the voice swells it, brightens it and sends ripples across it.
+private struct Globe: View {
     let model: TalkIslandModel
     let mood: TalkIsland.Mood
     let size: CGFloat
@@ -383,21 +413,28 @@ private struct Orb: View {
         let colors = TalkIsland.orbColors(mood).map { Color(red: $0.red, green: $0.green, blue: $0.blue) }
         IslandClock(model: model) { time in
             let level = model.level()
-            ZStack {
-                Circle().fill(AngularGradient(colors: colors + [colors[0]], center: .center,
-                                              angle: .radians(time * TalkIsland.orbSpeed(mood))))
-                    .blur(radius: size * 0.14)
-                Circle().fill(RadialGradient(colors: [.white.opacity(0.85), .clear],
-                                             center: UnitPoint(x: 0.34, y: 0.3), startRadius: 0, endRadius: size * 0.55))
-                    .blendMode(.plusLighter)
-                    .opacity(0.55)
+            Canvas { context, canvas in
+                let grid = TalkIsland.globeGrid, cell = canvas.width / CGFloat(grid)
+                for dot in TalkIsland.globeDots(time: time, level: level, mood: mood, grid: grid) {
+                    let diameter = cell * CGFloat(dot.size)
+                    let center = CGPoint(x: (CGFloat(dot.column) + 0.5) * cell, y: (CGFloat(dot.row) + 0.5) * cell)
+                    let rect = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
+                    context.fill(Path(ellipseIn: rect), with: .color(Self.tint(colors, dot.tint).opacity(dot.brightness)))
+                }
             }
             .frame(width: size, height: size)
-            .clipShape(Circle())
-            .scaleEffect(TalkIsland.orbScale(level: level, mood: mood, time: time))
-            .shadow(color: colors[0].opacity(0.75), radius: 5 + level * 6)
+            .scaleEffect(TalkIsland.globeScale(level: level, mood: mood, time: time))
+            .shadow(color: colors[0].opacity(0.55), radius: 3 + level * 6)
+            .offset(y: CGFloat(TalkIsland.globeFloat(time: time)))
         }
         .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    /// The colour `at` of the way around the mood's three, 0 to 3, blended between neighbours.
+    private static func tint(_ colors: [Color], _ at: Double) -> Color {
+        let index = Int(at) % colors.count, next = (index + 1) % colors.count
+        return colors[index].mix(with: colors[next], by: at - floor(at))
     }
 }
 
@@ -430,21 +467,32 @@ private struct EarView: View {
     }
 }
 
-/// The agent's activity, with a light sweeping across it.
-private struct ThinkingText: View {
+/// What the agent is doing now: a small icon for the kind of step and its line, with a light sweeping across it.
+private struct StepRow: View {
     let model: TalkIslandModel
     let text: String
 
     var body: some View {
-        IslandClock(model: model) { time in
-            let sweep = (time * 0.7).truncatingRemainder(dividingBy: 1.6) - 0.3
-            let dim = Color.white.opacity(0.3)
-            Text(text)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(LinearGradient(stops: [.init(color: dim, location: sweep - 0.25), .init(color: .white, location: sweep),
-                                                        .init(color: dim, location: sweep + 0.25)],
-                                                startPoint: .leading, endPoint: .trailing))
+        HStack(spacing: 10) {
+            Image(systemName: ToolLine.symbol(text))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.09)))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+            IslandClock(model: model) { time in
+                let sweep = (time * 0.7).truncatingRemainder(dividingBy: 1.6) - 0.3
+                let dim = Color.white.opacity(0.45)
+                Text(text)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(LinearGradient(stops: [.init(color: dim, location: sweep - 0.25), .init(color: .white, location: sweep),
+                                                            .init(color: dim, location: sweep + 0.25)],
+                                                    startPoint: .leading, endPoint: .trailing))
+            }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
     }
 }
 
@@ -459,9 +507,9 @@ private struct CallButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 38, height: 38)
+                .frame(width: 40, height: 40)
                 .background(Circle().fill(color))
                 .scaleEffect(hover ? 1.08 : 1)
         }
@@ -481,7 +529,7 @@ private struct EndButton: View {
             Image(systemName: "xmark")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 34, height: 34)
+                .frame(width: 36, height: 36)
                 .background(Circle().fill(Color(red: 1, green: 0.27, blue: 0.27)))
                 .scaleEffect(hover ? 1.08 : 1)
         }

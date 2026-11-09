@@ -155,6 +155,9 @@ enum TalkEnd: Equatable {
     private var splitter = ShowSplitter()
     private var chunker = SpeechChunker()
     private var announcer = ToolAnnouncer()
+    /// Each tool the agent starts shows on the island, held long enough to read before the next replaces it.
+    private var steps = StepQueue()
+    private var stepTimer: Task<Void, Never>?
     private var clock: TurnClock?
     private var report: TalkTurnReport?
     private var replyDone = false
@@ -459,6 +462,7 @@ enum TalkEnd: Equatable {
         let carriesOpening = openingTurn != nil && openingTurn == turn
         turn += 1
         let current = turn
+        (steps, stepTimer) = (StepQueue(), stepTimer.map { $0.cancel(); return nil } ?? nil)
         if carriesOpening {
             // The opening goes on in a new session, or you said something before the agent answered it: you are on
             // the line and the agent has the result, so that counts as said.
@@ -515,13 +519,34 @@ enum TalkEnd: Equatable {
         case .message(let text):
             clock?.mark(.firstText, at: .now)
             for piece in splitter.feed(text) { take(piece, turn: current) }
-        case .tool(let title, _, let kind, let id):
+        case .tool(let title, let status, let kind, let id):
+            // Every step shows; only some are said, so the voice doesn't chatter.
+            if status != "completed" && status != "failed" { showStep(ToolLine.phrase(title: title, kind: kind), turn: current) }
             guard let phrase = announcer.announce(id: id, title: title, kind: kind, at: .now) else { return }
             report?.tools.append(phrase)
-            if bar.phase != .speaking { bar.activity = phrase }
             queue(phrase + ".", turn: current)
         default:
             break
+        }
+    }
+
+    /// Shows each step in turn, each up long enough to read.
+    private func showStep(_ line: String, turn current: Int) {
+        steps.offer(line)
+        drainSteps(turn: current)
+    }
+
+    private func drainSteps(turn current: Int) {
+        // While the agent speaks or asks, the steps wait in `steps`, and their hold starts once they show.
+        guard stepTimer == nil, current == turn, !ended, bar.phase != .speaking, permission == nil else { return }
+        let (line, wait) = steps.next(at: .now)
+        if let line { bar.activity = line }
+        guard let wait = line == nil ? wait : StepQueue.hold else { return }
+        stepTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard let self, !Task.isCancelled else { return }
+            stepTimer = nil
+            drainSteps(turn: current)
         }
     }
 
@@ -588,9 +613,17 @@ enum TalkEnd: Equatable {
 
     private func started(_ caption: String) {
         guard !ended else { return }
-        if openingTurn == turn, let report, !report.tools.contains(where: { Speech.caption($0 + ".") == caption }) { openingHeard = true }
+        let toolLine = report?.tools.contains(where: { Speech.caption($0 + ".") == caption }) ?? false
+        if openingTurn == turn, !toolLine, report != nil { openingHeard = true }
         clock?.mark(.firstAudio, at: .now)
         ear.agentSpeaking(at: .now)
+        if toolLine {
+            // A step said out loud shows as a step, under your words, not as something the agent is telling you.
+            let step = steps.shown ?? (caption.hasSuffix(".") ? String(caption.dropLast()) : caption)
+            bar = TalkBar(agent: bar.agent, phase: .thinking, line: bar.phase == .thinking ? bar.line : "",
+                          activity: permission == nil ? step : bar.activity)
+            return drainSteps(turn: turn)
+        }
         bar = TalkBar(agent: bar.agent, phase: .speaking, line: caption, endingSoon: false)
     }
 
@@ -605,7 +638,8 @@ enum TalkEnd: Equatable {
         guard !ear.isHearing else { return }
         if replyDone, permission == nil { return turnOver() }
         ear.agentWorking(at: .now)
-        bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permission == nil ? bar.activity : permissionHint)
+        bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permission == nil ? steps.shown ?? bar.activity : permissionHint)
+        drainSteps(turn: turn)
     }
 
     private func turnOver() {

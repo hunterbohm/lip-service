@@ -286,10 +286,70 @@ import Testing
 
     @Test func toolsGetPlainLinesWithoutTheirArguments() {
         #expect(ToolLine.phrase(title: "google_calendar_list_events", kind: "fetch") == "Checking your calendar")
-        #expect(ToolLine.phrase(title: "terminal: hermes send -t photon \"call mom about the gmail thing\"", kind: "execute") == "Running a command")
-        #expect(ToolLine.phrase(title: "Read ~/.ssh/id_ed25519", kind: "read") == "Reading a file")
+        // A command shows its program and subcommand, never the quoted text after it.
+        #expect(ToolLine.phrase(title: "terminal: hermes send -t photon \"call mom about the gmail thing\"", kind: "execute") == "Running hermes send")
+        #expect(ToolLine.phrase(title: "Read ~/.ssh/id_ed25519", kind: "read") == "Reading id_ed25519")
         #expect(ToolLine.phrase(title: "zz", kind: "search") == "Searching")
         #expect(ToolLine.phrase(title: "", kind: nil) == "Working on it")
+    }
+
+    @Test func toolLinesSayWhatTheAgentIsDoing() {
+        let lines: [(String, String?, String)] = [
+            ("terminal: t3-run status 1a7431fb-4f9e-45ec-a8f2-200f1da", "execute", "Running t3-run status"),
+            ("terminal: ~/bin/gog --account hunterbohm8@gmail.com gmail search 'from:x' --max 5", "execute", "Checking Gmail"),
+            ("terminal: python3 skills/custom-skills/meet/prep.py --a", "execute", "Running prep.py"),
+            ("terminal: python3 - <<'EOF' print(1) EOF", "execute", "Running some code"),
+            ("terminal: K=$(cat ~/.config/cli-gateway/management.key) curl -s -H \"x: $K\" http://x", "execute", "Running a command"),
+            ("terminal: OPENAI_API_KEY=sk-abc123 infisical run --env=prod -- git push origin main", "execute", "Running git push"),
+            ("terminal: timeout 60 hermes cron list", "execute", "Running hermes cron"),
+            ("terminal: git commit -m 'fix the gmail bug'", "execute", "Running git commit"),
+            ("terminal: ghp_abcdefghijklmnop1234567890 --x", "execute", "Running a command"),
+            ("`cd ~/code && git status`", "execute", "Running git status"),
+            ("skill_view: productivity/media-request", "read", "Loading media-request skill"),
+            ("skill_view: obsidian → references/tasks.md", nil, "Loading obsidian skill"),
+            ("skill_view", nil, "Loading a skill"),
+            ("read_file: plan.md", "read", "Reading plan.md"),
+            ("write_file: /tmp/a/notes.md", "edit", "Writing notes.md"),
+            ("web_search: cheap flights to denver friday morning", "fetch", "Searching the web for cheap flights to denver…"),
+            ("search_files: 'demo-password'", "search", "Searching"),
+            ("web_search: don't share this", "fetch", "Searching the web"),
+            ("web_search: cheap flights to denver \"private\"", "fetch", "Searching the web"),
+            ("web_extract: https://www.example.com/a?b=c", "fetch", "Reading example.com"),
+            ("browser_navigate: https://mail.google.com/mail/u/0", nil, "Opening mail.google.com"),
+            ("browser_exec", nil, "Using the browser"),
+            ("tool_call: Scheduling", nil, "Scheduling"),
+            ("cronjob_manage: create", nil, "Managing scheduled jobs"),
+            ("delegate_task: Research flights", nil, "Asking a helper"),
+            ("google_calendar_list_events", "fetch", "Checking your calendar"),
+        ]
+        for (title, kind, line) in lines { #expect(ToolLine.phrase(title: title, kind: kind) == line, "\(title)") }
+        // Short enough for the island, whatever the agent sends.
+        #expect(ToolLine.phrase(title: "terminal: " + String(repeating: "a", count: 39) + " status", kind: "execute").count <= ToolLine.longest)
+        #expect(ToolLine.symbol("Running t3-run status") == "terminal")
+        #expect(ToolLine.symbol("Loading media-request skill") == "book.closed")
+        #expect(ToolLine.symbol("Checking Gmail") == "envelope")
+        #expect(ToolLine.symbol("Something new") == "sparkle")
+    }
+
+    @Test func stepsShowInTurnEachLongEnoughToRead() {
+        var steps = StepQueue()
+        let none = steps.next(at: Instant(seconds: 0))
+        #expect(none.line == nil && none.wait == nil)
+        steps.offer("Loading media-request skill")
+        steps.offer("Running t3-run status")
+        steps.offer("Running t3-run status")
+        #expect(steps.next(at: Instant(seconds: 0)).line == "Loading media-request skill")
+        let early = steps.next(at: Instant(seconds: 0.5))
+        #expect(early.line == nil && abs((early.wait ?? 0) - 0.4) < 1e-9)
+        #expect(steps.next(at: Instant(seconds: 0.9)).line == "Running t3-run status", "a repeat waits once")
+        let done = steps.next(at: Instant(seconds: 5))
+        #expect(done.line == nil && done.wait == nil)
+        #expect(steps.shown == "Running t3-run status")
+        // A burst keeps the newest few, in order.
+        for line in ["a", "b", "c", "d", "e"] { steps.offer(line) }
+        #expect(steps.next(at: Instant(seconds: 6)).line == "c")
+        #expect(steps.next(at: Instant(seconds: 7)).line == "d")
+        #expect(steps.next(at: Instant(seconds: 8)).line == "e")
     }
 
     @Test func atMostOneToolLineEveryFewSeconds() {
@@ -427,8 +487,10 @@ import Testing
 
     @Test func theIslandFitsTheNotch() {
         let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
-        #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 46)
-        #expect(TalkIsland.compactWidth(.plain) == 96 + 2 * 44)
+        #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 54)
+        #expect(TalkIsland.compactWidth(.plain) == 104 + 2 * 52)
+        // The globe fits the header with room to float, under a notch too.
+        for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 2) }
         #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))
         #expect(TalkIsland.openWidth(TalkIsland.Screen(hasNotch: true, notchWidth: 900, barHeight: 32)) == TalkIsland.widest)
     }
@@ -443,6 +505,41 @@ import Testing
         // The orb swells with the voice and stays within a quarter of its size.
         #expect(TalkIsland.orbScale(level: 1, mood: .you, time: 0) > TalkIsland.orbScale(level: 0, mood: .you, time: 0))
         #expect(TalkIsland.orbScale(level: 5, mood: .you, time: 0) <= 1.22 + 1e-9)
+    }
+
+    @Test func theGlobeIsAGridOfDotsThatTurnsAndAnswersTheVoice() {
+        let grid = TalkIsland.globeGrid
+        let quiet = TalkIsland.globeDots(time: 1, level: 0, mood: .you)
+        // Dots, not a solid ball: every dot sits inside the disc, smaller than its cell, and some cells are dark sea.
+        #expect(!quiet.isEmpty)
+        for dot in quiet {
+            let x = (Double(dot.column) + 0.5) / Double(grid) * 2 - 1, y = (Double(dot.row) + 0.5) / Double(grid) * 2 - 1
+            #expect(x * x + y * y <= 1)
+            #expect(dot.size < 1 && dot.size > 0)
+            #expect((0...1).contains(dot.brightness))
+            #expect((0..<3).contains(dot.tint))
+        }
+        #expect(Set(quiet.map(\.size)).count > 1, "sizes step like an ASCII ramp")
+        // It turns: the land moves between two moments.
+        #expect(TalkIsland.globeDots(time: 4, level: 0, mood: .you) != quiet)
+        // The voice brightens it.
+        let loud = TalkIsland.globeDots(time: 1, level: 1, mood: .you)
+        #expect(loud.map(\.brightness).reduce(0, +) > quiet.map(\.brightness).reduce(0, +))
+        // It turns faster while the agent works than while it waits on you.
+        // Counted by the dots whose size changed as land and sea moved under them.
+        let turn = { (mood: TalkIsland.Mood) in
+            let sizes = { (time: Double) in
+                Dictionary(TalkIsland.globeDots(time: time, level: 0, mood: mood).map { ("\($0.column),\($0.row)", $0.size) },
+                           uniquingKeysWith: { a, _ in a })
+            }
+            let before = sizes(0), after = sizes(1)
+            return Set(before.keys).union(after.keys).filter { before[$0] != after[$0] }.count
+        }
+        #expect(turn(.thinking) > turn(.you))
+        #expect(abs(TalkIsland.globeFloat(time: 3)) <= TalkIsland.globeBob)
+        // Swollen by a loud voice and breathing, it still fits the header.
+        let biggest = TalkIsland.globeSize(.plain) * TalkIsland.globeScale(level: 1, mood: .thinking, time: Double.pi / 9)
+        #expect(biggest / 2 + TalkIsland.globeBob <= TalkIsland.Screen.plain.barHeight / 2)
     }
 
     @Test func theVoiceBarsRiseWithTheLevelAndStayInTheEar() {
