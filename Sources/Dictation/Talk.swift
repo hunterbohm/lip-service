@@ -155,6 +155,10 @@ enum TalkEnd: Equatable {
     private var splitter = ShowSplitter()
     private var chunker = SpeechChunker()
     private var announcer = ToolAnnouncer()
+    /// Each tool the agent starts shows on the island, held long enough to read before the next replaces it.
+    private var stepShownAt: Instant?
+    private var stepWaiting: Task<Void, Never>?
+    private static let stepHold = 0.9
     private var clock: TurnClock?
     private var report: TalkTurnReport?
     private var replyDone = false
@@ -515,14 +519,34 @@ enum TalkEnd: Equatable {
         case .message(let text):
             clock?.mark(.firstText, at: .now)
             for piece in splitter.feed(text) { take(piece, turn: current) }
-        case .tool(let title, _, let kind, let id):
+        case .tool(let title, let status, let kind, let id):
+            // Every step shows; only some are said, so the voice doesn't chatter.
+            if status != "completed" && status != "failed" { showStep(ToolLine.phrase(title: title, kind: kind), turn: current) }
             guard let phrase = announcer.announce(id: id, title: title, kind: kind, at: .now) else { return }
             report?.tools.append(phrase)
-            if bar.phase != .speaking { bar.activity = phrase }
             queue(phrase + ".", turn: current)
         default:
             break
         }
+    }
+
+    /// Shows what the agent is doing now, once the last step has been up for `stepHold`; a step that comes sooner waits,
+    /// and only the newest waiting one shows.
+    private func showStep(_ line: String, turn current: Int) {
+        stepWaiting?.cancel()
+        let wait = stepShownAt.map { Self.stepHold - (Instant.now - $0) } ?? 0
+        guard wait > 0 else { return putStep(line, turn: current) }
+        stepWaiting = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
+            self?.putStep(line, turn: current)
+        }
+    }
+
+    private func putStep(_ line: String, turn current: Int) {
+        guard current == turn, !ended, permission == nil, bar.phase != .speaking, bar.activity != line else { return }
+        bar.activity = line
+        stepShownAt = .now
     }
 
     private func take(_ piece: ReplyPiece, turn current: Int) {

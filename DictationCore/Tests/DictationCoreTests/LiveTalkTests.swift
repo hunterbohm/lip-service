@@ -286,10 +286,46 @@ import Testing
 
     @Test func toolsGetPlainLinesWithoutTheirArguments() {
         #expect(ToolLine.phrase(title: "google_calendar_list_events", kind: "fetch") == "Checking your calendar")
-        #expect(ToolLine.phrase(title: "terminal: hermes send -t photon \"call mom about the gmail thing\"", kind: "execute") == "Running a command")
-        #expect(ToolLine.phrase(title: "Read ~/.ssh/id_ed25519", kind: "read") == "Reading a file")
+        // A command shows its program and subcommand, never the quoted text after it.
+        #expect(ToolLine.phrase(title: "terminal: hermes send -t photon \"call mom about the gmail thing\"", kind: "execute") == "Running hermes send")
+        #expect(ToolLine.phrase(title: "Read ~/.ssh/id_ed25519", kind: "read") == "Reading id_ed25519")
         #expect(ToolLine.phrase(title: "zz", kind: "search") == "Searching")
         #expect(ToolLine.phrase(title: "", kind: nil) == "Working on it")
+    }
+
+    @Test func toolLinesSayWhatTheAgentIsDoing() {
+        let lines: [(String, String?, String)] = [
+            ("terminal: t3-run status 1a7431fb-4f9e-45ec-a8f2-200f1da", "execute", "Running t3-run status"),
+            ("terminal: ~/bin/gog --account hunterbohm8@gmail.com gmail search 'from:x' --max 5", "execute", "Checking Gmail"),
+            ("terminal: python3 skills/custom-skills/meet/prep.py --a", "execute", "Running prep.py"),
+            ("terminal: python3 - <<'EOF' print(1) EOF", "execute", "Running some code"),
+            ("terminal: K=$(cat ~/.config/cli-gateway/management.key) curl -s -H \"x: $K\" http://x", "execute", "Running a command"),
+            ("terminal: OPENAI_API_KEY=sk-abc123 infisical run --env=prod -- git push origin main", "execute", "Running git push"),
+            ("terminal: timeout 60 hermes cron list", "execute", "Running hermes cron"),
+            ("terminal: git commit -m 'fix the gmail bug'", "execute", "Running git commit"),
+            ("terminal: ghp_abcdefghijklmnop1234567890 --x", "execute", "Running a command"),
+            ("`cd ~/code && git status`", "execute", "Running git status"),
+            ("skill_view: productivity/media-request", "read", "Loading media-request skill"),
+            ("skill_view: obsidian → references/tasks.md", nil, "Loading obsidian skill"),
+            ("skill_view", nil, "Loading a skill"),
+            ("read_file: plan.md", "read", "Reading plan.md"),
+            ("write_file: /tmp/a/notes.md", "edit", "Writing notes.md"),
+            ("web_search: cheap flights to denver friday morning", "fetch", "Searching the web for cheap flights to denver…"),
+            ("web_extract: https://www.example.com/a?b=c", "fetch", "Reading example.com"),
+            ("browser_navigate: https://mail.google.com/mail/u/0", nil, "Opening mail.google.com"),
+            ("browser_exec", nil, "Using the browser"),
+            ("tool_call: Scheduling", nil, "Scheduling"),
+            ("cronjob_manage: create", nil, "Managing scheduled jobs"),
+            ("delegate_task: Research flights", nil, "Asking a helper"),
+            ("google_calendar_list_events", "fetch", "Checking your calendar"),
+        ]
+        for (title, kind, line) in lines { #expect(ToolLine.phrase(title: title, kind: kind) == line, "\(title)") }
+        // Short enough for the island, whatever the agent sends.
+        #expect(ToolLine.phrase(title: "terminal: " + String(repeating: "a", count: 39) + " status", kind: "execute").count <= ToolLine.longest)
+        #expect(ToolLine.symbol("Running t3-run status") == "terminal")
+        #expect(ToolLine.symbol("Loading media-request skill") == "book.closed")
+        #expect(ToolLine.symbol("Checking Gmail") == "envelope")
+        #expect(ToolLine.symbol("Something new") == "sparkle")
     }
 
     @Test func atMostOneToolLineEveryFewSeconds() {

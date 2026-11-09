@@ -198,7 +198,10 @@ private struct IslandView: View {
         .padding(.horizontal, screen.hasNotch ? CGFloat(TalkIsland.earCurve) : 0)
         .background { shape(open: open).fill(.black) }
         .clipShape(shape(open: open))
-        .shadow(color: .black.opacity(open ? 0.5 : 0), radius: 22, y: 10)
+        .overlay { IslandEdge(shape: shape(open: open), notch: screen.hasNotch) }
+        // A faint light halo lifts it off a black window; the dark shadow lifts it off a light one.
+        .background { shape(open: open).fill(.black).shadow(color: .white.opacity(open ? 0.09 : 0.07), radius: open ? 14 : 8) }
+        .shadow(color: .black.opacity(open ? 0.5 : 0.3), radius: open ? 22 : 10, y: open ? 10 : 4)
         .scaleEffect(model.visible ? 1 : (screen.hasNotch ? 0.55 : 0.7), anchor: .top)
         .opacity(model.visible ? 1 : 0)
         .animation(reduceMotion ? .easeOut(duration: 0.2) : islandSpring, value: open)
@@ -282,9 +285,15 @@ private struct IslandView: View {
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                ThinkingText(model: model, text: bar.activity ?? "Thinking")
-                    .id(bar.activity ?? "")
-                    .transition(.opacity.combined(with: .offset(y: 4)))
+                // The steps sit on top of each other, so one fades out as the next rises in.
+                ZStack(alignment: .leading) {
+                    StepRow(model: model, text: bar.activity ?? "Thinking")
+                        .id(bar.activity ?? "")
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 7)).animation(.easeOut(duration: 0.38).delay(0.08)),
+                            removal: .opacity.combined(with: .offset(y: -5)).animation(.easeIn(duration: 0.26))))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if bar.phase == .speaking && !bar.line.isEmpty {
                 Text(bar.line)
                     .font(.system(size: 18, weight: .semibold))
@@ -303,7 +312,6 @@ private struct IslandView: View {
             }
         }
         .animation(.easeOut(duration: 0.22), value: bar.line)
-        .animation(.easeOut(duration: 0.25), value: bar.activity)
         .padding(.horizontal, 22)
         .padding(.top, 6)
         .padding(.bottom, 20)
@@ -353,6 +361,27 @@ private struct IslandShape: Shape {
         }
         p.closeSubpath()
         return p
+    }
+}
+
+/// The island's edge, so it reads on a black window: a hairline that is brightest along the top and fades down the
+/// sides. Under a notch the top edge is the screen's, so the line starts below it.
+private struct IslandEdge: View {
+    let shape: IslandShape
+    let notch: Bool
+
+    var body: some View {
+        shape
+            .stroke(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.1), .white.opacity(0.16)],
+                                   startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            .clipShape(shape)
+            .mask {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: notch ? 3 : 0)
+                    Color.black
+                }
+            }
+            .allowsHitTesting(false)
     }
 }
 
@@ -438,21 +467,32 @@ private struct EarView: View {
     }
 }
 
-/// The agent's activity, with a light sweeping across it.
-private struct ThinkingText: View {
+/// What the agent is doing now: a small icon for the kind of step and its line, with a light sweeping across it.
+private struct StepRow: View {
     let model: TalkIslandModel
     let text: String
 
     var body: some View {
-        IslandClock(model: model) { time in
-            let sweep = (time * 0.7).truncatingRemainder(dividingBy: 1.6) - 0.3
-            let dim = Color.white.opacity(0.3)
-            Text(text)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(LinearGradient(stops: [.init(color: dim, location: sweep - 0.25), .init(color: .white, location: sweep),
-                                                        .init(color: dim, location: sweep + 0.25)],
-                                                startPoint: .leading, endPoint: .trailing))
+        HStack(spacing: 10) {
+            Image(systemName: ToolLine.symbol(text))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.09)))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+            IslandClock(model: model) { time in
+                let sweep = (time * 0.7).truncatingRemainder(dividingBy: 1.6) - 0.3
+                let dim = Color.white.opacity(0.45)
+                Text(text)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(LinearGradient(stops: [.init(color: dim, location: sweep - 0.25), .init(color: .white, location: sweep),
+                                                            .init(color: dim, location: sweep + 0.25)],
+                                                    startPoint: .leading, endPoint: .trailing))
+            }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
     }
 }
 

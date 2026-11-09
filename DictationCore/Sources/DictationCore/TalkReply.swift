@@ -203,24 +203,32 @@ public enum ShowCard: Equatable, Sendable {
     }
 }
 
-/// One plain line for what the agent started doing, from the tool's title and kind as ACP reports them. The words are
-/// fixed phrases: a tool's arguments, which can hold commands or private text, are never read out or shown.
+/// One short line for what the agent started doing, from the tool's title and kind as ACP reports them: "Running t3-run
+/// status", "Loading media-request skill", "Checking Gmail", "Reading plan.md". A title is often the tool's name, a colon
+/// and a preview of its arguments, as Hermes sends them. Only a few safe words of the arguments are kept: a command's
+/// program and subcommand, a skill's or file's name, a web host, and a short search. Quoted text, flags, values, paths and
+/// anything that looks like a key are left out, so a secret or a message body is never shown or said.
 public enum ToolLine {
+    /// The longest line, in characters. A longer subject is cut with an ellipsis.
+    public static let longest = 48
+
     private static let byTitle: [(String, String)] = [
         ("t3_thread_launch", "Starting a thread in T3 Code"), ("t3_project", "Looking through your T3 projects"),
         ("t3_thread", "Checking your T3 threads"),
-        ("calendar", "Checking your calendar"), ("event", "Checking your calendar"),
-        ("gmail", "Checking your email"), ("email", "Checking your email"), ("mail", "Checking your email"), ("inbox", "Checking your email"),
+        ("gmail", "Checking Gmail"), ("calendar", "Checking your calendar"), ("event", "Checking your calendar"),
+        ("email", "Checking your email"), ("mail", "Checking your email"), ("inbox", "Checking your email"),
         ("session_search", "Searching your past talks"), ("memory", "Checking what it remembers"), ("remember", "Checking what it remembers"),
         ("weather", "Checking the weather"),
         ("web_search", "Searching the web"), ("web search", "Searching the web"), ("search the web", "Searching the web"),
-        ("browser", "Looking at a web page"), ("browse", "Looking at a web page"), ("fetch", "Looking at a web page"), ("web", "Searching the web"),
+        ("browser", "Using the browser"), ("browse", "Using the browser"), ("fetch", "Looking at a web page"), ("web", "Searching the web"),
         ("send", "Sending that"), ("message", "Checking your messages"), ("slack", "Checking Slack"),
-        ("notion", "Checking Notion"), ("github", "Checking GitHub"), ("linear", "Checking Linear"),
-        ("todo", "Updating the to-do list"), ("task", "Checking your tasks"), ("cron", "Checking schedules"), ("schedule", "Checking schedules"),
+        ("notion", "Checking Notion"), ("github", "Checking GitHub"), ("linear", "Checking Linear"), ("stripe", "Checking Stripe"),
+        ("cron", "Managing scheduled jobs"), ("schedule", "Managing scheduled jobs"),
+        ("todo", "Updating the to-do list"), ("task", "Checking your tasks"),
         ("delegat", "Asking a helper"), ("agent", "Asking a helper"), ("vision", "Looking at an image"), ("image", "Working on an image"),
-        ("skill", "Using one of its skills"), ("search", "Searching"), ("grep", "Searching"), ("find", "Searching"),
-        ("read", "Reading a file"), ("write", "Writing a file"), ("edit", "Making an edit"),
+        ("skills_list", "Looking through its skills"), ("skill_manage", "Updating a skill"), ("skill", "Loading a skill"),
+        ("search", "Searching"), ("grep", "Searching"), ("find", "Searching"),
+        ("read", "Reading a file"), ("write", "Writing a file"), ("edit", "Making an edit"), ("patch", "Making an edit"),
         ("terminal", "Running a command"), ("bash", "Running a command"), ("shell", "Running a command"), ("execute", "Running a command"),
         ("code_execution", "Running some code"), ("python", "Running some code"),
     ]
@@ -230,19 +238,204 @@ public enum ToolLine {
         "execute": "Running a command", "think": "Thinking it over", "fetch": "Looking at a web page", "switch_mode": "Changing modes",
     ]
 
+    /// Apps a command or tool can be checking, by a word it uses, and their names.
+    private static let services: [(String, String)] = [
+        ("gmail", "Gmail"), ("calendar", "your calendar"), ("gcal", "your calendar"), ("drive", "Google Drive"),
+        ("sheets", "Google Sheets"), ("slack", "Slack"), ("notion", "Notion"), ("stripe", "Stripe"), ("linear", "Linear"),
+        ("discord", "Discord"), ("imessage", "iMessage"), ("obsidian", "Obsidian"),
+    ]
+
     /// The phrase for a permission the agent asks for. The kind decides it when the agent gives one, so a title that
     /// sounds harmless can't dress up a command or a deletion as something else.
     public static func permissionPhrase(title: String, kind: String?) -> String {
         if let kind, let phrase = byKind[kind] { return phrase }
-        return phrase(title: title, kind: nil)
+        return generic(title: title, kind: nil)
     }
 
-    /// Only the first word or two of a title is matched, since the rest of it is often the tool's arguments.
     public static func phrase(title: String, kind: String?) -> String {
+        let (tool, preview) = split(title)
+        let name = tool.lowercased()
+        if let line = specific(tool: name, preview: preview, kind: kind) { return fit(line) }
+        return generic(title: title, kind: kind)
+    }
+
+    /// The fixed phrase from the tool's name or kind alone. Only the first word or two of a title is matched, since the
+    /// rest of it is often the tool's arguments.
+    static func generic(title: String, kind: String?) -> String {
         let name = title.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == ":" || $0 == "(" }).prefix(2).joined(separator: " ")
         if let match = byTitle.first(where: { name.contains($0.0) }) { return match.1 }
         if let kind, let phrase = byKind[kind] { return phrase }
         return "Working on it"
+    }
+
+    /// The SF Symbol the island shows beside a line, from its first words.
+    public static func symbol(_ line: String) -> String {
+        let rules: [(String, String)] = [
+            ("Running some code", "chevron.left.forwardslash.chevron.right"), ("Running", "terminal"),
+            ("Loading", "book.closed"), ("Looking through its skills", "books.vertical"), ("Updating a skill", "book.closed"),
+            ("Checking Gmail", "envelope"), ("Checking your email", "envelope"), ("Checking your calendar", "calendar"),
+            ("Checking your messages", "message"), ("Checking iMessage", "message"), ("Sending", "paperplane"),
+            ("Searching the web", "globe"), ("Opening", "safari"), ("Using the browser", "safari"), ("Looking at a web page", "safari"),
+            ("Searching your past talks", "clock.arrow.circlepath"), ("Checking what it remembers", "brain"),
+            ("Searching", "magnifyingglass"), ("Reading", "doc.text"), ("Writing", "square.and.pencil"), ("Editing", "pencil"),
+            ("Making an edit", "pencil"), ("Asking a helper", "person.2"), ("Looking at an image", "eye"), ("Working on an image", "photo"),
+            ("Managing scheduled jobs", "clock"), ("Checking the weather", "cloud.sun"), ("Starting a thread", "plus.bubble"),
+            ("Checking your T3", "bubble.left.and.bubble.right"), ("Looking through your T3", "folder"),
+            ("Updating the to-do list", "checklist"), ("Checking your tasks", "checklist"), ("Thinking", "sparkle"),
+        ]
+        return rules.first { line.hasPrefix($0.0) }?.1 ?? "sparkle"
+    }
+
+    // MARK: Reading a title
+
+    /// "terminal: t3-run status" is the tool `terminal` and the preview `t3-run status`; a Claude Code title such as
+    /// "`git status`" is a command, and "Read /path/file" a tool and its target.
+    static func split(_ title: String) -> (tool: String, preview: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.hasPrefix("`"), title.dropFirst().contains("`") {
+            return ("bash", String(title.dropFirst().prefix { $0 != "`" }))
+        }
+        if let colon = title.range(of: ": "), title[..<colon.lowerBound].allSatisfy({ $0.isLetter || $0.isNumber || "_-".contains($0) }) {
+            return (String(title[..<colon.lowerBound]), String(title[colon.upperBound...]))
+        }
+        let first = title.prefix { !$0.isWhitespace }
+        if ["read", "write", "edit", "fetch"].contains(first.lowercased()) {
+            return (String(first), title.dropFirst(first.count).trimmingCharacters(in: .whitespaces))
+        }
+        return (title, "")
+    }
+
+    static func specific(tool: String, preview: String, kind: String?) -> String? {
+        let preview = preview.trimmingCharacters(in: .whitespaces)
+        switch tool {
+        case "terminal", "bash", "shell", "execute", "run_command":
+            return command(preview)
+        case "skill_view", "skill":
+            return skillName(preview).map { "Loading \($0) skill" }
+        case "read_file", "read":
+            return fileName(preview).map { "Reading \($0)" }
+        case "write_file", "write":
+            return fileName(preview).map { "Writing \($0)" }
+        case "patch", "edit":
+            return fileName(preview).map { "Editing \($0)" }
+        case "web_search":
+            return words(preview, most: 4).map { "Searching the web for \($0)" }
+        case "search_files", "grep":
+            return words(preview, most: 3).map { "Searching files for \($0)" }
+        case "web_extract", "fetch":
+            return host(preview).map { "Reading \($0)" }
+        case let name where name.hasPrefix("browser"):
+            return host(preview).map { "Opening \($0)" } ?? "Using the browser"
+        case "execute_code":
+            return "Running some code"
+        case "tool_call":
+            // Hermes's tool bridge names what it does in a word or two: "Scheduling".
+            return words(preview, most: 3).map { $0.prefix(1).uppercased() + $0.dropFirst() }
+        default:
+            if kind == "execute", !preview.isEmpty { return command(preview) }
+            if let service = services.first(where: { tool.contains($0.0) }) { return "Checking \(service.1)" }
+            return nil
+        }
+    }
+
+    /// "Running t3-run status": the program, and its subcommand when it has one. An app it checks, such as Gmail, says
+    /// that instead. Wrappers like `sudo`, `timeout 60`, `infisical run --` and `KEY=value` are skipped.
+    static func command(_ text: String) -> String? {
+        var tokens = text.replacingOccurrences(of: "\n", with: " ").split(whereSeparator: \.isWhitespace).map(String.init)
+        if tokens.first == "$" { tokens.removeFirst() }
+        // `cd somewhere && git status` runs git.
+        while let index = tokens.firstIndex(where: { $0 == "&&" || $0 == ";" }), index < 4, tokens.first == "cd" {
+            tokens.removeFirst(index + 1)
+        }
+        let wrappers: Set<String> = ["sudo", "env", "time", "nohup", "exec", "command", "caffeinate", "uv", "npx", "bunx"]
+        while let first = tokens.first {
+            if wrappers.contains(first) || isAssignment(first) {
+                tokens.removeFirst()
+            } else if first == "timeout" || first == "nice" {
+                tokens.removeFirst()
+                if let next = tokens.first, next.allSatisfy({ $0.isNumber || $0 == "s" || $0 == "m" || $0 == "-" || $0 == "n" }) { tokens.removeFirst() }
+            } else if first == "infisical", tokens.dropFirst().first == "run", let dashes = tokens.firstIndex(of: "--") {
+                tokens.removeFirst(dashes + 1)
+            } else if first == "run", tokens.count > 1 {
+                tokens.removeFirst()
+            } else {
+                break
+            }
+        }
+        guard let first = tokens.first else { return nil }
+        let program = String(first.split(separator: "/").last ?? "")
+        guard isWord(program) else { return "Running a command" }
+        let head = tokens.prefix(6).map { $0.lowercased() }
+        let quoted = head.firstIndex { $0.hasPrefix("'") || $0.hasPrefix("\"") || $0.hasPrefix("<") } ?? head.count
+        if let service = services.first(where: { head[..<quoted].contains($0.0) }) { return "Checking \(service.1)" }
+        let interpreters: Set<String> = ["python", "python3", "node", "bun", "deno", "ruby", "perl", "bash", "sh", "zsh", "osascript", "swift"]
+        if interpreters.contains(program.lowercased()) {
+            guard let script = tokens.dropFirst().first(where: { !$0.hasPrefix("-") }), script.contains(".") || script.contains("/"),
+                  let name = fileName(script) else { return program.lowercased().hasPrefix("python") ? "Running some code" : "Running \(program)" }
+            return "Running \(name)"
+        }
+        if let sub = tokens.dropFirst().first, isWord(sub), sub.first?.isLetter == true, sub == sub.lowercased(), !sub.contains(".") {
+            return "Running \(program) \(sub)"
+        }
+        return "Running \(program)"
+    }
+
+    /// "productivity/executor-connected-accounts" is the skill `executor-connected-accounts`.
+    static func skillName(_ text: String) -> String? {
+        let name = text.components(separatedBy: " → ").first?.trimmingCharacters(in: .whitespaces) ?? ""
+        let last = name.split(separator: "/").last.map(String.init) ?? ""
+        let bare = last.split(separator: ":").last.map(String.init) ?? last
+        return isWord(bare) ? bare : nil
+    }
+
+    /// The file's name, without its folders: "plan.md". Nil when it isn't a plain name.
+    static func fileName(_ text: String) -> String? {
+        let path = text.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        let name = path.split(separator: "/").last.map(String.init) ?? ""
+        return isWord(name) ? name : nil
+    }
+
+    /// The host of the first web address: "mail.google.com".
+    static func host(_ text: String) -> String? {
+        guard let match = text.firstMatch(of: /https?:\/\/([A-Za-z0-9.-]+)/) else { return nil }
+        let host = String(match.1).lowercased()
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    /// Up to `most` plain words, for a search: letters, digits and a few marks, nothing that looks like a key.
+    static func words(_ text: String, most: Int) -> String? {
+        let all = text.split(whereSeparator: \.isWhitespace)
+        let kept = all.prefix(most).map(String.init)
+        guard !kept.isEmpty, kept.allSatisfy({ $0.count <= 24 && $0.allSatisfy { $0.isLetter || $0.isNumber || "'-.&".contains($0) } }),
+              !kept.contains(where: looksLikeKey) else { return nil }
+        return kept.joined(separator: " ") + (all.count > most ? "…" : "")
+    }
+
+    /// A short name: letters, digits, dot, dash, underscore and plus, starting with a letter or digit.
+    static func isWord(_ text: String) -> Bool {
+        guard let first = text.first, first.isLetter || first.isNumber, text.count <= 40, !looksLikeKey(text) else { return false }
+        return text.allSatisfy { ($0.isASCII && ($0.isLetter || $0.isNumber)) || "._-+".contains($0) }
+    }
+
+    static func isAssignment(_ token: String) -> Bool {
+        guard let equals = token.firstIndex(of: "=") else { return false }
+        return token[..<equals].allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" } && !token[..<equals].isEmpty
+    }
+
+    /// A long run of letters and digits with no vowels' rhythm, or a known key prefix: kept off the screen.
+    static func looksLikeKey(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if ["sk-", "ghp_", "gho_", "xox", "pk_", "rk_", "akia", "ya29", "eyj"].contains(where: lower.hasPrefix) { return true }
+        let run = text.filter { $0.isLetter || $0.isNumber }
+        return run.count >= 20 && run.contains(where: \.isNumber) && run.contains(where: \.isLetter)
+    }
+
+    /// At most `longest` characters, cut at a word with an ellipsis.
+    static func fit(_ line: String) -> String {
+        guard line.count > longest else { return line }
+        var cut = String(line.prefix(longest - 1))
+        if let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) > longest / 2 { cut = String(cut[..<space]) }
+        return cut.trimmingCharacters(in: CharacterSet(charactersIn: " .,-")) + "…"
     }
 }
 
