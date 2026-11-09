@@ -259,6 +259,22 @@ A talk ends when you double-tap Left Control, say goodbye ("goodbye", "bye", "en
 - **Speed.** Each turn logs, under the `talk` category, how long after you stopped talking your turn ended, it was transcribed, the agent's first text came, and the voice started, all counted from the end of your speech, so `transcribed` includes the 0.8 s pause. Your words are transcribed 0.5 s into the pause, while it runs out, and that text is used when no words came after it, so the text is ready within 0.03 s of the turn's end. In testing with Hermes on a Mac mini over Tailscale, on Opus 5.5 with low reasoning, the voice started about 3 to 3.5 s after the end of speech: the 0.8 s pause, about 0.03 s more for the text, 1.9 to 2.3 s for Hermes's first words (3.1 s on a session's first turn), up to 0.1 s for the first piece, and 0.15 to 0.25 s for Preston's first audio.
 - **Idle.** With no talk running, nothing of it runs: no audio engine, timer or view, and Left Control is watched only as part of the key events Lip Service already sees.
 
+### Call back
+
+An agent can call you back when a background job finishes. Hand it a long task in a talk, hang up, and when the job is done the agent's own script runs `Dictation call` on your Mac with the result:
+
+```sh
+"/Applications/Lip Service.app/Contents/MacOS/Dictation" call --from Hermes --about "the flight search" < result.txt
+```
+
+1. Lip Service first checks whether you can take a call. It won't ring while the screen is locked, a Focus is on, another app is using the camera, or another app is recording from a microphone, as a Zoom, Meet or FaceTime call does (Siri's always-on listener doesn't count). It also waits while a talk or a dictation is running. It answers `busy` with the reason, so the caller can text you instead and try again later.
+2. Otherwise the island rings for 30 s: "Hermes is calling", what it is about, **Decline** and **Answer**, and the start sound twice every 3 s. Double-tap Left Control or click **Answer** to pick up.
+3. The voice on your Mac says "Hi, it's Hermes, calling you back about the flight search." while the agent's session opens. Then the result goes to the agent as the talk's first turn, with the usual voice-call note, and the agent says it in a few short sentences, puts links or numbers on a card, and asks if you need anything else. From there it is a normal live talk.
+
+`Dictation call` prints one JSON line per status and exits with the last one's code: `delivered` (0) once the agent's first reply has played to the end or you talked over it; `declined`, `missed` or `hung-up` (3) when the result wasn't said, so the caller should text it; `busy` (4) to try later; `failed` (5) when it couldn't ring, as when Lip Service isn't running or no agent is set up. `--ring 0` starts the talk at once without ringing, `--agent` picks the agent the talk goes to (the one Live talk uses unless given), `--result-file` reads the result from a file, and `call --check` prints whether you look busy now without ringing.
+
+The result travels in a private file in `~/Library/Application Support/Dictation/calls/`, deleted as soon as the app reads it; the notification that wakes the app carries only an id. A request older than a minute is ignored. The Focus check reads `~/Library/DoNotDisturb/DB/Assertions.json`, where a Focus turned on by hand shows; a Focus that only a schedule turns on may not.
+
 ## Agents
 
 Lip Service talks to agents over the Agent Client Protocol (ACP), the same way code editors do, so it uses the agent and plan you already have. Built in:

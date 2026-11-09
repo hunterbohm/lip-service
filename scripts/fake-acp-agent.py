@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """A stand-in ACP agent for testing Lip Service. Speaks newline-delimited JSON-RPC on stdio.
 
-usage: fake-acp-agent.py [--mode draft|permission|tool|report|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
+usage: fake-acp-agent.py [--mode draft|permission|tool|report|echo|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
                          [--spawn-child TAG]
 
 draft       streams --reply in a few chunks after --delay
 permission  asks session/request_permission first, then says which option it got
 tool        starts a tool call (a tool_call update) first, then streams --reply
 report      replies with the _meta its session/new carried and the config options set on its sessions, as JSON
+echo        replies "You said: " and the prompt's last line, so a test can see what reached the agent; every prompt is
+            also appended to $FAKE_ACP_PROMPTS when that is set
 error       answers the prompt with a JSON-RPC error
 die         exits during the prompt, after a line on stderr; with --marker, only the first time
 slow        waits 30 s, or stops early on session/cancel
@@ -80,6 +82,12 @@ def prompt(rid, params):
         cancelled.wait(30)
         return send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "cancelled" if cancelled.is_set() else "end_turn"}})
     reply = args.reply
+    text = "".join(block.get("text", "") for block in params.get("prompt") or [] if isinstance(block, dict))
+    if os.environ.get("FAKE_ACP_PROMPTS"):
+        with open(os.environ["FAKE_ACP_PROMPTS"], "a") as f:
+            f.write(json.dumps({"session": session, "text": text}) + "\n")
+    if args.mode == "echo":
+        reply = "You said: " + (text.strip().splitlines() or [""])[-1]
     if args.mode == "report":
         reply = json.dumps(seen, sort_keys=True)
     if args.mode == "tool":

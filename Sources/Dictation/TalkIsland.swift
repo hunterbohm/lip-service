@@ -21,6 +21,9 @@ import SwiftUI
     /// The level of whoever is talking, 0 to 1. Read every frame, not observed.
     @ObservationIgnored var level: () -> Double = { 0 }
     @ObservationIgnored var onEnd: () -> Void = {}
+    /// Answer and Decline on a call back that is ringing.
+    @ObservationIgnored var onAnswer: () -> Void = {}
+    @ObservationIgnored var onDecline: () -> Void = {}
     /// The island's drawn size changed.
     @ObservationIgnored var sizeChanged: (() -> Void)?
 
@@ -250,7 +253,23 @@ private struct IslandView: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if bar.endingSoon && bar.phase == .listening {
+            if bar.phase == .ringing {
+                if !bar.line.isEmpty {
+                    Text("About \(bar.line)")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 12) {
+                    Text("Double-tap Left Control to answer")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Spacer()
+                    CallButton(symbol: "phone.down.fill", color: Color(red: 1, green: 0.27, blue: 0.27), label: "Decline") { model.onDecline() }
+                    CallButton(symbol: "phone.fill", color: Color(red: 0.2, green: 0.8, blue: 0.4), label: "Answer") { model.onAnswer() }
+                }
+            } else if bar.endingSoon && bar.phase == .listening {
                 Text("Still there? This talk ends soon unless you say something.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.white.opacity(0.75))
@@ -275,7 +294,7 @@ private struct IslandView: View {
                     .id(bar.line)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity))
             }
-            if model.hovering {
+            if model.hovering && bar.phase != .ringing {
                 HStack {
                     Spacer()
                     EndButton { model.onEnd() }
@@ -426,6 +445,30 @@ private struct ThinkingText: View {
                                                         .init(color: dim, location: sweep + 0.25)],
                                                 startPoint: .leading, endPoint: .trailing))
         }
+    }
+}
+
+/// A round button to answer or decline a call back.
+private struct CallButton: View {
+    let symbol: String
+    let color: Color
+    let label: String
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(color))
+                .scaleEffect(hover ? 1.08 : 1)
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+        .onHover { inside in withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { hover = inside } }
     }
 }
 

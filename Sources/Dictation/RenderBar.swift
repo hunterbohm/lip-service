@@ -145,6 +145,9 @@ import DictationCore
                   topBar: tilerBar),
             Scene(name: "69-talk-bar-no-notch", state: BarState(body: talk(.thinking, activity: "Checking your calendar")), edge: .top, quiet: true,
                   topBar: tilerBar),
+            Scene(name: "70-call-back-ringing", state: BarState(body: talk(.ringing, line: "the flight search")), edge: .top, quiet: true),
+            Scene(name: "71-call-back-ringing-notch", state: BarState(body: talk(.ringing, line: "the flight search")), edge: .top, quiet: true,
+                  notch: true),
         ]
     }
 

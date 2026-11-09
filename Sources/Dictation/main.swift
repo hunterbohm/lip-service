@@ -62,6 +62,8 @@ case .talkTest(let options):
 case .handOffTest(let options):
     Task { @MainActor in exit(await HandOffTest.run(options)) }
     dispatchMain()
+case .call(let options):
+    exit(MainActor.assumeIsolated { CallCommand.run(options) })
 case .importWillowDryRun(let folder):
     exit(WillowImporter.dryRun(folder))
 case .installFormatter(let archive):

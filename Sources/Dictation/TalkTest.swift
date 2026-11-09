@@ -19,6 +19,8 @@ import Foundation
         var note: String?
         /// The live-talk session options, replacing the preset's when any are given.
         var talkOptions: [ConfigChoice] = []
+        /// Starts the talk as a call back about this, with this result, before the first clip.
+        var callBack: (about: String, result: String)?
     }
 
     static func run(_ options: Options) async -> Int32 {
@@ -50,7 +52,12 @@ import Foundation
         let input = ClipInput(clips: clips), speaker = SilentSpeaker(), pool = AgentPool()
         let secrets = T3Bridge.secrets()
         pool.talkExtras = { agent in await TalkT3.extras(for: agent, secrets: secrets) }
-        let talk = Talk(agent: agent, pool: pool, engine: engine, voice: Voices.provider(for: options.voice), input: input, speaker: speaker)
+        let opening = options.callBack.map { call in
+            TalkOpening(greeting: CallbackPrompt.greeting(from: agent.name, about: call.about),
+                        prompt: CallbackPrompt.opening(from: agent.name, about: call.about, result: call.result))
+        }
+        let talk = Talk(agent: agent, pool: pool, engine: engine, voice: Voices.provider(for: options.voice), input: input, speaker: speaker,
+                        opening: opening)
         let started = Instant.now
         var turns = 0, failures = 0
         let done = AsyncStream<TalkEnd>.makeStream()
@@ -84,6 +91,7 @@ import Foundation
                 }
             }
         }
+        talk.onOpening = { said in print(#"{"callBack":"\#(said ? "said" : "failed")"}"#) }
         talk.onEnd = { done.continuation.yield($0) }
         talk.start()
         var reason = TalkEnd.byYou
@@ -103,8 +111,8 @@ import Foundation
         pool.stopAll()
         try? await Task.sleep(for: .milliseconds(300))
         if case .failed = reason { return 1 }
-        // A goodbye clip ends the talk without a turn of its own.
-        let expected = reason == .goodbye ? clips.count - 1 : clips.count
+        // A goodbye clip ends the talk without a turn of its own, and a call back's opening is a turn of its own.
+        let expected = (reason == .goodbye ? clips.count - 1 : clips.count) + (opening == nil ? 0 : 1)
         return failures == 0 && turns == expected ? 0 : 1
     }
 
