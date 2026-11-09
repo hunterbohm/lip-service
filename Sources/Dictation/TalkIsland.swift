@@ -54,6 +54,7 @@ struct IslandNotice: Identifiable, Equatable {
     private var pointer: Timer?
     private var hiding: Task<Void, Never>?
     private var noticeClosing: Task<Void, Never>?
+    private var noticeExpiry: Task<Void, Never>?
     /// Placed on a stand-in screen by --render-bar: shown there, with no pointer watching.
     private var placedByHand = false
 
@@ -114,7 +115,21 @@ struct IslandNotice: Identifiable, Equatable {
             guard let self, !Task.isCancelled else { return }
             model.noticeOpen = false
         }
+        expireNotices()
         return true
+    }
+
+    /// Drops notices once they are `noticeLifetime` old, each on time, whether or not another comes.
+    private func expireNotices() {
+        noticeExpiry?.cancel()
+        let now = Instant.now
+        model.notices.removeAll { now - $0.added >= TalkIsland.noticeLifetime }
+        guard let oldest = model.notices.map(\.added).min() else { return }
+        noticeExpiry = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0.5, oldest + TalkIsland.noticeLifetime - now)))
+            guard let self, !Task.isCancelled else { return }
+            expireNotices()
+        }
     }
 
     /// Places the panel at the top centre of `area`, a stand-in screen, for --render-bar.

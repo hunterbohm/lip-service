@@ -343,6 +343,13 @@ import Testing
         #expect(TalkIsland.notice(.text(String(repeating: "word ", count: 60))) == nil)
         #expect(TalkIsland.notice(.text("a\nb\nc\nd")) == nil)
         #expect(TalkIsland.notice(.text("   ")) == nil)
+        // What the agent wrote is kept, marks and all.
+        #expect(TalkIsland.notice(.text("Added #123 to task_notes.md")) == "Added #123 to task_notes.md")
+        #expect(TalkIsland.notice(.text("Moved the call (with Zach) to Friday")) == "Moved the call (with Zach) to Friday")
+        // One-line commands and Markdown links stay cards.
+        #expect(TalkIsland.notice(.text("echo \"$HOME\" > output_file")) == nil)
+        #expect(TalkIsland.notice(.text("git push -u origin main")) == nil)
+        #expect(TalkIsland.notice(.text("See [the doc](https://example.com/a)")) == nil)
     }
 
     @Test func stepsShowInTurnEachLongEnoughToRead() {

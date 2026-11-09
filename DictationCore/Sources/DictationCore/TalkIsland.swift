@@ -201,11 +201,20 @@ public enum TalkIsland {
     public static func notice(_ card: ShowCard) -> String? {
         guard case .text(let raw) = card else { return nil }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lines = text.split(whereSeparator: \.isNewline)
-        // Several lines with code marks or command flags are code or commands, which read better on a card.
-        let code = lines.count > 1 && (text.contains { "{}();=<>$".contains($0) } || text.contains(" -"))
-        guard !text.isEmpty, text.count <= noticeLongest, lines.count <= 3, !code, !text.hasPrefix("```") else { return nil }
-        return lines.map { Speech.caption(String($0)) }.joined(separator: "\n")
+        let lines = text.split(whereSeparator: \.isNewline).map { Speech.collapse(String($0)) }
+        guard !text.isEmpty, text.count <= noticeLongest, lines.count <= 3, !looksLikeCode(text, lines: lines.count) else { return nil }
+        // A link written in Markdown needs its address, which a card keeps.
+        guard text.firstMatch(of: /\[[^\]]+\]\([^)]+\)/) == nil else { return nil }
+        // Only bold marks around words go; every other character is kept as the agent wrote it.
+        return lines.map { $0.replacing(/\*\*([^*]+)\*\*/) { String($0.1) } }.joined(separator: "\n")
+    }
+
+    /// Code or a command reads better on a card: marks that prose seldom uses, a command's flags or `&&`, a prompt
+    /// sign, or a fence. Over several lines, brackets and semicolons count too.
+    static func looksLikeCode(_ text: String, lines: Int) -> Bool {
+        if text.contains(where: { "{}<>$`|\\=".contains($0) }) || text.contains("&&") || text.hasPrefix("$ ") { return true }
+        if text.firstMatch(of: /(^|\s)--?[A-Za-z]/) != nil { return true }
+        return lines > 1 && text.contains(where: { "();".contains($0) })
     }
 
     /// What the right ear shows.
