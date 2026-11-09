@@ -402,11 +402,12 @@ public enum ToolLine {
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
-    /// Up to `most` plain words, for a search: letters, digits and a few marks, nothing that looks like a key.
+    /// Up to `most` plain words, for a search: letters, digits and a few marks, nothing that looks like a key. A quote
+    /// anywhere means the words may be a quoted value, so none are kept.
     static func words(_ text: String, most: Int) -> String? {
         let all = text.split(whereSeparator: \.isWhitespace)
         let kept = all.prefix(most).map(String.init)
-        guard !kept.isEmpty, kept.allSatisfy({ $0.count <= 24 && $0.allSatisfy { $0.isLetter || $0.isNumber || "'-.&".contains($0) } }),
+        guard !kept.isEmpty, kept.allSatisfy({ $0.count <= 24 && $0.allSatisfy { $0.isLetter || $0.isNumber || "-.&".contains($0) } }),
               !kept.contains(where: looksLikeKey) else { return nil }
         return kept.joined(separator: " ") + (all.count > most ? "…" : "")
     }
@@ -436,6 +437,35 @@ public enum ToolLine {
         var cut = String(line.prefix(longest - 1))
         if let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) > longest / 2 { cut = String(cut[..<space]) }
         return cut.trimmingCharacters(in: CharacterSet(charactersIn: " .,-")) + "…"
+    }
+}
+
+/// The steps the island shows, in order, each up for at least `hold` seconds so it can be read. When steps come faster
+/// than that, they wait their turn; past `most` waiting, the oldest waiting ones are skipped, so the island never lags
+/// far behind what the agent is doing.
+public struct StepQueue: Sendable {
+    public static let hold = 0.9
+    public static let most = 3
+    /// The step on the island now.
+    public private(set) var shown: String?
+    private var shownAt: Instant?
+    private var waiting: [String] = []
+
+    public init() {}
+
+    public mutating func offer(_ line: String) {
+        guard line != (waiting.last ?? shown) else { return }
+        waiting.append(line)
+        if waiting.count > Self.most { waiting.removeFirst(waiting.count - Self.most) }
+    }
+
+    /// The next step to show now, or how long to wait before asking again, or neither when none is waiting.
+    public mutating func next(at time: Instant) -> (line: String?, wait: Double?) {
+        guard !waiting.isEmpty else { return (nil, nil) }
+        if let shownAt, time - shownAt < Self.hold { return (nil, Self.hold - (time - shownAt)) }
+        let line = waiting.removeFirst()
+        (shown, shownAt) = (line, time)
+        return (line, nil)
     }
 }
 

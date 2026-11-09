@@ -311,6 +311,8 @@ import Testing
             ("read_file: plan.md", "read", "Reading plan.md"),
             ("write_file: /tmp/a/notes.md", "edit", "Writing notes.md"),
             ("web_search: cheap flights to denver friday morning", "fetch", "Searching the web for cheap flights to denver…"),
+            ("search_files: 'demo-password'", "search", "Searching"),
+            ("web_search: don't share this", "fetch", "Searching the web"),
             ("web_extract: https://www.example.com/a?b=c", "fetch", "Reading example.com"),
             ("browser_navigate: https://mail.google.com/mail/u/0", nil, "Opening mail.google.com"),
             ("browser_exec", nil, "Using the browser"),
@@ -326,6 +328,27 @@ import Testing
         #expect(ToolLine.symbol("Loading media-request skill") == "book.closed")
         #expect(ToolLine.symbol("Checking Gmail") == "envelope")
         #expect(ToolLine.symbol("Something new") == "sparkle")
+    }
+
+    @Test func stepsShowInTurnEachLongEnoughToRead() {
+        var steps = StepQueue()
+        let none = steps.next(at: Instant(seconds: 0))
+        #expect(none.line == nil && none.wait == nil)
+        steps.offer("Loading media-request skill")
+        steps.offer("Running t3-run status")
+        steps.offer("Running t3-run status")
+        #expect(steps.next(at: Instant(seconds: 0)).line == "Loading media-request skill")
+        let early = steps.next(at: Instant(seconds: 0.5))
+        #expect(early.line == nil && abs((early.wait ?? 0) - 0.4) < 1e-9)
+        #expect(steps.next(at: Instant(seconds: 0.9)).line == "Running t3-run status", "a repeat waits once")
+        let done = steps.next(at: Instant(seconds: 5))
+        #expect(done.line == nil && done.wait == nil)
+        #expect(steps.shown == "Running t3-run status")
+        // A burst keeps the newest few, in order.
+        for line in ["a", "b", "c", "d", "e"] { steps.offer(line) }
+        #expect(steps.next(at: Instant(seconds: 6)).line == "c")
+        #expect(steps.next(at: Instant(seconds: 7)).line == "d")
+        #expect(steps.next(at: Instant(seconds: 8)).line == "e")
     }
 
     @Test func atMostOneToolLineEveryFewSeconds() {
