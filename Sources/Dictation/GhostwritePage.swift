@@ -229,6 +229,7 @@ private struct LiveTalkSection: View {
     @State private var serverURL = ""
     @State private var serverVoice = ""
     @State private var pairingCode = ""
+    @State private var startedNew = false
 
     private var talk: LiveTalkSettings { settings.liveTalk }
     /// Who the talk goes to now: the one picked, or the default agent.
@@ -267,6 +268,7 @@ private struct LiveTalkSection: View {
                     .labelsHidden().fixedSize()
                 }
                 if let agent = talkAgent, agent.talkT3, !agent.isRemote { ListRow { t3Row(agent) } }
+                if let agent = talkAgent { ListRow { conversationRow(agent) } }
                 ListRow {
                     Text("Voice").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
                     Picker("Voice", selection: Binding(get: { voiceTag }, set: { pickVoice($0) })) {
@@ -302,6 +304,42 @@ private struct LiveTalkSection: View {
             if let agent = talkAgent { services.agents.checkIfNeeded(agent) }
         }
         .onChange(of: talk.voice) { loadServer() }
+    }
+
+    /// One conversation for every talk with this agent, which the agent keeps in its own history, and the way to start a new one.
+    @ViewBuilder private func conversationRow(_ agent: AgentConnection) -> some View {
+        let carries = Binding(get: { agent.continuesTalks }, set: { on in
+            preferences.change { settings in
+                if let index = settings.agents.agents.firstIndex(where: { $0.id == agent.id }) { settings.agents.agents[index].continuesTalks = on }
+            }
+            if !on { services.agents.pool.startOver(agent.id) }
+            startedNew = false
+        })
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Keep one conversation going").font(.system(size: 14))
+                    Text("Each talk picks up where the last one left off, and \(agent.name) remembers it. Off, every talk starts new.")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                SquareCheck(isOn: carries)
+            }
+            if agent.continuesTalks {
+                HStack(spacing: 10) {
+                    Button("Start a new conversation") {
+                        services.agents.pool.startOver(agent.id)
+                        startedNew = true
+                    }
+                    .buttonStyle(DarkButtonStyle())
+                    if startedNew {
+                        Text("The next talk starts a new conversation.").font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: agent.id) { startedNew = false }
     }
 
     /// The picker's choice: empty for the default agent, which also stands for a picked agent that is gone or is the default.

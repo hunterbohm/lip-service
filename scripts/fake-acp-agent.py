@@ -3,6 +3,7 @@
 
 usage: fake-acp-agent.py [--mode draft|permission|tool|steps|report|echo|error|die|slow|silent|supersede|stubborn] [--delay S] [--start-delay S] [--reply TEXT]
                          [--spawn-child TAG]
+                         [--resume] [--load] [--sessions FILE] [--unknown replace|null|error]
 
 draft       streams --reply in a few chunks after --delay
 permission  asks session/request_permission first, then says which option it got
@@ -18,6 +19,12 @@ silent      never answers initialize
 supersede   the first prompt streams "old " until session/cancel, then answers cancelled; later prompts stream --reply
 stubborn    like supersede, but the first prompt ignores session/cancel and streams "old " for 5 s
 
+--resume and --load advertise session/resume and session/load. Both open a session this agent made before, and --sessions FILE
+makes the agent remember its sessions between processes, as Hermes does in its history. They send the session's old turn back
+as an update first, as Hermes does, which a talk must not say. For an id it doesn't know, --unknown says what happens:
+replace opens a new session and names it in _meta.hermes.sessionProvenance, as Hermes's resume does (the default); null answers
+null, as Hermes's load does; error answers an error.
+
 --spawn-child starts a long sleeper tagged TAG, as npx starts node, to check that stopping the agent stops it too.
 """
 import argparse, itertools, json, os, subprocess, sys, threading, time, uuid
@@ -30,6 +37,10 @@ p.add_argument("--start-delay", type=float, default=0.0)
 p.add_argument("--reply", default="Tuesday at 3 works. I'll bring the latest cut.")
 p.add_argument("--marker", default="", help="die mode: die only while this file is absent, then create it")
 p.add_argument("--spawn-child", default="")
+p.add_argument("--resume", action="store_true")
+p.add_argument("--load", action="store_true")
+p.add_argument("--sessions", default="")
+p.add_argument("--unknown", default="replace", choices=["replace", "null", "error"])
 args = p.parse_args()
 prompts = itertools.count(1)
 if args.spawn_child:
@@ -39,6 +50,24 @@ lock = threading.Lock()
 answers, cancelled = {}, threading.Event()
 model = {"value": "fast-model"}
 seen = {"meta": None, "options": []}
+known = set()
+if args.sessions and os.path.exists(args.sessions):
+    known = set(open(args.sessions).read().split())
+
+
+def remember(session):
+    known.add(session)
+    if args.sessions:
+        with open(args.sessions, "a") as f:
+            f.write(session + "\n")
+
+
+def new_session_result(session, extra=None):
+    result = {"sessionId": session, "configOptions": options(),
+              "models": {"currentModelId": "fast-model", "availableModels": [
+                  {"modelId": "fast-model", "name": "Fast"}, {"modelId": "full-model", "name": "Full"}]}}
+    result.update(extra or {})
+    return result
 
 
 def send(obj):
@@ -139,12 +168,33 @@ def handle(m):
         if args.mode == "silent":
             return
         time.sleep(args.start_delay)
-        send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": {}, "agentInfo": {"name": "fake", "version": "1"}}})
+        capabilities = {"loadSession": args.load}
+        if args.resume:
+            capabilities["sessionCapabilities"] = {"resume": {}}
+        send({"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": 1, "agentCapabilities": capabilities, "agentInfo": {"name": "fake", "version": "1"}}})
     elif method == "session/new":
         seen["meta"] = params.get("_meta")
-        send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": "s-" + uuid.uuid4().hex[:8], "configOptions": options(),
-                                                       "models": {"currentModelId": "fast-model", "availableModels": [
-                                                           {"modelId": "fast-model", "name": "Fast"}, {"modelId": "full-model", "name": "Full"}]}}})
+        session = "s-" + uuid.uuid4().hex[:8]
+        remember(session)
+        send({"jsonrpc": "2.0", "id": rid, "result": new_session_result(session)})
+    elif method in ("session/resume", "session/load") and not ((method == "session/resume" and args.resume) or (method == "session/load" and args.load)):
+        send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "method not found"}})
+    elif method in ("session/resume", "session/load"):
+        asked = params.get("sessionId", "")
+        seen["servers"] = len(params.get("mcpServers") or [])
+        if asked in known:
+            # The old turn comes back first, as Hermes replays history; it must never be said or shown.
+            chunk(asked, "OLD TURN REPLAY ")
+            send({"jsonrpc": "2.0", "id": rid, "result": {k: v for k, v in new_session_result(asked).items() if k != "sessionId"}})
+        elif args.unknown == "null":
+            send({"jsonrpc": "2.0", "id": rid, "result": None})
+        elif args.unknown == "error":
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "session not found"}})
+        else:
+            session = "s-" + uuid.uuid4().hex[:8]
+            remember(session)
+            send({"jsonrpc": "2.0", "id": rid, "result": {k: v for k, v in new_session_result(session).items() if k != "sessionId"}
+                  | {"_meta": {"hermes": {"sessionProvenance": {"acpSessionId": session}}}}})
     elif method == "session/set_config_option" and args.mode == "no-mode" and params.get("configId") == "mode":
         send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "unknown config option: mode"}})
     elif method == "session/set_config_option":

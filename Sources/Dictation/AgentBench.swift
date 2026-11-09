@@ -19,6 +19,15 @@ import Foundation
         /// Speak a change this many seconds into the draft, in the same session, as holding the key over a streaming draft does.
         var supersede: Double?
         var idleLimit = 30.0 * 60
+        /// Opens this many talk sessions in a row through the pool, as talks do, and says which session each is in. With
+        /// `--cold` each is in a new agent process, as a talk after the agent was stopped is.
+        var talkSessions = 0
+        /// The file that remembers each agent's last talk session, so the next run, in this process or another, picks it up.
+        var threadFile: URL?
+        /// The agent carries each talk on in the last one's session, as Hermes does.
+        var continuesTalks = false
+        /// Start over before the first talk, as Start a new conversation does.
+        var startOver = false
         var prompt = GhostwriteRequest(words: "reply saying Tuesday at 3 works and I'll bring the latest cut",
                                        context: WindowContext(app: HistoryApp(name: "Mail", bundleID: "com.apple.mail"), windowTitle: "Dana Park",
                                                               nearby: ["Hey Hunter, are you free to go over the launch video this week? Tuesday at 3 or Wednesday morning both work on my end."])).prompt
@@ -26,12 +35,15 @@ import Foundation
 
     static func run(_ options: Options) async -> Int32 {
         var agent = AgentPreset.with(id: "custom")!.connection()
+        agent.id = "bench"
         agent.name = options.name
         agent.presetID = options.preset
         agent.command = options.command
         agent.remoteHost = options.remoteHost
         agent.draftOptions = options.draftOptions
-        let pool = AgentPool(idleLimit: options.idleLimit)
+        agent.continuesTalks = options.continuesTalks
+        let pool = AgentPool(idleLimit: options.idleLimit, threadsAt: options.threadFile)
+        if options.talkSessions > 0 { return await talkSessions(options, agent: agent, pool: pool) }
         var failures = 0
         for run in 1...options.runs {
             if options.cold || run == 1 { pool.stop(agent.id) }
@@ -80,6 +92,36 @@ import Foundation
                 row["text"] = nil
             }
             if row["error"] != nil || first.at == nil { failures += 1 }
+            print(String(decoding: JSONValue.object(row).data(), as: UTF8.self))
+            fflush(stdout)
+        }
+        pool.stopAll()
+        try? await Task.sleep(for: .milliseconds(300))
+        return failures == 0 ? 0 : 1
+    }
+
+    /// Opens talk sessions the way a talk does and prints which session each landed in: `continued` is whether it is an
+    /// earlier one. A prompt in each shows the session answers.
+    private static func talkSessions(_ options: Options, agent: AgentConnection, pool: AgentPool) async -> Int32 {
+        if options.startOver { pool.startOver(agent.id) }
+        var failures = 0
+        for run in 1...options.talkSessions {
+            if options.cold, run > 1 { pool.stop(agent.id) }
+            let started = Instant.now
+            var row: [String: JSONValue] = ["run": .number(Double(run))]
+            do {
+                let (client, id, _, continued) = try await pool.talkSession(agent)
+                row["session"] = .string(id)
+                row["continued"] = .bool(continued)
+                row["open_s"] = .number(((Instant.now - started) * 100).rounded() / 100)
+                let text = AgentServices.Collected()
+                _ = try await client.prompt("talk \(run)", session: id, timeout: 60, onUpdate: { if case .message(let chunk) = $0 { text.append(chunk) } },
+                                            onPermission: { $0.rejection?.id })
+                row["text"] = .string(text.text)
+            } catch {
+                row["error"] = .string(error.localizedDescription)
+                failures += 1
+            }
             print(String(decoding: JSONValue.object(row).data(), as: UTF8.self))
             fflush(stdout)
         }

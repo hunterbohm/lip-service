@@ -245,11 +245,11 @@ enum TalkEnd: Equatable {
         async let session = pool.talkSession(agent)
         async let ready: Void = voice.prepare()
         do {
-            let (client, id, extras) = try await session
+            let (client, id, extras, continued) = try await session
             try await ready
             guard !ended else { return }
             (self.client, sessionID, self.extras, connected) = (client, id, extras, true)
-            log.info("talk with \(agent.name, privacy: .public) in session \(id, privacy: .public)")
+            log.info("talk with \(agent.name, privacy: .public) in \(continued ? "the earlier" : "a new", privacy: .public) session \(id, privacy: .public)")
             if opening != nil {
                 if !greeting { sendOpening() }
             } else if let waitingTurn {
@@ -500,10 +500,11 @@ enum TalkEnd: Equatable {
         }
     }
 
-    /// The session wouldn't take another turn after a cut-in it ignored, so the talk goes on in a new one.
+    /// The session wouldn't take another turn after a cut-in it ignored, so the talk goes on in a new one, which is the
+    /// conversation from here on.
     private func reopen(then words: String, clock: TurnClock) async {
         do {
-            let (client, id, extras) = try await pool.talkSession(agent)
+            let (client, id, extras, _) = try await pool.talkSession(agent, fresh: true)
             guard !ended else { return }
             (self.client, sessionID, self.extras) = (client, id, extras)
             log.info("talk moved to session \(id, privacy: .public)")
