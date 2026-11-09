@@ -230,6 +230,7 @@ import DictationCore
             bar.showOutlines(nearest: scene.dragNearest)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             if let card = scene.card { cards.show(card, above: bar.anchor()) } else { cards.hide() }
+            (island.model.notices, island.model.noticeOpen) = ([], false)
             if case .talk(let talk) = scene.state.body {
                 let clear = scene.topBar.map { BarRect(x: stage.minX, y: stage.minY, width: stage.width, height: stage.height - $0) } ?? BarRect(stage)
                 island.place(in: stage, placement: TalkIsland.placement(frame: BarRect(stage), screen: scene.notch ? notched : .plain, clear: clear))
@@ -240,7 +241,6 @@ import DictationCore
                 island.show(nil)
             }
             talkCards.closeAll()
-            (island.model.notices, island.model.noticeOpen) = ([], false)
             for event in scene.talkCards where !island.take(event) { talkCards.handle(event, agent: hermes, under: (island.islandRect, .top)) }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
             let shown = bar.visiblePanels + (island.isVisible && scene.state.body.isTalkBody ? [(panel: island.window, shadow: false)] : [])
