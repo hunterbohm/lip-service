@@ -331,6 +331,20 @@ import Testing
         #expect(ToolLine.symbol("Something new") == "sparkle")
     }
 
+    @Test func aShortLineFromTheAgentIsANoticeInTheIsland() {
+        let task = "PP-3 · ProfitPilot outreach: run it and improve overall, maybe add another channel · due Nov 9 · todo"
+        #expect(TalkIsland.notice(.text(task)) == task)
+        #expect(TalkIsland.notice(.text("  **Done.**\nAdded to Friday.  ")) == "Done.\nAdded to Friday.")
+        // Links, images, visuals, code and long text stay cards.
+        #expect(TalkIsland.notice(.link(URL(string: "https://example.com")!)) == nil)
+        #expect(TalkIsland.notice(.html("<b>x</b>")) == nil)
+        #expect(TalkIsland.notice(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")) == nil)
+        #expect(TalkIsland.notice(.text("let x = f()\nprint(x)")) == nil)
+        #expect(TalkIsland.notice(.text(String(repeating: "word ", count: 60))) == nil)
+        #expect(TalkIsland.notice(.text("a\nb\nc\nd")) == nil)
+        #expect(TalkIsland.notice(.text("   ")) == nil)
+    }
+
     @Test func stepsShowInTurnEachLongEnoughToRead() {
         var steps = StepQueue()
         let none = steps.next(at: Instant(seconds: 0))

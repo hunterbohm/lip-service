@@ -206,8 +206,7 @@ private struct TalkCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                AgentAvatar(initial: card.agent.initial, size: 18)
-                Text(heading).font(.system(size: 12.5)).foregroundStyle(Theme.secondary).lineLimit(1)
+                Text(heading).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
                 Spacer(minLength: 0)
                 if case .show = card.content {
                     Button(action: onClose) {
@@ -218,22 +217,25 @@ private struct TalkCardView: View {
                     .accessibilityLabel("Close")
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
             content
         }
         .frame(width: TalkCardStack.width, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(red: 20 / 255, green: 21 / 255, blue: 24 / 255).opacity(0.98)))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        // The island's look: black, round, with its faint light edge, so the cards read as part of it.
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.black))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .strokeBorder(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0.08), .white.opacity(0.14)],
+                                         startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
         .foregroundStyle(Theme.text)
     }
 
     private var heading: String {
         switch card.content {
-        case .show(.link): "\(card.agent.name) · link"
-        case .show(.image): "\(card.agent.name) · image"
-        case .show(.text): card.agent.name
-        case .show(.html): "\(card.agent.name) · visual"
+        case .show(.link): "Link"
+        case .show(.image): "Image"
+        case .show(.text): "From \(card.agent.name)"
+        case .show(.html): "Visual"
         case .permission: "\(card.agent.name) asks"
         }
     }
@@ -324,7 +326,7 @@ private struct HTMLVisual: NSViewRepresentable {
         """
         <!doctype html><html><head><meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">
-        <style>html,body{margin:0;padding:0;background:#141518;color:#ECEDEE;font:13px -apple-system,system-ui,sans-serif}
+        <style>html,body{margin:0;padding:0;background:#000;color:#ECEDEE;font:13px -apple-system,system-ui,sans-serif}
         body{padding:12px;overflow:hidden}svg{max-width:100%;height:auto}</style></head><body>\(html)</body></html>
         """
     }

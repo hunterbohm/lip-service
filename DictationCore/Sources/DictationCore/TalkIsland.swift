@@ -189,6 +189,24 @@ public enum TalkIsland {
     /// How far the globe floats above its place at `time`, in points.
     public static func globeFloat(time: Double) -> Double { globeBob * sin(time * 1.6) }
 
+    /// The longest line the island shows as a notice, in characters; anything longer stays a card.
+    public static let noticeLongest = 240
+    /// How many notices the island keeps, newest first, how long a new one holds the island open, and how long one stays.
+    public static let noticeMost = 2
+    public static let noticeOpenFor = 6.0
+    public static let noticeLifetime = 120.0
+
+    /// What the agent put on screen, as a notice inside the island, when it is a short line such as what it just did:
+    /// "PP-3 · ProfitPilot outreach · due Nov 9". Links, images, visuals, code and long text stay cards. Nil for those.
+    public static func notice(_ card: ShowCard) -> String? {
+        guard case .text(let raw) = card else { return nil }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = text.split(whereSeparator: \.isNewline)
+        let code = lines.count > 1 && text.contains { "{}();=<>$".contains($0) }
+        guard !text.isEmpty, text.count <= noticeLongest, lines.count <= 3, !code, !text.hasPrefix("```") else { return nil }
+        return lines.map { Speech.caption(String($0)) }.joined(separator: "\n")
+    }
+
     /// What the right ear shows.
     public enum Ear: Equatable, Sendable {
         /// Five bars that move with the voice, white for yours and amber for the agent's.

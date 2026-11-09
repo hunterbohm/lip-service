@@ -212,7 +212,10 @@ import os
         let barAgent = BarAgent(initial: agent.initial, name: agent.name)
         talk.onBar = { [unowned self] _ in render() }
         talk.onNotice = { [unowned self] notice in show(notice) }
-        talk.onCard = { [unowned self] event in talkCards.handle(event, agent: barAgent, under: (island.islandRect, .top)) }
+        // A short line, such as what the agent just did, shows inside the island; links, images and visuals are cards.
+        talk.onCard = { [unowned self] event in
+            if !island.take(event) { talkCards.handle(event, agent: barAgent, under: (island.islandRect, .top)) }
+        }
         talk.onOpening = { [unowned self] said in
             guard let id = callInTalk else { return }
             callInTalk = nil
