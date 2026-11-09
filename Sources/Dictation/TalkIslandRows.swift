@@ -3,7 +3,7 @@ import DictationCore
 import SwiftUI
 
 /// The icons of the apps the agent's steps use, read from the apps on this Mac once each.
-@MainActor enum AppIcons {
+@MainActor enum StepIcons {
     private static var found: [StepApp: NSImage?] = [:]
 
     /// The app's own icon, or nil when it isn't installed or the step's app has none, such as Gmail.
@@ -44,7 +44,7 @@ struct StepIcon: View {
 
     var body: some View {
         Group {
-            if let app, let image = AppIcons.icon(app) {
+            if let app, let image = StepIcons.icon(app) {
                 // An app icon keeps a clear margin inside its square, so it is drawn a little past the tile's size.
                 Image(nsImage: image).resizable().interpolation(.high)
                     .frame(width: size * 1.16, height: size * 1.16)

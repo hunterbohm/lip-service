@@ -104,7 +104,7 @@ import DictationCore
 
     /// The agent at work on `step`, which it has been on for `seconds`, after `trail`.
     private static func working(_ step: TalkStep, for seconds: Double, after trail: [TalkStep] = [], line: String = "") -> BarState.Body {
-        .talk(TalkBar(agent: hermes, phase: .thinking, line: line, activity: step.line, step: step, trail: trail, since: renderNow - seconds))
+        .talk(TalkBar(agent: hermes, phase: .thinking, line: line, activity: step.line, step: step, trail: trail, since: renderNow + -seconds))
     }
 
     private static let trail = [
