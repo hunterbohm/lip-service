@@ -427,8 +427,10 @@ import Testing
 
     @Test func theIslandFitsTheNotch() {
         let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
-        #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 46)
-        #expect(TalkIsland.compactWidth(.plain) == 96 + 2 * 44)
+        #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 54)
+        #expect(TalkIsland.compactWidth(.plain) == 104 + 2 * 52)
+        // The globe fits the header with room to float, under a notch too.
+        for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 2) }
         #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))
         #expect(TalkIsland.openWidth(TalkIsland.Screen(hasNotch: true, notchWidth: 900, barHeight: 32)) == TalkIsland.widest)
     }
@@ -443,6 +445,36 @@ import Testing
         // The orb swells with the voice and stays within a quarter of its size.
         #expect(TalkIsland.orbScale(level: 1, mood: .you, time: 0) > TalkIsland.orbScale(level: 0, mood: .you, time: 0))
         #expect(TalkIsland.orbScale(level: 5, mood: .you, time: 0) <= 1.22 + 1e-9)
+    }
+
+    @Test func theGlobeIsAGridOfDotsThatTurnsAndAnswersTheVoice() {
+        let grid = TalkIsland.globeGrid
+        let quiet = TalkIsland.globeDots(time: 1, level: 0, mood: .you)
+        // Dots, not a solid ball: every dot sits inside the disc, smaller than its cell, and some cells are dark sea.
+        #expect(!quiet.isEmpty)
+        for dot in quiet {
+            let x = (Double(dot.column) + 0.5) / Double(grid) * 2 - 1, y = (Double(dot.row) + 0.5) / Double(grid) * 2 - 1
+            #expect(x * x + y * y <= 1)
+            #expect(dot.size < 1 && dot.size > 0)
+            #expect((0...1).contains(dot.brightness))
+            #expect((0..<3).contains(dot.tint))
+        }
+        #expect(Set(quiet.map(\.size)).count > 1, "sizes step like an ASCII ramp")
+        // It turns: the land moves between two moments.
+        #expect(TalkIsland.globeDots(time: 4, level: 0, mood: .you) != quiet)
+        // The voice brightens it.
+        let loud = TalkIsland.globeDots(time: 1, level: 1, mood: .you)
+        #expect(loud.map(\.brightness).reduce(0, +) > quiet.map(\.brightness).reduce(0, +))
+        // It turns faster while the agent works than while it waits on you.
+        let turn = { (mood: TalkIsland.Mood) in
+            zip(TalkIsland.globeDots(time: 0, level: 0, mood: mood), TalkIsland.globeDots(time: 0.5, level: 0, mood: mood))
+                .filter { $0.0 != $0.1 }.count
+        }
+        #expect(turn(.thinking) > turn(.you))
+        #expect(abs(TalkIsland.globeFloat(time: 3)) <= TalkIsland.globeBob)
+        // Swollen by a loud voice and breathing, it still fits the header.
+        let biggest = TalkIsland.globeSize(.plain) * TalkIsland.globeScale(level: 1, mood: .thinking, time: Double.pi / 9)
+        #expect(biggest / 2 + TalkIsland.globeBob <= TalkIsland.Screen.plain.barHeight / 2)
     }
 
     @Test func theVoiceBarsRiseWithTheLevelAndStayInTheEar() {
