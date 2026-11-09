@@ -130,7 +130,7 @@ private struct Dock: View {
 
     var body: some View {
         let settings = services.preferences.current.settings
-        let source = services.inputs.inUse(settings.microphone)
+        let source = services.inputs.inUse(settings.microphone, order: settings.automaticOrder)
         let last = services.history.entries.max { $0.date < $1.date }
         ZStack {
             HStack {

@@ -459,7 +459,9 @@ enum Headless {
     }
 
     @MainActor static func micStart(_ options: MicStartOptions) async -> Int32 {
-        let choice = options.microphone ?? (SettingsStore.read(SettingsStore.defaults) ?? Settings()).microphone
+        let stored = SettingsStore.read(SettingsStore.defaults) ?? Settings()
+        let choice = options.microphone ?? stored.microphone
+        AudioDevices.automaticOrder = stored.automaticOrder
         let microphone = Microphone()
         var failure: (any Error)?
         var source: MicrophoneSource?
@@ -496,6 +498,12 @@ enum Headless {
         let inputs = AudioDevices.inputs()
         for input in inputs { print("\(input.name)\t\(input.uid)") }
         print("default: \(AudioDevices.defaultInput().map { "\($0.name) (\($0.uid))" } ?? "none")")
+        // What Automatic picks now, by the saved order, with the lid and the system default as they are.
+        AudioDevices.automaticOrder = (SettingsStore.read(SettingsStore.defaults) ?? Settings()).automaticOrder
+        let automatic = if case .device(let uid) = AudioDevices.source(for: .automatic, among: inputs) {
+            inputs.first { $0.uid == uid }.map { "\($0.name) (\($0.uid))" } ?? uid
+        } else { "system default" }
+        print("automatic: \(automatic)")
         if inputs.isEmpty { print("no audio inputs") }
         return 0
     }

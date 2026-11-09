@@ -30,6 +30,7 @@ import Observation
         current = Configuration(settings: stored ?? Settings(),
                                 vocabulary: Vocabulary.parse(Vocabulary.bundledDefault).vocabulary, issues: [])
         if stored == nil { save(current.settings) }
+        AudioDevices.automaticOrder = current.settings.automaticOrder
         seedVocabularyFile()
         reloadVocabularyIfChanged()
     }
@@ -113,6 +114,8 @@ import Observation
         guard next != current else { return }
         let old = current
         current = next
+        // Before `onChange`, which readies the microphone by it.
+        AudioDevices.automaticOrder = next.settings.automaticOrder
         onChange?(old, next)
     }
 }

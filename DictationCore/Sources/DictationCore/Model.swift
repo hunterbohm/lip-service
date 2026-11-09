@@ -153,31 +153,26 @@ public struct BarRect: Equatable, Sendable {
 }
 
 public enum MicrophoneChoice: Equatable, Codable, Sendable {
-    /// The best microphone connected now, by kind. The order follows what records soonest and best: a wired one, then
-    /// the Mac's own, then a Bluetooth headset, whose microphone takes a second or more to start.
+    /// The best microphone connected now. Unless the user set `Settings.automaticOrder`, the order is by kind and
+    /// follows what records soonest and best: a wired one, then the Mac's own, then a Bluetooth headset, whose
+    /// microphone takes a second or more to start.
     case automatic
     case systemDefault
     /// A CoreAudio device UID, which survives unplugging and reboots. The name is for display while it is absent.
     case device(uid: String, name: String)
 
-    /// Automatic's order. A kind not listed is never picked automatically.
-    static let automaticOrder: [MicrophoneInput.Kind] = [.wired, .builtIn, .bluetooth]
-
     /// Where to capture from, given the inputs connected now, the system default's UID, and whether the lid is closed,
-    /// which disconnects a MacBook's own microphone.
-    public func source(among inputs: [MicrophoneInput], systemDefault: String?, lidClosed: Bool) -> MicrophoneSource {
+    /// which disconnects a MacBook's own microphone. `order` is the user's order for Automatic, and unset it is the
+    /// kind order alone.
+    public func source(among inputs: [MicrophoneInput], systemDefault: String?, lidClosed: Bool,
+                       order: AutomaticOrder = AutomaticOrder()) -> MicrophoneSource {
         switch self {
         case .systemDefault:
             return .systemDefault
         case .device(let uid, let name):
             return inputs.contains { $0.uid == uid } ? .device(uid: uid) : .fallback(missing: name)
         case .automatic:
-            // Among inputs of one kind, the system default first, then the order CoreAudio lists them in.
-            let ranked = inputs.enumerated().compactMap { index, input -> (rank: [Int], uid: String)? in
-                guard let kind = Self.automaticOrder.firstIndex(of: input.kind), !(lidClosed && input.kind == .builtIn) else { return nil }
-                return ([kind, input.uid == systemDefault ? 0 : 1, index], input.uid)
-            }
-            return ranked.min { $0.rank.lexicographicallyPrecedes($1.rank) }.map { .device(uid: $0.uid) } ?? .systemDefault
+            return order.pick(among: inputs, systemDefault: systemDefault, lidClosed: lidClosed).map { .device(uid: $0) } ?? .systemDefault
         }
     }
 }
@@ -197,10 +192,13 @@ public struct MicrophoneInput: Equatable, Sendable {
 
     public let uid: String
     public let kind: Kind
+    /// For listing only. Picking goes by UID and kind.
+    public let name: String
 
-    public init(uid: String, kind: Kind) {
+    public init(uid: String, kind: Kind, name: String = "") {
         self.uid = uid
         self.kind = kind
+        self.name = name
     }
 }
 
@@ -240,6 +238,8 @@ public struct Settings: Equatable, Codable, Sendable {
     public var pasteLast: Shortcut? = .pasteLast
     public var vocabularyEnabled = true
     public var microphone = MicrophoneChoice.automatic
+    /// The microphones the user placed in order for Automatic. Empty means the kind order.
+    public var automaticOrder = AutomaticOrder()
     public var sounds = true
     public var barEdge = BarEdge.bottom
     public var hideBarWhenIdle = true
@@ -294,6 +294,7 @@ public struct Settings: Equatable, Codable, Sendable {
         pasteLast = container.contains(.pasteLast) ? value(.pasteLast, Shortcut?.none) : defaults.pasteLast
         vocabularyEnabled = value(.vocabularyEnabled, defaults.vocabularyEnabled)
         microphone = value(.microphone, defaults.microphone)
+        automaticOrder = value(.automaticOrder, defaults.automaticOrder)
         sounds = value(.sounds, defaults.sounds)
         barEdge = value(.barEdge, defaults.barEdge)
         hideBarWhenIdle = value(.hideBarWhenIdle, defaults.hideBarWhenIdle)
@@ -318,7 +319,7 @@ public struct Settings: Equatable, Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hotkeys, pasteLast, vocabularyEnabled, microphone, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
+        case hotkeys, pasteLast, vocabularyEnabled, microphone, automaticOrder, sounds, barEdge, hideBarWhenIdle, keepHistory, showMenuBarIcon
         case smartSpacing, profiles, snippets, muteWhileDictating, screenNames, learnFixes, smartFormatting, ghostwriteKey, handOffKey, agents
         case liveTalk, sendUsageCount, checkForUpdates
     }
@@ -331,6 +332,7 @@ public struct Settings: Equatable, Codable, Sendable {
         try container.encode(pasteLast, forKey: .pasteLast)
         try container.encode(vocabularyEnabled, forKey: .vocabularyEnabled)
         try container.encode(microphone, forKey: .microphone)
+        try container.encode(automaticOrder, forKey: .automaticOrder)
         try container.encode(sounds, forKey: .sounds)
         try container.encode(barEdge, forKey: .barEdge)
         try container.encode(hideBarWhenIdle, forKey: .hideBarWhenIdle)

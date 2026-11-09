@@ -4,6 +4,7 @@ import CoreAudio
 import DictationCore
 import Foundation
 import IOKit
+import Synchronization
 
 /// Devices as CoreAudio reports them. Read fresh on each call, since devices come and go.
 enum AudioDevices {
@@ -14,12 +15,22 @@ enum AudioDevices {
         let deviceID: AudioDeviceID
         var kind = MicrophoneInput.Kind.other
 
-        var choiceInput: MicrophoneInput { MicrophoneInput(uid: uid, kind: kind) }
+        var choiceInput: MicrophoneInput { MicrophoneInput(uid: uid, kind: kind, name: name) }
+    }
+
+    private static let order = Mutex(AutomaticOrder())
+
+    /// The order the user set for Automatic, kept here so every capture and the menu pick by it without being handed
+    /// it. Like the lid and the system default, it is read fresh each time Automatic picks. Preferences keeps it current.
+    static var automaticOrder: AutomaticOrder {
+        get { order.withLock { $0 } }
+        set { order.withLock { $0 = newValue } }
     }
 
     /// Where `choice` records from now, among `inputs`.
     static func source(for choice: MicrophoneChoice, among inputs: [Input]) -> MicrophoneSource {
-        choice.source(among: inputs.map(\.choiceInput), systemDefault: defaultInput(among: inputs)?.uid, lidClosed: lidClosed())
+        choice.source(among: inputs.map(\.choiceInput), systemDefault: defaultInput(among: inputs)?.uid, lidClosed: lidClosed(),
+                      order: automaticOrder)
     }
 
     /// The input `source` records from: the chosen one, or the system default.
