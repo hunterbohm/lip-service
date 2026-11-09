@@ -231,7 +231,7 @@ private struct IslandView: View {
                         .transition(.opacity.combined(with: .offset(x: -6)))
                 }
             }
-            .padding(.leading, open ? 14 : 10)
+            .padding(.leading, open ? 18 : 10)
             .frame(width: side, alignment: .leading)
 
             Group {

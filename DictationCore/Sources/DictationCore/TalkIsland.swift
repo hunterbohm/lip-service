@@ -160,7 +160,7 @@ public enum TalkIsland {
                 let land = globeLand(latitude: latitude, longitude: longitude)
                 let lit = max(0, (x * light.x + y * light.y + z * light.z) / lightLength)
                 let ripple = level * 0.35 * max(0, sin(r2.squareRoot() * 9 - time * 11))
-                let brightness = min(1, (land ? 1 : 0.38) * (0.3 + 0.7 * lit) * (0.8 + 0.4 * level) + ripple)
+                let brightness = min(1, (land ? 1 : 0.5) * (0.5 + 0.5 * lit) * (0.85 + 0.3 * level) + ripple)
                 let size = globeStep(0.3 + 0.75 * brightness)
                 guard brightness > 0.06 else { continue }
                 let turn = (longitude / (2 * Double.pi)).truncatingRemainder(dividingBy: 1)
