@@ -436,10 +436,6 @@ public enum BarNotice: Equatable, Sendable {
     case learned(String)
     /// The user's own agent changed the setup through `Dictation setup apply`.
     case setupApplied(by: String, changes: Int)
-    /// A live talk started: how to end it.
-    case talkStarted(agent: String)
-    /// No one has talked in a live talk for a while.
-    case talkEndingSoon(seconds: Int)
     /// A live talk could not start or stopped on a failure.
     case talkFailed(String)
 
@@ -453,8 +449,6 @@ public enum BarNotice: Equatable, Sendable {
         case .fnKeySetting: "macOS also acts on fn"
         case .learned(let word): "Learned \(word)"
         case .setupApplied(let by, _): "\(by) set up Lip Service"
-        case .talkStarted(let agent): "Talking with \(agent)"
-        case .talkEndingSoon: "Still there?"
         case .talkFailed: "The talk stopped"
         }
     }
@@ -470,8 +464,6 @@ public enum BarNotice: Equatable, Sendable {
         case .fnKeySetting: "Set Keyboard > Press fn key to > Do Nothing."
         case .learned: "Added to your dictionary from your fix."
         case .setupApplied(_, let changes): changes == 1 ? "1 change. Open Lip Service to see it." : "\(changes) changes. Open Lip Service to see them."
-        case .talkStarted: "To end, double-tap Left Control or say goodbye."
-        case .talkEndingSoon(let seconds): "The talk ends in \(seconds) s unless you say something."
         case .talkFailed(let reason): reason
         }
     }
@@ -484,8 +476,8 @@ public enum BarNotice: Equatable, Sendable {
 
     public var tone: NoticeTone {
         switch self {
-        case .copied, .nothingToPaste, .learned, .setupApplied, .talkStarted: .info
-        case .microphoneMissing, .fnKeySetting, .talkEndingSoon: .warning
+        case .copied, .nothingToPaste, .learned, .setupApplied: .info
+        case .microphoneMissing, .fnKeySetting: .warning
         case .failed, .modelFailed, .talkFailed: .failure
         }
     }

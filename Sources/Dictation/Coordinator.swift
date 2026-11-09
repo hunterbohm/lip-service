@@ -209,7 +209,8 @@ import os
     private func startTalk(with agent: AgentConnection, opening: TalkOpening? = nil) {
         let settings = preferences.current.settings
         let talk = Talk(agent: agent, pool: agents, engine: engine, voice: Voices.provider(for: settings.liveTalk.voice),
-                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut(), opening: opening)
+                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut(), opening: opening,
+                        cue: settings.sounds ? sounds.talkStartLength : 0)
         let barAgent = BarAgent(initial: agent.initial, name: agent.name)
         talk.onBar = { [unowned self] _ in render() }
         talk.onNotice = { [unowned self] notice in show(notice) }
@@ -234,21 +235,20 @@ import os
             keyTap.suspended = false
             talkCards.dropPermissions()
             microphone.prepare(preferences.current.settings.microphone)
-            if preferences.current.settings.sounds { sounds.play(.stop) }
+            if preferences.current.settings.sounds { sounds.play(talk: .end) }
             switch reason {
             case .failed(let why): show(.talkFailed(why))
-            case .quiet, .goodbye, .byYou:
-                if case .talkStarted = notice { notice = nil }
-                if case .talkEndingSoon = notice { notice = nil }
-                render()
+            case .quiet, .goodbye, .byYou: render()
             }
         }
         stopPreviews()
         fixWatch?.cancel()
         live.talk = talk
         keyTap.suspended = true
-        if settings.sounds { sounds.play(.start) }
-        show(.talkStarted(agent: agent.name))
+        // The island says the talk is on; how to end it is beside its End button, so nothing pops up under it.
+        if settings.sounds { sounds.play(talk: .start) }
+        notice = nil
+        render()
         talk.start()
     }
 
@@ -285,9 +285,9 @@ import os
         call.ring = Task { [unowned self, sounds] in
             let ends = Instant.now + request.ringSeconds
             while !Task.isCancelled, Instant.now < ends {
-                sounds.play(.start)
-                try? await Task.sleep(for: .milliseconds(350))
-                sounds.play(.start)
+                sounds.play(talk: .start)
+                try? await Task.sleep(for: .milliseconds(650))
+                sounds.play(talk: .start)
                 try? await Task.sleep(for: .seconds(2.5))
             }
             guard !Task.isCancelled else { return }

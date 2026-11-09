@@ -150,7 +150,6 @@ import DictationCore
     private static var talkScenes: [Scene] {
         [
             Scene(name: "50-talk-connecting", state: BarState(body: talk(.connecting)), edge: .top, quiet: true),
-            Scene(name: "51-talk-started-toast", state: BarState(body: talk(.listening), toast: .talkStarted(agent: "Hermes")), edge: .top, quiet: true),
             Scene(name: "52-talk-listening", state: BarState(body: talk(.listening)), edge: .top, quiet: true),
             Scene(name: "53-talk-you-talking", state: BarState(body: talk(.hearing, line: "what's on my calendar this afternoon")), edge: .top),
             Scene(name: "54-talk-thinking", state: BarState(body: talk(.thinking)), edge: .top, quiet: true),
@@ -159,7 +158,7 @@ import DictationCore
                                                                           activity: "Loading media-request skill")), edge: .top, quiet: true),
             Scene(name: "56-talk-agent-talking", state: BarState(body: talk(.speaking, line: "You have two meetings this afternoon, the first at three.")),
                   edge: .top),
-            Scene(name: "57-talk-ending-soon", state: BarState(body: talk(.listening, endingSoon: true), toast: .talkEndingSoon(seconds: 20)),
+            Scene(name: "57-talk-ending-soon", state: BarState(body: talk(.listening, endingSoon: true)),
                   edge: .top, quiet: true),
             Scene(name: "58-talk-cards", state: BarState(body: talk(.speaking, line: "The link is on your screen.")), edge: .top,
                   talkCards: [.show(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")),

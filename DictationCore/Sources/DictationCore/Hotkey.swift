@@ -247,8 +247,11 @@ public enum CaptureCommand: Equatable, Sendable { case start, cancel, finish }
 
 /// The sound for one step of the machine. Only a bar the user saw makes a sound, so a fn chord that ends before
 /// `barDelay` stays silent.
-public enum Cue: Equatable, Sendable {
+public enum Cue: String, CaseIterable, Equatable, Sendable {
     case start, stop, cancel
+
+    /// The cue's file in the app's resources, without `.wav`.
+    public var file: String { rawValue }
 
     public static func after(_ commands: [CaptureCommand], wasListening: Bool, isListening: Bool) -> Cue? {
         if commands.contains(.finish), wasListening { return .stop }
@@ -256,6 +259,15 @@ public enum Cue: Equatable, Sendable {
         if isListening, !wasListening { return .start }
         return nil
     }
+}
+
+/// A live talk's own two sounds, so the ear tells a talk from a dictation: three rising notes when it starts, which a
+/// call back also rings with, and the same three falling when it ends.
+public enum TalkCue: String, CaseIterable, Equatable, Sendable {
+    case start = "talk-start"
+    case end = "talk-end"
+
+    public var file: String { rawValue }
 }
 
 public struct HotkeyStep: Equatable, Sendable {

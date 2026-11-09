@@ -2,26 +2,27 @@ import AudioToolbox
 import AVFAudio
 import DictationCore
 
-/// The start, stop, and cancel cues from the bundle, played as system sounds. macOS plays a system sound from its own
-/// sound server, so a cue never makes this app play audio. An app that plays audio while it records looks like a call
-/// to macOS, which then takes the user's AirPods from their iPhone on every dictation. A system sound plays at the
-/// alert volume, through the output Sound settings picks for sound effects.
+/// The cues from the bundle, played as system sounds: start, stop and cancel for a dictation, and a talk's own two.
+/// macOS plays a system sound from its own sound server, so a cue never makes this app play audio. An app that plays
+/// audio while it records looks like a call to macOS, which then takes the user's AirPods from their iPhone on every
+/// dictation. A system sound plays at the alert volume, through the output Sound settings picks for sound effects.
 @MainActor final class Sounds {
-    private let start = Sound("start")
-    private let stop = Sound("stop")
-    private let cancel = Sound("cancel")
+    private let sounds = Dictionary(uniqueKeysWithValues: (Cue.allCases.map(\.file) + TalkCue.allCases.map(\.file)).compactMap { file in
+        Sound(file).map { (file, $0) }
+    })
 
-    func play(_ cue: Cue) {
-        let sound = switch cue {
-        case .start: start
-        case .stop: stop
-        case .cancel: cancel
-        }
-        if let sound { AudioServicesPlaySystemSound(sound.id) }
+    func play(_ cue: Cue) { play(cue.file) }
+    func play(talk cue: TalkCue) { play(cue.file) }
+
+    private func play(_ file: String) {
+        if let sound = sounds[file] { AudioServicesPlaySystemSound(sound.id) }
     }
 
     /// The start cue's length, so muting other sound can wait for it.
-    var startLength: Double { start?.length ?? 0 }
+    var startLength: Double { sounds[Cue.start.file]?.length ?? 0 }
+
+    /// A talk's start cue's length, so the talk reads the room after it.
+    var talkStartLength: Double { sounds[TalkCue.start.file]?.length ?? 0 }
 }
 
 private struct Sound {

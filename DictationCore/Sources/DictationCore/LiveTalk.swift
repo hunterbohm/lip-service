@@ -172,7 +172,15 @@ public struct TalkEar: Sendable {
     private var loud = 0
     public private(set) var heard: [Float] = []
 
-    public init(timing: TalkTiming = TalkTiming()) { self.timing = timing }
+    /// Blocks still to drop before the room is read: the talk's start sound, which the microphone hears from the speakers.
+    private var cueBlocks: Int
+
+    /// `cue` is how long the start sound plays, in seconds. The room is read once it has passed, with a little to spare
+    /// for the sound starting late, so the sound is never taken for the room.
+    public init(timing: TalkTiming = TalkTiming(), cue: Double = 0) {
+        self.timing = timing
+        cueBlocks = cue > 0 ? Int(((cue + 0.1) / timing.block).rounded(.up)) : 0
+    }
 
     public var isHearing: Bool { if case .hearing = phase { true } else { false } }
 
@@ -192,6 +200,10 @@ public struct TalkEar: Sendable {
         let level = Self.rms(block)
         switch phase {
         case .calibrating:
+            if cueBlocks > 0 {
+                cueBlocks -= 1
+                return nil
+            }
             levels.append(level)
             remember(block)
             guard levels.count >= timing.calibrationBlocks else { return nil }

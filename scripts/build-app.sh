@@ -31,7 +31,7 @@ mkdir -p "$contents/MacOS" "$contents/Resources"
 cp "$binary_dir/Dictation" "$contents/MacOS/Dictation"
 cp "$root/Info.plist" "$contents/Info.plist"
 plutil -replace CFBundleVersion -string "$build_number" "$contents/Info.plist"
-for resource in selftest.wav start.wav stop.wav cancel.wav AppIcon.icns; do
+for resource in selftest.wav start.wav stop.wav cancel.wav talk-start.wav talk-end.wav AppIcon.icns; do
     cp "$root/Resources/$resource" "$contents/Resources/$resource"
 done
 

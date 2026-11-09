@@ -145,7 +145,7 @@ enum TalkEnd: Equatable {
             if bar != oldValue { onBar?(bar) }
         }
     }
-    private var ear = TalkEar()
+    private var ear: TalkEar
     private var pending: [Float] = []
     private var ticker: Task<Void, Never>?
     private var connecting: Task<Void, Never>?
@@ -216,8 +216,9 @@ enum TalkEnd: Equatable {
     private var utterances = 0
 
     init(agent: AgentConnection, pool: AgentPool, engine: SpeechEngine, voice: any VoiceProvider, input: any TalkInput,
-         speaker: any TalkSpeaker, opening: TalkOpening? = nil) {
+         speaker: any TalkSpeaker, opening: TalkOpening? = nil, cue: Double = 0) {
         (self.agent, self.pool, self.engine, self.voice, self.input, self.speaker) = (agent, pool, engine, voice, input, speaker)
+        ear = TalkEar(cue: cue)
         self.opening = opening
         bar = TalkBar(agent: BarAgent(initial: agent.initial, name: agent.name), phase: .connecting)
     }
@@ -370,7 +371,6 @@ enum TalkEnd: Equatable {
             if connected { transcribe(utterance) } else { waitingTurn = utterance }
         case .idleWarning:
             bar.endingSoon = true
-            onNotice?(.talkEndingSoon(seconds: Int(ear.timing.idleEnd - ear.timing.idleWarning)))
         case .idleEnded:
             end(.quiet)
         }

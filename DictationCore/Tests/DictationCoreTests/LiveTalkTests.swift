@@ -96,6 +96,19 @@ import Testing
         #expect(TalkThresholds.floor(of: [0.5, 0.5, 0.5]) == Float(400) / 32768)
     }
 
+    @Test func theStartSoundIsNotTakenForTheRoom() {
+        // Half a second of the start sound from the speakers, then the quiet room.
+        let blocks = Array(repeating: echo, count: 17) + Array(repeating: quiet, count: 23)
+        var ear = TalkEar(cue: 0.5)
+        #expect(run(&ear, blocks, from: 0).isEmpty)
+        #expect(ear.thresholds.start == calibrated().thresholds.start)
+        #expect(run(&ear, Array(repeating: voice, count: 3), from: 1.2).map(\.0) == [.began])
+        // Read from the first block, the sound would be the room, and a quiet voice would go unheard.
+        var early = TalkEar()
+        _ = run(&early, blocks, from: 0)
+        #expect(early.thresholds.start > ear.thresholds.start)
+    }
+
     @Test func aTurnEndsAfterEightTenthsOfQuiet() throws {
         var ear = calibrated()
         let events = run(&ear, Array(repeating: quiet, count: 5) + Array(repeating: voice, count: 40) + Array(repeating: quiet, count: 40), from: 0.6)
@@ -484,11 +497,42 @@ import Testing
 
     @Test func aTalkOwnsTheBar() {
         let talk = TalkBar(agent: hermes, phase: .listening)
-        let state = BarState.derive(hotkey: .idle, words: "", pending: 0, engine: .ready(boosting: .off), notice: .talkStarted(agent: "Hermes"),
+        let state = BarState.derive(hotkey: .idle, words: "", pending: 0, engine: .ready(boosting: .off), notice: nil,
                                     showsIdle: true, talk: talk)
         #expect(state.body == .talk(talk))
-        #expect(state.toast == .talkStarted(agent: "Hermes"))
-        #expect(BarNotice.talkStarted(agent: "Hermes").detail == "To end, double-tap Left Control or say goodbye.")
+        // Starting a talk pops nothing up under the island: how to end it is inside, beside the button that ends it.
+        #expect(state.toast == nil)
+        #expect(TalkIsland.endHint == "Double-tap Left Control or say goodbye to end")
+    }
+
+    @Test func theRimStandsOutOnABlackWindow() {
+        let moods: [TalkIsland.Mood] = [.connecting, .you, .thinking, .speaking, .ringing]
+        for mood in moods {
+            // Even where it is faintest, an edge needs a contrast of 3 against black to be seen.
+            #expect(TalkIsland.edgeContrast(mood) >= 3)
+            #expect(TalkIsland.edgeContrast(mood, opacity: TalkIsland.edgeBrightest) > TalkIsland.edgeContrast(mood))
+        }
+        // The rim takes the mood's colour: bluer while you talk, warmer while the agent does.
+        #expect(TalkIsland.edgeColor(.you).blue > TalkIsland.edgeColor(.you).red)
+        #expect(TalkIsland.edgeColor(.speaking).red > TalkIsland.edgeColor(.speaking).blue)
+        #expect(TalkIsland.edgeColor(.you).red != TalkIsland.edgeColor(.thinking).red)
+    }
+
+    @Test func aTalkSoundsUnlikeADictation() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let build = try String(contentsOf: root.appending(path: "scripts/build-app.sh"), encoding: .utf8)
+        var sounds: [String: Data] = [:]
+        for file in Cue.allCases.map(\.file) + TalkCue.allCases.map(\.file) {
+            sounds[file] = try Data(contentsOf: root.appending(path: "Resources/\(file).wav"))
+            // A sound the build leaves out of the app is silence.
+            #expect(build.contains(" \(file).wav "))
+        }
+        #expect(Set(sounds.values).count == 5)
+        #expect(TalkCue.start.file == "talk-start" && TalkCue.end.file == "talk-end")
+        // The fn key still makes a dictation's sounds, never a talk's.
+        #expect(Cue.after([.start], wasListening: false, isListening: true) == .start)
+        #expect(Cue.after([.finish], wasListening: true, isListening: false) == .stop)
     }
 
     @Test func theIslandSaysWhatIsHappening() {
@@ -514,7 +558,9 @@ import Testing
     @Test func theIslandFitsTheNotch() {
         let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
         #expect(TalkIsland.compactWidth(notched) == 185 + 2 * 54)
-        #expect(TalkIsland.compactWidth(.plain) == 104 + 2 * 52)
+        // Floating, it is a little bigger than the bar a dictation shows, which is 220 by 40.
+        #expect(TalkIsland.compactWidth(.plain) == 132 + 2 * 62)
+        #expect(TalkIsland.compactWidth(.plain) > 220 && TalkIsland.Screen.plain.barHeight > 40)
         // The globe fits the header with room to float, under a notch too.
         for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 2) }
         #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))

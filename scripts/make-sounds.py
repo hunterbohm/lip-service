@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Writes the bar's start, stop, and cancel cues as 44.1 kHz mono WAV files into the folder given."""
+"""Writes the bar's start, stop, and cancel cues, and a live talk's start and end, as 44.1 kHz mono WAV files into
+the folder given. A talk's two are three notes of a chord, lower and longer than a dictation's two, so the ear tells
+them apart."""
 import math
 import struct
 import sys
@@ -41,6 +43,8 @@ CUES = {
     "start": ([note(659.3, 0, 0.11), note(987.8, 0.045, 0.16)], 0.22),
     "stop": ([note(987.8, 0, 0.11), note(659.3, 0.045, 0.16)], 0.22),
     "cancel": ([note(493.9, 0, 0.12, 0.8)], 0.14),
+    "talk-start": ([note(392.0, 0, 0.2), note(523.3, 0.09, 0.2), note(784.0, 0.18, 0.32)], 0.5),
+    "talk-end": ([note(784.0, 0, 0.2), note(523.3, 0.09, 0.2), note(392.0, 0.18, 0.32)], 0.5),
 }
 
 if __name__ == "__main__":
