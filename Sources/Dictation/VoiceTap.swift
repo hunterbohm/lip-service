@@ -56,10 +56,15 @@ final class VoiceTap: @unchecked Sendable {
     /// Calls `body` with the time and the hop of each hop after `cursor` that is at or before `limit`, oldest first, in
     /// the clock `now` reads, and moves `cursor` past them. A reader that falls more than the ring behind skips ahead.
     func read(from cursor: inout Int, until limit: Double, _ body: (Double, VoiceHop) -> Void) {
-        let end = head
-        if end - cursor > Self.capacity - 16 { cursor = end - (Self.capacity - 16) }
-        while cursor < end {
+        while true {
+            let end = head
+            if end - cursor > Self.capacity - 16 { cursor = end - (Self.capacity - 16) }
+            guard cursor < end else { return }
             let slot = ring[cursor % Self.capacity]
+            // The producer rewrites this slot only once `capacity` more hops are written. If that many were not by now,
+            // none were while it was copied, so the copy is whole. Otherwise the reader was stalled long enough to be
+            // lapped: skip ahead and read again.
+            guard head - cursor < Self.capacity else { continue }
             if slot.time > limit { return }
             body(slot.time, slot.hop)
             cursor += 1
