@@ -502,9 +502,14 @@ import Testing
         let loud = TalkIsland.globeDots(time: 1, level: 1, mood: .you)
         #expect(loud.map(\.brightness).reduce(0, +) > quiet.map(\.brightness).reduce(0, +))
         // It turns faster while the agent works than while it waits on you.
+        // Counted by the dots whose size changed as land and sea moved under them.
         let turn = { (mood: TalkIsland.Mood) in
-            zip(TalkIsland.globeDots(time: 0, level: 0, mood: mood), TalkIsland.globeDots(time: 0.5, level: 0, mood: mood))
-                .filter { $0.0 != $0.1 }.count
+            let sizes = { (time: Double) in
+                Dictionary(TalkIsland.globeDots(time: time, level: 0, mood: mood).map { ("\($0.column),\($0.row)", $0.size) },
+                           uniquingKeysWith: { a, _ in a })
+            }
+            let before = sizes(0), after = sizes(1)
+            return Set(before.keys).union(after.keys).filter { before[$0] != after[$0] }.count
         }
         #expect(turn(.thinking) > turn(.you))
         #expect(abs(TalkIsland.globeFloat(time: 3)) <= TalkIsland.globeBob)
