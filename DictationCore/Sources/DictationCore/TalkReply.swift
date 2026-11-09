@@ -405,6 +405,7 @@ public enum ToolLine {
     /// Up to `most` plain words, for a search: letters, digits and a few marks, nothing that looks like a key. A quote
     /// anywhere means the words may be a quoted value, so none are kept.
     static func words(_ text: String, most: Int) -> String? {
+        guard !text.contains(where: { "'\"`‘’“”".contains($0) }) else { return nil }
         let all = text.split(whereSeparator: \.isWhitespace)
         let kept = all.prefix(most).map(String.init)
         guard !kept.isEmpty, kept.allSatisfy({ $0.count <= 24 && $0.allSatisfy { $0.isLetter || $0.isNumber || "-.&".contains($0) } }),

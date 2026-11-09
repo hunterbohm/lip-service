@@ -537,10 +537,10 @@ enum TalkEnd: Equatable {
     }
 
     private func drainSteps(turn current: Int) {
-        guard stepTimer == nil, current == turn, !ended else { return }
+        // While the agent speaks or asks, the steps wait in `steps`, and their hold starts once they show.
+        guard stepTimer == nil, current == turn, !ended, bar.phase != .speaking, permission == nil else { return }
         let (line, wait) = steps.next(at: .now)
-        // While the agent speaks or asks, the step is kept in `steps` and shows when it goes back to work.
-        if let line, permission == nil { bar.activity = line }
+        if let line { bar.activity = line }
         guard let wait = line == nil ? wait : StepQueue.hold else { return }
         stepTimer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(wait))
@@ -622,7 +622,7 @@ enum TalkEnd: Equatable {
             let step = steps.shown ?? (caption.hasSuffix(".") ? String(caption.dropLast()) : caption)
             bar = TalkBar(agent: bar.agent, phase: .thinking, line: bar.phase == .thinking ? bar.line : "",
                           activity: permission == nil ? step : bar.activity)
-            return
+            return drainSteps(turn: turn)
         }
         bar = TalkBar(agent: bar.agent, phase: .speaking, line: caption, endingSoon: false)
     }
@@ -639,6 +639,7 @@ enum TalkEnd: Equatable {
         if replyDone, permission == nil { return turnOver() }
         ear.agentWorking(at: .now)
         bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permission == nil ? steps.shown ?? bar.activity : permissionHint)
+        drainSteps(turn: turn)
     }
 
     private func turnOver() {

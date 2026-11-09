@@ -313,6 +313,7 @@ import Testing
             ("web_search: cheap flights to denver friday morning", "fetch", "Searching the web for cheap flights to denver…"),
             ("search_files: 'demo-password'", "search", "Searching"),
             ("web_search: don't share this", "fetch", "Searching the web"),
+            ("web_search: cheap flights to denver \"private\"", "fetch", "Searching the web"),
             ("web_extract: https://www.example.com/a?b=c", "fetch", "Reading example.com"),
             ("browser_navigate: https://mail.google.com/mail/u/0", nil, "Opening mail.google.com"),
             ("browser_exec", nil, "Using the browser"),
