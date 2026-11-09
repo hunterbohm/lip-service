@@ -119,8 +119,8 @@ actor ACPClient {
         _ = try await request("initialize", ACP.initialize(version: Self.version), timeout: 45)
     }
 
-    func newSession(cwd: String, meta: JSONValue? = nil) async throws -> SessionInfo {
-        let result = try await request("session/new", ACP.newSession(cwd: cwd, meta: meta), timeout: 45)
+    func newSession(cwd: String, meta: JSONValue? = nil, mcpServers: [JSONValue] = []) async throws -> SessionInfo {
+        let result = try await request("session/new", ACP.newSession(cwd: cwd, meta: meta, mcpServers: mcpServers), timeout: 45)
         guard let info = SessionInfo.parse(result) else { throw AgentError("\(name) didn't open a session.") }
         return info
     }
@@ -277,18 +277,37 @@ actor ACPClient {
         return (client, info.id)
     }
 
+    /// Set by the app: what a talk adds to an agent's session besides its own settings, such as T3 Code's tools.
+    var talkExtras: (@Sendable (AgentConnection) async -> TalkExtras?)?
+
     /// A fresh session for a live talk, with the agent's live-talk options, such as a quicker model. An option the agent
-    /// turns down leaves its own default, so the talk still starts.
-    func talkSession(_ agent: AgentConnection) async throws -> (ACPClient, String) {
+    /// turns down leaves its own default, so the talk still starts. The session starts in the pool's scratch folder, in no
+    /// project. When the app has extras for the agent, such as T3 Code's tools, they go on the session first; if the agent
+    /// turns any of them down, the talk starts without them, since the tools are only safe with the options that come with.
+    func talkSession(_ agent: AgentConnection) async throws -> (client: ACPClient, id: String, extras: TalkExtras?) {
+        async let wanted = talkExtras?(agent)
         let client = try await client(for: agent)
-        let info = try await client.newSession(cwd: agent.sessionDirectory(local: workingDirectory.path))
-        remember(info, for: agent.id)
+        let cwd = agent.sessionDirectory(local: workingDirectory.path)
+        let extras = await wanted
+        var info: SessionInfo?
+        if let extras {
+            do {
+                let session = try await client.newSession(cwd: cwd, mcpServers: extras.servers)
+                for choice in extras.options { try await client.set(choice, session: session.id) }
+                info = session
+            } catch {
+                log.error("\(agent.name, privacy: .public) wouldn't take the talk's extras: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        let session: SessionInfo
+        if let info { session = info } else { session = try await client.newSession(cwd: cwd) }
+        remember(session, for: agent.id)
         for choice in agent.talkOptions {
-            do { try await client.set(choice, session: info.id) } catch {
+            do { try await client.set(choice, session: session.id) } catch {
                 log.error("\(agent.name, privacy: .public) turned down a live-talk option: \(error.localizedDescription, privacy: .public)")
             }
         }
-        return (client, info.id)
+        return (client, session.id, info == nil ? nil : extras)
     }
 
     /// Stops an agent, for a changed command or a Test that should start it fresh.

@@ -207,6 +207,8 @@ public enum ShowCard: Equatable, Sendable {
 /// fixed phrases: a tool's arguments, which can hold commands or private text, are never read out or shown.
 public enum ToolLine {
     private static let byTitle: [(String, String)] = [
+        ("t3_thread_launch", "Starting a thread in T3 Code"), ("t3_project", "Looking through your T3 projects"),
+        ("t3_thread", "Checking your T3 threads"),
         ("calendar", "Checking your calendar"), ("event", "Checking your calendar"),
         ("gmail", "Checking your email"), ("email", "Checking your email"), ("mail", "Checking your email"), ("inbox", "Checking your email"),
         ("session_search", "Searching your past talks"), ("memory", "Checking what it remembers"), ("remember", "Checking what it remembers"),
@@ -285,9 +287,9 @@ public enum TalkPrompt {
 }
 
 /// How a talk answers the agent's requests to use a tool. Reading, searching and thinking go ahead, as in voice notes.
-/// Anything else is asked. A spoken yes may allow only fetching a page; running a command, editing, deleting, moving or
-/// anything unnamed needs Allow clicked on the card, so a misheard word or a voice in the room can't approve it. Either
-/// way only "allow once" is ever picked, never "always".
+/// Anything else is asked. A spoken yes may allow only fetching a page and starting a T3 Code thread; running a command,
+/// editing, deleting, moving or anything unnamed needs Allow clicked on the card, so a misheard word or a voice in the room
+/// can't approve it. Either way only "allow once" is ever picked, never "always".
 public enum TalkPermission {
     public enum Decision: Equatable, Sendable {
         /// Answer at once with this option, or with no option, which the agent takes as cancelled.
@@ -300,6 +302,12 @@ public enum TalkPermission {
     public static let spokenYes: Set<String> = ["fetch"]
 
     public static func decide(_ request: PermissionRequest) -> Decision {
+        // T3 Code's tools, which a talk with Claude Code may carry. Listing and reading go ahead; starting a thread asks
+        // for a spoken yes or a click. Any other tool of the server falls through to the rules below.
+        if let tool = T3Talk.tool(of: request) {
+            if T3Talk.readingTools.contains(tool) { return .answer(allowOnce(request) ?? request.rejection?.id) }
+            if tool == T3Talk.launchThread, allowOnce(request) != nil { return .ask(byVoice: true) }
+        }
         if let kind = request.toolKind, automatic.contains(kind) { return .answer(allowOnce(request) ?? request.rejection?.id) }
         guard allowOnce(request) != nil else { return .answer(request.rejection?.id) }
         return .ask(byVoice: request.toolKind.map(spokenYes.contains) ?? false)

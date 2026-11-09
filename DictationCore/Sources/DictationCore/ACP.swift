@@ -145,10 +145,16 @@ public enum ACP {
          "clientInfo": ["name": "lip-service", "version": .string(version)]]
     }
 
-    public static func newSession(cwd: String, meta: JSONValue? = nil) -> JSONValue {
-        var params: [String: JSONValue] = ["cwd": .string(cwd), "mcpServers": []]
+    public static func newSession(cwd: String, meta: JSONValue? = nil, mcpServers: [JSONValue] = []) -> JSONValue {
+        var params: [String: JSONValue] = ["cwd": .string(cwd), "mcpServers": .array(mcpServers)]
         if let meta { params["_meta"] = meta }
         return .object(params)
+    }
+
+    /// An MCP server the agent starts and talks to on its stdin and stdout.
+    public static func stdioServer(name: String, command: String, args: [String], env: [String: String] = [:]) -> JSONValue {
+        ["name": .string(name), "command": .string(command), "args": .array(args.map(JSONValue.string)),
+         "env": .array(env.sorted { $0.key < $1.key }.map { ["name": .string($0.key), "value": .string($0.value)] })]
     }
 
     public static func set(_ choice: ConfigChoice, session: String) -> (method: String, params: JSONValue) {
@@ -266,9 +272,15 @@ public struct PermissionRequest: Equatable, Sendable {
     public var options: [Option]
     /// What the tool does, as the agent says: read, edit, delete, move, search, execute, think, fetch or other.
     public var toolKind: String?
+    /// The tool's own name, when the agent gives it: Claude Code's `mcp__SERVER__TOOL` for a tool of an MCP server.
+    public var toolName: String?
+    /// What the agent is passing the tool.
+    public var input: JSONValue?
 
-    public init(rpcID: JSONValue, session: String, title: String, options: [Option], toolKind: String? = nil) {
+    public init(rpcID: JSONValue, session: String, title: String, options: [Option], toolKind: String? = nil, toolName: String? = nil,
+                input: JSONValue? = nil) {
         (self.rpcID, self.session, self.title, self.options, self.toolKind) = (rpcID, session, title, options, toolKind)
+        (self.toolName, self.input) = (toolName, input)
     }
 
     public static func parse(id: JSONValue, params: JSONValue) -> PermissionRequest? {
@@ -280,7 +292,8 @@ public struct PermissionRequest: Equatable, Sendable {
         let call = params["toolCall"]
         let title = call?["title"]?.string ?? SessionUpdate.text(call?["content"]?.array?.first?["content"])
         return PermissionRequest(rpcID: id, session: session, title: title.isEmpty ? "The agent wants to use a tool." : title, options: options,
-                                 toolKind: call?["kind"]?.string)
+                                 toolKind: call?["kind"]?.string, toolName: call?["_meta"]?["claudeCode"]?["toolName"]?.string,
+                                 input: call?["rawInput"])
     }
 
     /// The option a refusal picks. None when the agent offered no reject option, which is answered as cancelled.

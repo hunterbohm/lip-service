@@ -154,6 +154,13 @@ struct MCPSession: Sendable {
         return try T3.toolResult(try result.get()).get()
     }
 
+    /// Any request of the server, answered with its result, for the bridge that passes an agent's calls on.
+    func request(_ method: String, _ params: JSONValue) async throws -> JSONValue {
+        let (value, _) = try await post(RPCMessage.request(id: 3, method: method, params: params))
+        guard case .response(_, let result) = value.flatMap({ RPCMessage.parse($0.data()) }) else { throw AgentError("T3 Code didn't answer \(method).") }
+        return try result.get()
+    }
+
     private func post(_ message: JSONValue) async throws -> (JSONValue?, [String: String]) {
         var request = URLRequest(url: endpoint, timeoutInterval: 20)
         request.httpMethod = "POST"

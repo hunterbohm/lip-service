@@ -94,6 +94,19 @@ private final class RenderWindow: NSWindow {
             ("ghostwrite-change-another", { state.sheetAdding = true; window.setContentSize(NSSize(width: 1000, height: 960)) }),
             ("ghostwrite-change-advanced", { state.sheetAdding = false; state.sheetAdvanced = true; window.setContentSize(NSSize(width: 1000, height: 1180)) }),
             ("ghostwrite-voice", { state.sheetAdvanced = false; state.sheet = .voice; window.setContentSize(NSSize(width: 1000, height: 680)) }),
+            ("ghostwrite-talk-hermes", {
+                agentServices.show(status: .ready(seconds: 1.4, model: "claude-haiku-5-5"), for: "hermes")
+                state.sheet = nil
+                window.setContentSize(NSSize(width: 1000, height: 1100))
+            }),
+            ("ghostwrite-talk-claude", {
+                preferences.change { $0.liveTalk.agentID = "claude" }
+                agentServices.show(t3: .notConnected, for: "claude")
+            }),
+            ("ghostwrite-talk-claude-connected", { agentServices.show(t3: .connected(expires: Date(timeIntervalSinceNow: 29 * 86_400)), for: "claude") }),
+            ("ghostwrite-talk-add-another", {
+                preferences.change { $0.liveTalk.agentID = nil; $0.agents.agents = [$0.agents.agents[0]] }
+            }),
             ("profiles-messages", {
                 state.sheet = nil
                 preferences.change { $0.profiles.set(ProfileRules(style: .veryCasual, pressReturn: true), for: .messages) }

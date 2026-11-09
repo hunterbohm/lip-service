@@ -56,7 +56,11 @@ struct WindowRoot: View {
 
     @ViewBuilder private var sheet: some View {
         switch state.sheet {
-        case .agents: AgentSheet(services: services, adding: state.sheetAdding, advanced: state.sheetAdvanced) { state.sheet = nil }
+        case .agents:
+            AgentSheet(services: services, adding: state.sheetAdding, advanced: state.sheetAdvanced) {
+                state.sheet = nil
+                (state.sheetAdding, state.sheetAdvanced) = (false, false)
+            }
             .id("\(state.sheetAdding)\(state.sheetAdvanced)")
         case .voice: VoiceSheet(services: services) { state.sheet = nil }
         case .apps: AppsSheet(preferences: services.preferences, group: state.profileGroup) { state.sheet = nil }

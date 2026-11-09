@@ -23,6 +23,9 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
     public var talkOptions: [ConfigChoice] = []
     /// Added to the voice note on every turn of a talk, for what only this agent can do.
     public var talkNote = ""
+    /// A talk gives the agent T3 Code's tools for listing projects and starting threads, when T3 Code is running and
+    /// connected on this Mac. For an agent that has no way to start a T3 thread of its own.
+    public var talkT3 = false
     public var spokenNames: [String]
     public var destination: Destination
 
@@ -36,6 +39,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
         AgentPreset(id: "claude", name: "Claude Code", program: "npx", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
                     draftOptions: [.option(id: "model", value: "haiku"), .option(id: "effort", value: "low")],
                     taskOptions: [], talkOptions: [.option(id: "effort", value: "low")],
+                    talkNote: "Keep every spoken answer to one or two short sentences.", talkT3: true,
                     spokenNames: ["Claude"], destination: .t3Code(T3Destination())),
         AgentPreset(id: "codex", name: "Codex", program: "npx", command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
                     draftOptions: [.model("gpt-6-luna[low]")], taskOptions: [], spokenNames: ["Codex"], destination: .t3Code(T3Destination())),
@@ -54,7 +58,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
     public func connection() -> AgentConnection {
         AgentConnection(id: id == "custom" ? "custom-\(UUID().uuidString.prefix(8))" : id, name: id == "custom" ? "My agent" : name,
                         presetID: id, command: command, spokenNames: spokenNames, draftOptions: draftOptions, taskOptions: taskOptions,
-                        talkOptions: talkOptions, talkNote: talkNote, destination: destination)
+                        talkOptions: talkOptions, talkNote: talkNote, talkT3: talkT3, destination: destination)
     }
 }
 
@@ -75,21 +79,24 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
     public var talkOptions: [ConfigChoice]
     /// Added to the voice note on every turn of a talk, such as how Hermes sends a message.
     public var talkNote: String
+    /// A talk gives the agent T3 Code's tools for listing projects and starting threads, when T3 Code is running and
+    /// connected on this Mac and the agent runs here too.
+    public var talkT3: Bool
     public var destination: Destination
 
     public init(id: String, name: String, presetID: String, command: [String], remoteHost: String? = nil, spokenNames: [String],
                 draftOptions: [ConfigChoice], taskOptions: [ConfigChoice], talkOptions: [ConfigChoice] = [], talkNote: String = "",
-                destination: Destination) {
+                talkT3: Bool = false, destination: Destination) {
         (self.id, self.name, self.presetID, self.command, self.remoteHost) = (id, name, presetID, command, remoteHost)
         (self.spokenNames, self.draftOptions, self.taskOptions, self.destination) = (spokenNames, draftOptions, taskOptions, destination)
-        (self.talkOptions, self.talkNote) = (talkOptions, talkNote)
+        (self.talkOptions, self.talkNote, self.talkT3) = (talkOptions, talkNote, talkT3)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, presetID, command, remoteHost, spokenNames, draftOptions, taskOptions, talkOptions, talkNote, destination
+        case id, name, presetID, command, remoteHost, spokenNames, draftOptions, taskOptions, talkOptions, talkNote, talkT3, destination
     }
 
-    /// An agent saved before live talk existed gets its preset's talk settings.
+    /// An agent saved before live talk existed, or before a talk setting did, gets its preset's talk settings.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -104,6 +111,7 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
         let preset = AgentPreset.with(id: presetID)
         talkOptions = (try? container.decodeIfPresent([ConfigChoice].self, forKey: .talkOptions)) ?? preset?.talkOptions ?? []
         talkNote = (try? container.decodeIfPresent(String.self, forKey: .talkNote)) ?? preset?.talkNote ?? ""
+        talkT3 = (try? container.decodeIfPresent(Bool.self, forKey: .talkT3)) ?? preset?.talkT3 ?? false
     }
 
     /// The first letter, for the round avatar on the bar and the card.

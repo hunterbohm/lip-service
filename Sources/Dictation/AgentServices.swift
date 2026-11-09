@@ -97,14 +97,21 @@ import SwiftUI
         }
     }
 
+    /// Where this agent's T3 Code is: its hand-off destination, or the default one for an agent that only starts threads
+    /// during a live talk. Nil for an agent with neither.
+    private func t3Destination(for agent: AgentConnection) -> T3Destination? {
+        if case .t3Code(let destination) = agent.destination { return destination }
+        return agent.talkT3 ? T3Destination() : nil
+    }
+
     func refreshT3(_ agent: AgentConnection) {
-        guard case .t3Code(let destination) = agent.destination else { return }
+        guard !isStatic, let destination = t3Destination(for: agent) else { return }
         guard let client = try? T3Client(destination: destination, secrets: Keychain()) else { return t3[agent.id] = .failed("T3 Code isn't running.") }
         t3[agent.id] = client.token.map { .connected(expires: $0.expires) } ?? .notConnected
     }
 
     func connectT3(_ agent: AgentConnection, code: String) {
-        guard case .t3Code(let destination) = agent.destination else { return }
+        guard let destination = t3Destination(for: agent) else { return }
         t3[agent.id] = .connecting
         Task {
             do {

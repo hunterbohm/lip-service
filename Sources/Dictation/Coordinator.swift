@@ -66,6 +66,7 @@ import os
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(level: { [microphone, live] in live.talk?.level ?? microphone.level })
         menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter, updates: updates)
+        agents.talkExtras = { agent in await TalkT3.extras(for: agent, secrets: Keychain()) }
         ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,
                                   usageCount: usageCount,
                                   anchor: { [bar] in bar.anchor() })

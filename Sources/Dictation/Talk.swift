@@ -156,6 +156,8 @@ enum TalkEnd: Equatable {
     private var textCount = 0
     private var permission: (request: PermissionRequest, answer: CheckedContinuation<String?, Never>, turn: Int, byVoice: Bool)?
     private var permissionTimeout: Task<Void, Never>?
+    /// What this talk's session carries beyond the agent's own settings, such as T3 Code's tools.
+    private var extras: TalkExtras?
 
     private struct Line {
         var turn: Int
@@ -213,10 +215,10 @@ enum TalkEnd: Equatable {
         async let session = pool.talkSession(agent)
         async let ready: Void = voice.prepare()
         do {
-            let (client, id) = try await session
+            let (client, id, extras) = try await session
             try await ready
             guard !ended else { return }
-            (self.client, sessionID, connected) = (client, id, true)
+            (self.client, sessionID, self.extras, connected) = (client, id, extras, true)
             log.info("talk with \(agent.name, privacy: .public) in session \(id, privacy: .public)")
             if let waitingTurn {
                 self.waitingTurn = nil
@@ -405,7 +407,7 @@ enum TalkEnd: Equatable {
         report = TalkTurnReport(words: words, reply: "", tools: [], cards: 0, clock: clock)
         bar = TalkBar(agent: bar.agent, phase: .thinking, line: words)
         ear.agentWorking(at: .now)
-        let message = TalkPrompt.message(words, extra: agent.talkNote)
+        let message = TalkPrompt.message(words, extra: [agent.talkNote, extras?.note ?? ""].filter { !$0.isEmpty }.joined(separator: " "))
         let (updates, sink) = AsyncStream.makeStream(of: SessionUpdate.self)
         prompting = Task { [weak self] in
             let reading = Task { [weak self] in
@@ -435,9 +437,9 @@ enum TalkEnd: Equatable {
     /// The session wouldn't take another turn after a cut-in it ignored, so the talk goes on in a new one.
     private func reopen(then words: String, clock: TurnClock) async {
         do {
-            let (client, id) = try await pool.talkSession(agent)
+            let (client, id, extras) = try await pool.talkSession(agent)
             guard !ended else { return }
-            (self.client, sessionID) = (client, id)
+            (self.client, sessionID, self.extras) = (client, id, extras)
             log.info("talk moved to session \(id, privacy: .public)")
             send(words, clock: clock, retried: true)
         } catch {
@@ -563,8 +565,16 @@ enum TalkEnd: Equatable {
         case .answer(let option): return option
         case .ask(let voice): byVoice = voice
         }
-        let phrase = ToolLine.permissionPhrase(title: request.title, kind: request.toolKind)
-        onCard?(.permission(agent: agent.name, phrase: phrase, detail: request.title, byVoice: byVoice))
+        var (phrase, detail) = (ToolLine.permissionPhrase(title: request.title, kind: request.toolKind), request.title)
+        if T3Talk.isLaunch(request) {
+            // Said and shown from what the agent passes to T3 Code, not from what it says: where, what for, and the task.
+            let details = T3Talk.launchDetails(request)
+            var name: String?
+            if let id = details.projectID { name = await extras?.projectName?(id) }
+            guard current == turn, !ended, permission == nil else { return request.rejection?.id }
+            (phrase, detail) = (T3Talk.launchPhrase(request, projectName: name), String(details.message.prefix(240)))
+        }
+        onCard?(.permission(agent: agent.name, phrase: phrase, detail: detail, byVoice: byVoice))
         bar.activity = byVoice ? "Say yes or no" : "Click Allow, or say no"
         queue(byVoice ? "\(agent.name) wants your OK for this: \(phrase). Say yes or no."
                       : "\(agent.name) wants your OK for this: \(phrase). Click Allow on the screen, or say no.", turn: current)

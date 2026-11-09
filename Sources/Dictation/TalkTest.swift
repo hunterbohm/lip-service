@@ -48,6 +48,8 @@ import Foundation
         ModelHub.offlineMode = false
 
         let input = ClipInput(clips: clips), speaker = SilentSpeaker(), pool = AgentPool()
+        let secrets = T3Bridge.secrets()
+        pool.talkExtras = { agent in await TalkT3.extras(for: agent, secrets: secrets) }
         let talk = Talk(agent: agent, pool: pool, engine: engine, voice: Voices.provider(for: options.voice), input: input, speaker: speaker)
         let started = Instant.now
         var turns = 0, failures = 0
@@ -70,8 +72,17 @@ import Foundation
             if let failed = report.failed { row["failed"] = .string(failed) }
             print(String(decoding: JSONValue.object(row).data(), as: UTF8.self))
         }
-        talk.onCard = { event in
+        talk.onCard = { [weak talk] event in
             if case .show(let card) = event { FileHandle.standardError.write(Data("card: \(card)\n".utf8)) }
+            // A question about a tool waits for your answer, so the next clip is it, once the question has been said.
+            if case .permission(_, let phrase, _, let byVoice) = event {
+                FileHandle.standardError.write(Data("asked: \(phrase) (\(byVoice ? "by voice" : "click only"))\n".utf8))
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(byVoice ? 7 : 2))
+                    guard let talk, !talk.ended else { return }
+                    if !input.next() { talk.answerPermission(false) }
+                }
+            }
         }
         talk.onEnd = { done.continuation.yield($0) }
         talk.start()
