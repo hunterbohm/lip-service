@@ -132,9 +132,9 @@ public struct BarRect: Equatable, Sendable {
     /// This area less the strips that other apps' bars cover along its edges, such as the top bar of a tiling window
     /// manager like OmniWM or SketchyBar, which macOS leaves out of the visible frame. A window counts as a bar when
     /// it touches an edge, runs along at least half of it, and is at most `maxThickness` deep. Anything else, like a
-    /// floating window or a full-screen overlay, is ignored.
-    public func clear(of windows: [BarRect], maxThickness: Double = 80) -> BarRect {
-        let touch = 2.0
+    /// floating window or a full-screen overlay, is ignored. `touch` is how far from an edge a bar may sit and still count
+    /// as touching it, for an area that reaches under the macOS menu bar, where a bar can sit just below it.
+    public func clear(of windows: [BarRect], maxThickness: Double = 80, touch: Double = 2) -> BarRect {
         var (top, bottom, left, right) = (maxY, minY, minX, maxX)
         for window in windows {
             let alongX = Swift.min(window.maxX, maxX) - Swift.max(window.minX, minX)

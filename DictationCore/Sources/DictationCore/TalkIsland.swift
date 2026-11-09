@@ -2,10 +2,11 @@ import Foundation
 
 /// The island a live talk shows at the top of the screen, in the style of the iPhone's Dynamic Island. On a screen with
 /// a notch it grows out of the notch, with ears on either side; elsewhere it floats just below the top edge. Compact, it
-/// shows a living orb on the left and the voice on the right. It opens up when there is something to read: your words
-/// while the agent thinks, the sentence the agent is saying, a warning that the talk ends soon, or your pointer over it,
-/// which also shows the button that ends the talk. This holds its shape, sizes, colours and when it opens; the view
-/// only draws it.
+/// shows a living orb on the left and the voice on the right. When another app's bar, such as a tiling window manager's,
+/// covers the top of the screen, it floats just below that bar instead, with or without a notch. It opens up when there
+/// is something to read: your words while the agent thinks, the sentence the agent is saying, a warning that the talk
+/// ends soon, or your pointer over it, which also shows the button that ends the talk. This holds its shape, sizes,
+/// colours, place and when it opens; the view only draws it.
 public enum TalkIsland {
     /// The screen the island sits on: whether it has a notch, how wide the notch is, and how tall the strip beside it is.
     public struct Screen: Equatable, Sendable {
@@ -21,7 +22,7 @@ public enum TalkIsland {
         public static let plain = Screen(hasNotch: false, notchWidth: 0, barHeight: 34)
     }
 
-    /// How far the island sits below the top of a screen without a notch.
+    /// How far the island sits below the top of a screen without a notch, or below another app's bar.
     public static let floatingGap = 6.0
     /// How far the island's top corners curve out into the screen edge around a notch.
     public static let earCurve = 9.0
@@ -31,6 +32,29 @@ public enum TalkIsland {
     public static let notchRadius = 12.0
     /// The widest the island opens, so the panel that holds it never resizes.
     public static let widest = 560.0
+
+    /// Where the island sits on its screen: the look it takes, and how far below the top edge of the screen its top is.
+    public struct Placement: Equatable, Sendable {
+        public var screen: Screen
+        public var drop: Double
+
+        public init(screen: Screen, drop: Double) { (self.screen, self.drop) = (screen, drop) }
+    }
+
+    /// How much of the top of a screen another app's bar must cover, in points, before the island moves out from under it.
+    public static let barTolerance = 1.0
+
+    /// Where the island sits on a screen of `frame`, in AppKit's coordinates, given `clear`: that frame less the strips
+    /// other apps' bars cover. With nothing covering the top, a notch grows the island out of itself and a plain screen
+    /// floats it `floatingGap` below the top. With another app's bar across the top, the island floats `floatingGap`
+    /// below that bar in the plain look, even around a notch, since the bar hides the notch's edge, but never higher than
+    /// the strip of the notch.
+    public static func placement(frame: BarRect, screen: Screen, clear: BarRect) -> Placement {
+        let covered = frame.maxY - clear.maxY
+        guard covered > barTolerance else { return Placement(screen: screen, drop: screen.hasNotch ? 0 : floatingGap) }
+        let notch = screen.hasNotch ? screen.barHeight : 0
+        return Placement(screen: .plain, drop: max(covered, notch) + floatingGap)
+    }
 
     /// Each ear's width: the room for the orb on the left and the voice on the right.
     public static func earWidth(_ screen: Screen) -> Double { screen.hasNotch ? 46 : 44 }
