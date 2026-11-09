@@ -7,14 +7,19 @@ import DictationCore
 /// audio while it records looks like a call to macOS, which then takes the user's AirPods from their iPhone on every
 /// dictation. A system sound plays at the alert volume, through the output Sound settings picks for sound effects.
 @MainActor final class Sounds {
-    private let sounds = Dictionary(uniqueKeysWithValues: Cue.allCases.compactMap { cue in Sound(cue.file).map { (cue, $0) } })
+    private let sounds = Dictionary(uniqueKeysWithValues: (Cue.allCases.map(\.file) + TalkCue.allCases.map(\.file)).compactMap { file in
+        Sound(file).map { (file, $0) }
+    })
 
-    func play(_ cue: Cue) {
-        if let sound = sounds[cue] { AudioServicesPlaySystemSound(sound.id) }
+    func play(_ cue: Cue) { play(cue.file) }
+    func play(talk cue: TalkCue) { play(cue.file) }
+
+    private func play(_ file: String) {
+        if let sound = sounds[file] { AudioServicesPlaySystemSound(sound.id) }
     }
 
     /// The start cue's length, so muting other sound can wait for it.
-    var startLength: Double { sounds[.start]?.length ?? 0 }
+    var startLength: Double { sounds[Cue.start.file]?.length ?? 0 }
 }
 
 private struct Sound {

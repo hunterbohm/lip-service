@@ -509,14 +509,14 @@ import Testing
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
         let build = try String(contentsOf: root.appending(path: "scripts/build-app.sh"), encoding: .utf8)
-        var sounds: [Cue: Data] = [:]
-        for cue in Cue.allCases {
-            sounds[cue] = try Data(contentsOf: root.appending(path: "Resources/\(cue.file).wav"))
+        var sounds: [String: Data] = [:]
+        for file in Cue.allCases.map(\.file) + TalkCue.allCases.map(\.file) {
+            sounds[file] = try Data(contentsOf: root.appending(path: "Resources/\(file).wav"))
             // A sound the build leaves out of the app is silence.
-            #expect(build.contains(" \(cue.file).wav "))
+            #expect(build.contains(" \(file).wav "))
         }
-        #expect(Set(sounds.values).count == Cue.allCases.count)
-        #expect(Cue.talkStart.file == "talk-start" && Cue.talkEnd.file == "talk-end")
+        #expect(Set(sounds.values).count == 5)
+        #expect(TalkCue.start.file == "talk-start" && TalkCue.end.file == "talk-end")
         // The fn key still makes a dictation's sounds, never a talk's.
         #expect(Cue.after([.start], wasListening: false, isListening: true) == .start)
         #expect(Cue.after([.finish], wasListening: true, isListening: false) == .stop)

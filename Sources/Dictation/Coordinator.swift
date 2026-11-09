@@ -234,7 +234,7 @@ import os
             keyTap.suspended = false
             talkCards.dropPermissions()
             microphone.prepare(preferences.current.settings.microphone)
-            if preferences.current.settings.sounds { sounds.play(.talkEnd) }
+            if preferences.current.settings.sounds { sounds.play(talk: .end) }
             switch reason {
             case .failed(let why): show(.talkFailed(why))
             case .quiet, .goodbye, .byYou: render()
@@ -245,7 +245,7 @@ import os
         live.talk = talk
         keyTap.suspended = true
         // The island says the talk is on; how to end it is beside its End button, so nothing pops up under it.
-        if settings.sounds { sounds.play(.talkStart) }
+        if settings.sounds { sounds.play(talk: .start) }
         render()
         talk.start()
     }
@@ -283,9 +283,9 @@ import os
         call.ring = Task { [unowned self, sounds] in
             let ends = Instant.now + request.ringSeconds
             while !Task.isCancelled, Instant.now < ends {
-                sounds.play(.talkStart)
+                sounds.play(talk: .start)
                 try? await Task.sleep(for: .milliseconds(650))
-                sounds.play(.talkStart)
+                sounds.play(talk: .start)
                 try? await Task.sleep(for: .seconds(2.5))
             }
             guard !Task.isCancelled else { return }
