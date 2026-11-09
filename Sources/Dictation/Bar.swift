@@ -235,12 +235,28 @@ enum BarEvent: Equatable {
 @MainActor enum OtherBars {
     static func clear(_ screen: NSScreen) -> NSRect {
         let visible = screen.visibleFrame
+        guard let bars = windows() else { return visible }
+        return NSRect(BarRect(visible).clear(of: bars))
+    }
+
+    /// The whole screen less the strips other apps' bars cover, for the live-talk island, which sits above the macOS menu
+    /// bar and so measures from the top of the screen, not from under the menu bar. A bar just under a visible menu bar
+    /// counts too. The menu bar itself is not another app's bar.
+    static func clearOfFrame(_ screen: NSScreen) -> NSRect {
+        let frame = screen.frame
+        guard let bars = windows() else { return frame }
+        let menuBar = max(frame.maxY - screen.visibleFrame.maxY, 0)
+        return NSRect(BarRect(frame).clear(of: bars, touch: menuBar + 2))
+    }
+
+    /// Other apps' windows that could be a bar, in AppKit's coordinates, or nil when the window list cannot be read.
+    private static func windows() -> [BarRect]? {
         guard let primary = NSScreen.screens.first?.frame,
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
-        else { return visible }
+        else { return nil }
         let me = ProcessInfo.processInfo.processIdentifier
         let normal = Int(CGWindowLevelForKey(.normalWindow)), saver = Int(CGWindowLevelForKey(.screenSaverWindow))
-        let bars: [BarRect] = list.compactMap { window in
+        return list.compactMap { window in
             // Above ordinary windows but under the screen saver, and more than a hairline such as a window border.
             // The Dock, already outside the visible frame, and the hidden menu bar, which slides over everything only
             // while the mouse is at the top, are not bars to avoid.
@@ -253,7 +269,6 @@ enum BarEvent: Equatable {
             // The window list measures from the top of the main screen, AppKit from its bottom.
             return BarRect(x: rect.minX, y: primary.maxY - rect.maxY, width: rect.width, height: rect.height)
         }
-        return NSRect(BarRect(visible).clear(of: bars))
     }
 }
 

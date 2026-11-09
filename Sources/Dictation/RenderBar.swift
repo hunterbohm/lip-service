@@ -19,9 +19,14 @@ import DictationCore
         /// A talk's island on a screen with a notch, and with the pointer over it.
         var notch = false
         var hovering = false
+        /// How deep another app's bar is across the top of the stand-in screen, such as a tiling window manager's, or nil
+        /// for none. The island floats below it.
+        var topBar: Double?
     }
 
     private static let notched = TalkIsland.Screen(hasNotch: true, notchWidth: 185, barHeight: 32)
+    /// The MacBook Pro's tiling bar covers the same 32 points as its menu bar and notch.
+    private static let tilerBar = 32.0
 
     private static let hermes = BarAgent(initial: "H", name: "Hermes")
     private static let said = "reply saying Tuesday at 3 works and I'll bring the latest cut"
@@ -129,6 +134,17 @@ import DictationCore
                                                                                activity: "Checking your calendar")), edge: .top, quiet: true, notch: true),
             Scene(name: "64-talk-notch-agent-talking", state: BarState(body: talk(.speaking, line: "You have two meetings this afternoon, the first at three.")),
                   edge: .top, notch: true),
+            Scene(name: "65-talk-notch-bar-listening", state: BarState(body: talk(.listening)), edge: .top, quiet: true, notch: true, topBar: tilerBar),
+            Scene(name: "66-talk-notch-bar-agent-talking", state: BarState(body: talk(.speaking, line: "You have two meetings this afternoon, the first at three.")),
+                  edge: .top, notch: true, topBar: tilerBar),
+            Scene(name: "67-talk-notch-bar-cards", state: BarState(body: talk(.speaking, line: "The link is on your screen.")), edge: .top,
+                  talkCards: [.show(.text("git switch -c live-talk\nswift build -c release\nscripts/test.sh")),
+                              .show(.link(URL(string: "https://www.swift.org/documentation/")!))],
+                  notch: true, topBar: tilerBar),
+            Scene(name: "68-talk-notch-bar-hover", state: BarState(body: talk(.listening)), edge: .top, quiet: true, notch: true, hovering: true,
+                  topBar: tilerBar),
+            Scene(name: "69-talk-bar-no-notch", state: BarState(body: talk(.thinking, activity: "Checking your calendar")), edge: .top, quiet: true,
+                  topBar: tilerBar),
         ]
     }
 
@@ -201,7 +217,8 @@ import DictationCore
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
             if let card = scene.card { cards.show(card, above: bar.anchor()) } else { cards.hide() }
             if case .talk(let talk) = scene.state.body {
-                island.place(in: stage, screen: scene.notch ? notched : .plain)
+                let clear = scene.topBar.map { BarRect(x: stage.minX, y: stage.minY, width: stage.width, height: stage.height - $0) } ?? BarRect(stage)
+                island.place(in: stage, placement: TalkIsland.placement(frame: BarRect(stage), screen: scene.notch ? notched : .plain, clear: clear))
                 island.model.hovering = scene.hovering
                 island.show(talk)
                 RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.8))
@@ -222,10 +239,12 @@ import DictationCore
             let stagePath = directory.appending(path: "\(scene.name).png")
             let closeUpPath = directory.appending(path: "\(scene.name)-closeup.png")
             let darkCloseUpPath = directory.appending(path: "\(scene.name)-closeup-dark.png")
-            let closeUpRegion = closeUp(around: panels.map(\.frame))
-            guard write(compose(panels, in: NSRect(origin: .zero, size: stage.size)), to: stagePath),
-                  write(compose(panels, in: closeUpRegion), to: closeUpPath),
-                  write(compose(panels, in: closeUpRegion, dark: true), to: darkCloseUpPath)
+            // The stand-in tiling bar, drawn behind the panels so the close-up shows what the island clears.
+            let barFrame = scene.topBar.map { NSRect(x: 0, y: stage.height - $0, width: stage.width, height: $0) }
+            let closeUpRegion = closeUp(around: panels.map(\.frame) + (barFrame.map { [$0.insetBy(dx: (stage.width - 700) / 2, dy: 0)] } ?? []))
+            guard write(compose(panels, in: NSRect(origin: .zero, size: stage.size), topBar: barFrame), to: stagePath),
+                  write(compose(panels, in: closeUpRegion, topBar: barFrame), to: closeUpPath),
+                  write(compose(panels, in: closeUpRegion, dark: true, topBar: barFrame), to: darkCloseUpPath)
             else { return 1 }
             print(stagePath.path)
         }
@@ -271,7 +290,8 @@ import DictationCore
 
     /// A light window with a darker sidebar stands in for the screen, so the bar's contrast reads as it would. `dark` swaps
     /// it for a near-black window like a dark-mode editor, where the bar must stand out by its glow.
-    private static func compose(_ panels: [(frame: NSRect, image: NSImage, shadow: Bool)], in region: NSRect, dark: Bool = false) -> NSBitmapImageRep {
+    private static func compose(_ panels: [(frame: NSRect, image: NSImage, shadow: Bool)], in region: NSRect, dark: Bool = false,
+                                topBar: NSRect? = nil) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(region.width * scale), pixelsHigh: Int(region.height * scale),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -287,6 +307,14 @@ import DictationCore
         NSRect(x: 0, y: 0, width: 180, height: stage.height).fill()
         NSColor(white: dark ? 0.14 : 0.82, alpha: 1).setFill()
         for row in 0..<9 { NSRect(x: 220, y: stage.height - 70 - CGFloat(row) * 52, width: 360 + CGFloat(row % 3) * 90, height: 10).fill() }
+        if let topBar {
+            // Another app's bar, like OmniWM's: a dark strip across the top with a few small items.
+            NSColor(white: 0.13, alpha: 1).setFill()
+            topBar.fill()
+            NSColor(white: 0.32, alpha: 1).setFill()
+            for index in 0..<5 { NSRect(x: 16 + CGFloat(index) * 30, y: topBar.midY - 5, width: 22, height: 10).fill() }
+            for index in 0..<4 { NSRect(x: topBar.maxX - 24 - CGFloat(index) * 64, y: topBar.midY - 5, width: 52, height: 10).fill() }
+        }
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
         shadow.shadowBlurRadius = 10

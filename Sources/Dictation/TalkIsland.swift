@@ -11,6 +11,9 @@ import SwiftUI
     var visible = false
     var hovering = false
     var screen = TalkIsland.Screen.plain
+    /// How far below the top of the screen the island's top sits: nothing under a notch, a small gap on a plain screen,
+    /// and the depth of another app's bar plus a gap when one covers the top.
+    var drop = TalkIsland.floatingGap
     /// The island's drawn size, reported by the view, so clicks beside it pass through and cards sit under it.
     var islandSize: CGSize = .zero
     /// Set by --render-bar: the time every view draws for.
@@ -62,8 +65,7 @@ import SwiftUI
     /// Where the island is now, in screen coordinates.
     var islandRect: NSRect {
         let size = model.islandSize, frame = window.frame
-        let top = model.screen.hasNotch ? 0 : TalkIsland.floatingGap
-        return NSRect(x: frame.midX - size.width / 2, y: frame.maxY - top - size.height, width: size.width, height: size.height)
+        return NSRect(x: frame.midX - size.width / 2, y: frame.maxY - model.drop - size.height, width: size.width, height: size.height)
     }
 
     /// Shows `bar`, or hides the island for nil. A new talk goes on the screen with the pointer, or on `screen`.
@@ -82,9 +84,9 @@ import SwiftUI
     }
 
     /// Places the panel at the top centre of `area`, a stand-in screen, for --render-bar.
-    func place(in area: NSRect, screen: TalkIsland.Screen) {
+    func place(in area: NSRect, placement: TalkIsland.Placement) {
         placedByHand = true
-        model.screen = screen
+        (model.screen, model.drop) = (placement.screen, placement.drop)
         window.setFrame(NSRect(x: area.midX - Self.size.width / 2, y: area.maxY - Self.size.height,
                                width: Self.size.width, height: Self.size.height), display: true)
     }
@@ -92,12 +94,16 @@ import SwiftUI
     private func place(on screen: NSScreen?) {
         guard let screen else { return }
         let top = screen.safeAreaInsets.top
+        let look: TalkIsland.Screen
         if top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-            model.screen = TalkIsland.Screen(hasNotch: true, notchWidth: screen.frame.width - left.width - right.width, barHeight: top)
+            look = TalkIsland.Screen(hasNotch: true, notchWidth: screen.frame.width - left.width - right.width, barHeight: top)
         } else {
-            model.screen = .plain
+            look = .plain
         }
         let frame = screen.frame
+        // Read once per talk: another app's bar across the top, such as a tiling window manager's, would cover the island.
+        let placement = TalkIsland.placement(frame: BarRect(frame), screen: look, clear: BarRect(OtherBars.clearOfFrame(screen)))
+        (model.screen, model.drop) = (placement.screen, placement.drop)
         window.setFrame(NSRect(x: frame.midX - Self.size.width / 2, y: frame.maxY - Self.size.height,
                                width: Self.size.width, height: Self.size.height), display: true)
     }
@@ -160,7 +166,7 @@ private struct IslandRoot: View {
                         model.islandSize = size
                         model.sizeChanged?()
                     }
-                    .padding(.top, model.screen.hasNotch ? 0 : TalkIsland.floatingGap)
+                    .padding(.top, CGFloat(model.drop))
             }
             Spacer(minLength: 0)
         }
