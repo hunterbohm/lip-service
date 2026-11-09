@@ -503,7 +503,8 @@ public struct StepQueue: Sendable {
     public func has(call: String) -> Bool { step?.call == call || waiting.contains { $0.call == call } || trail.contains { $0.call == call } }
 
     /// A tool call that says more about itself, as some agents do once they know the file or the command, changes its
-    /// own step instead of adding one.
+    /// own step instead of adding one. A new call is a new step even in the same words, so its timer, its failure and
+    /// the island's reopening are its own; only a call with no id is told from the last one by its words.
     public mutating func offer(_ line: String, app: StepApp? = nil, call: String? = nil) {
         if let call {
             if step?.call == call {
@@ -517,8 +518,9 @@ public struct StepQueue: Sendable {
                 return
             }
             if trail.contains(where: { $0.call == call }) { return }
+        } else if line == (waiting.last ?? step)?.line {
+            return
         }
-        guard line != (waiting.last ?? step)?.line else { return }
         count += 1
         waiting.append(TalkStep(line: line, app: app, call: call, id: count))
         if waiting.count > Self.most { waiting.removeFirst(waiting.count - Self.most) }

@@ -314,7 +314,10 @@ import DictationCore
             }
             talkCards.closeAll()
             for event in scene.talkCards where !island.take(event) { talkCards.handle(event, agent: hermes, under: (island.islandRect, .top)) }
-            if let press = scene.press, let result = island.model.notices.first(where: \.isRich) { island.model.choose(press, on: result.key) }
+            if let press = scene.press, let result = island.model.notices.first(where: \.isRich) {
+                island.model.onAction = { _ in true }
+                island.model.choose(press, on: result.key)
+            }
             if scene.noticesClosed { island.model.noticeOpen = false }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: scene.settle))
             let shown = bar.visiblePanels + (island.isVisible && scene.state.body.isTalkBody ? [(panel: island.window, shadow: false)] : [])

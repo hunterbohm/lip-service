@@ -94,7 +94,7 @@ import os
         island.model.onEnd = { [unowned self] in live.talk?.end(.byYou) }
         island.model.onAnswer = { [unowned self] in answerCall() }
         island.model.onDecline = { [unowned self] in endRinging(.declined) }
-        island.model.onAction = { [unowned self] words in live.talk?.choose(words) }
+        island.model.onAction = { [unowned self] words in live.talk?.choose(words) ?? false }
         island.onMoved = { [unowned self] rect in
             bar.talkAnchor = rect
             talkCards.move(under: (rect, .top))

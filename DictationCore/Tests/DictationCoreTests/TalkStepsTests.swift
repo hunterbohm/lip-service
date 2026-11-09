@@ -92,6 +92,23 @@ import Testing
         #expect(known && !unknown)
     }
 
+    @Test func aNewCallInTheSameWordsIsItsOwnStep() {
+        var steps = StepQueue()
+        steps.offer("Checking Gmail", app: .gmail, call: "a")
+        _ = steps.next(at: Instant(seconds: 0))
+        steps.offer("Checking Gmail", app: .gmail, call: "b")
+        #expect(steps.has(call: "b"))
+        #expect(steps.next(at: Instant(seconds: 3)).line == "Checking Gmail")
+        #expect(steps.since == Instant(seconds: 3))
+        let failed = steps.fail(call: "b")
+        #expect(failed && steps.step?.failed == true && steps.trail.map(\.failed) == [false])
+        // With no id to tell them apart, the same words twice are one step.
+        steps.offer("Checking Slack")
+        steps.offer("Checking Slack")
+        #expect(steps.next(at: Instant(seconds: 6)).line == "Checking Slack")
+        #expect(steps.next(at: Instant(seconds: 9)).line == nil)
+    }
+
     @Test func theTrailKeepsOnlyTheLastFew() {
         var steps = StepQueue()
         for index in 0..<7 {

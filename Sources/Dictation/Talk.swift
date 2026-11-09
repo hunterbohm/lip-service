@@ -592,8 +592,10 @@ enum TalkEnd: Equatable {
     }
 
     /// A button on a result was pressed: its label goes to the agent as your next words, over whatever it was saying.
-    func choose(_ words: String) {
-        guard !ended, connected, permission == nil, !openingPending, let client, let sessionID else { return }
+    /// False when the talk can't take it now: it is still connecting, or it waits on a permission.
+    @discardableResult
+    func choose(_ words: String) -> Bool {
+        guard !ended, connected, permission == nil, !openingPending, let client, let sessionID else { return false }
         log.info("talk chose a button, \(words.count) characters")
         let busy = report != nil
         stopReply()
@@ -607,6 +609,7 @@ enum TalkEnd: Equatable {
             guard let self, !Task.isCancelled, !self.ended, current == self.turn else { return }
             self.send(words, clock: TurnClock(speechEnd: .now))
         }
+        return true
     }
 
     private func drainSteps(turn current: Int) {

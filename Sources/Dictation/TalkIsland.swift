@@ -32,8 +32,8 @@ import SwiftUI
     /// Answer and Decline on a call back that is ringing.
     @ObservationIgnored var onAnswer: () -> Void = {}
     @ObservationIgnored var onDecline: () -> Void = {}
-    /// A button on a result was pressed: its label, to send as your next words.
-    @ObservationIgnored var onAction: (String) -> Void = { _ in }
+    /// A button on a result was pressed: its label, to send as your next words. False when the talk can't take it now.
+    @ObservationIgnored var onAction: (String) -> Bool = { _ in false }
     /// The island's drawn size changed.
     @ObservationIgnored var sizeChanged: (() -> Void)?
 
@@ -45,11 +45,11 @@ import SwiftUI
     /// The step the closed island carries beside the notch.
     var compactStep: TalkStep? { open ? nil : bar.flatMap { TalkIsland.showsStep($0) ? $0.step : nil } }
 
-    /// Presses `label` on the result `key`. A result's buttons work once.
+    /// Presses `label` on the result `key`. A result's buttons work once, and a press the talk can't take, as while it
+    /// waits on a permission, leaves them to press again.
     func choose(_ label: String, on key: String) {
-        guard let index = notices.firstIndex(where: { $0.key == key }), notices[index].chosen == nil else { return }
+        guard let index = notices.firstIndex(where: { $0.key == key }), notices[index].chosen == nil, onAction(label) else { return }
         notices[index].chosen = label
-        onAction(label)
     }
 }
 
