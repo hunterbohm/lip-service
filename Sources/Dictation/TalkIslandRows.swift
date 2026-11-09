@@ -248,7 +248,7 @@ struct NoticeView: View {
         case .rich(let card):
             VStack(alignment: .leading, spacing: 10) {
                 switch card.body {
-                case .flights(let flights): FlightsView(model: model, flights: flights, working: working)
+                case .flights(let flights): FlightsView(model: model, flights: flights, working: working && notice.chosen == nil)
                 case .rows(let rows): ResultRows(rows: rows)
                 }
                 if !card.actions.isEmpty {
