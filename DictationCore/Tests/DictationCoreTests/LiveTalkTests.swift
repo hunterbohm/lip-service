@@ -349,6 +349,11 @@ import Testing
         // One-line commands and Markdown links stay cards.
         #expect(TalkIsland.notice(.text("echo \"$HOME\" > output_file")) == nil)
         #expect(TalkIsland.notice(.text("git push -u origin main")) == nil)
+        for command in ["npm install", "git status", "python script.py", "./build.sh", "run scripts/test.sh now", "t3-run status"] {
+            #expect(TalkIsland.notice(.text(command)) == nil, "\(command)")
+        }
+        // Prose that only mentions a tool is still a notice.
+        #expect(TalkIsland.notice(.text("Pushed the fix to GitHub")) == "Pushed the fix to GitHub")
         #expect(TalkIsland.notice(.text("See [the doc](https://example.com/a)")) == nil)
     }
 

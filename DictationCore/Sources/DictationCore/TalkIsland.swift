@@ -210,10 +210,23 @@ public enum TalkIsland {
     }
 
     /// Code or a command reads better on a card: marks that prose seldom uses, a command's flags or `&&`, a prompt
-    /// sign, or a fence. Over several lines, brackets and semicolons count too.
+    /// sign, a line that starts with a common command or runs a script, or a fence. Over several lines, brackets and
+    /// semicolons count too.
     static func looksLikeCode(_ text: String, lines: Int) -> Bool {
         if text.contains(where: { "{}<>$`|\\=".contains($0) }) || text.contains("&&") || text.hasPrefix("$ ") { return true }
         if text.firstMatch(of: /(^|\s)--?[A-Za-z]/) != nil { return true }
+        // A line that starts with a command, or runs a script: `git status`, `npm install`, `python script.py`.
+        let programs: Set<String> = ["git", "npm", "npx", "yarn", "pnpm", "bun", "node", "deno", "python", "python3", "pip",
+                                     "pip3", "uv", "swift", "xcodebuild", "brew", "cd", "ls", "cat", "curl", "wget", "ssh",
+                                     "scp", "make", "cargo", "go", "docker", "kubectl", "echo", "rm", "mv", "cp", "mkdir",
+                                     "touch", "chmod", "sudo", "open", "ruby", "gem", "bundle", "rails", "gh", "hermes",
+                                     "t3-run", "kb", "launchctl", "defaults", "tail", "grep", "rg", "sed", "awk", "export"]
+        let scripts = /(^|\s)(~|\.{0,2})\/?[\w.\/-]*\.(py|sh|js|mjs|ts|rb|swift|pl)(\s|$)/
+        for line in text.split(whereSeparator: \.isNewline) {
+            let first = line.split(separator: " ").first.map(String.init) ?? ""
+            if programs.contains(first) || first.hasPrefix("./") || first.hasPrefix("~/") { return true }
+            if line.firstMatch(of: scripts) != nil { return true }
+        }
         return lines > 1 && text.contains(where: { "();".contains($0) })
     }
 
