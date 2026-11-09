@@ -36,7 +36,8 @@ struct GhostwritePage: View {
                         ListRow { voiceRow(settings.agents.voiceNotes) }
                     }
                     .padding(.top, 16)
-                    LiveTalkSection(settings: settings, preferences: preferences)
+                    LiveTalkSection(settings: settings, preferences: preferences, services: services,
+                                    addAgent: { state.sheetAdding = true; state.sheet = .agents })
                         .padding(.top, 26)
                 } else {
                     EmptyTile { services.openSetup(.ghostwrite) }
@@ -222,10 +223,16 @@ private struct EmptyTile: View {
 private struct LiveTalkSection: View {
     let settings: DictationCore.Settings
     let preferences: Preferences
+    let services: WindowServices
+    /// Opens the agent sheet on its list of agents to add.
+    let addAgent: () -> Void
     @State private var serverURL = ""
     @State private var serverVoice = ""
+    @State private var pairingCode = ""
 
     private var talk: LiveTalkSettings { settings.liveTalk }
+    /// Who the talk goes to now: the one picked, or the default agent.
+    private var talkAgent: AgentConnection? { talk.agent(in: settings.agents) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -242,17 +249,24 @@ private struct LiveTalkSection: View {
                     Text("Double-tap Left Control to talk").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
                     SquareCheck(isOn: preferences.binding(\.liveTalk.enabled))
                 }
-                if settings.agents.agents.count > 1 {
-                    ListRow {
-                        Text("Talk with").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
-                        Picker("Talk with", selection: Binding(get: { talk.agentID ?? "" },
-                                                               set: { id in preferences.change { $0.liveTalk.agentID = id.isEmpty ? nil : id } })) {
-                            Text("The default agent").tag("")
-                            ForEach(settings.agents.agents) { Text($0.name).tag($0.id) }
+                ListRow {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Talk with").font(.system(size: 14))
+                        if let agent = talkAgent {
+                            AgentStatusLine(agent: agent, state: services.agents.state(of: agent), showsPlace: false)
                         }
-                        .labelsHidden().fixedSize()
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if settings.agents.agents.count < 2 {
+                        Button("Add another agent", action: addAgent).buttonStyle(DarkButtonStyle())
+                    }
+                    Picker("Talk with", selection: Binding(get: { talkChoice }, set: { id in preferences.change { $0.liveTalk.agentID = id.isEmpty ? nil : id } })) {
+                        if let fallback = settings.agents.current { Text("\(fallback.name) (the default)").tag("") }
+                        ForEach(settings.agents.agents.filter { $0.id != settings.agents.current?.id }) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden().fixedSize()
                 }
+                if let agent = talkAgent, agent.talkT3, !agent.isRemote { ListRow { t3Row(agent) } }
                 ListRow {
                     Text("Voice").font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
                     Picker("Voice", selection: Binding(get: { voiceTag }, set: { pickVoice($0) })) {
@@ -283,8 +297,46 @@ private struct LiveTalkSection: View {
                  + "except what goes to the agent itself and, if you pick one, the voice server.")
                 .font(.system(size: 12)).foregroundStyle(Theme.tertiary).fixedSize(horizontal: false, vertical: true).padding(.top, 8)
         }
-        .onAppear(perform: loadServer)
+        .onAppear {
+            loadServer()
+            if let agent = talkAgent { services.agents.checkIfNeeded(agent) }
+        }
         .onChange(of: talk.voice) { loadServer() }
+    }
+
+    /// The picker's choice: empty for the default agent, which also stands for a picked agent that is gone or is the default.
+    private var talkChoice: String {
+        guard let id = talk.agentID, id != settings.agents.current?.id, settings.agents.agent(id: id) != nil else { return "" }
+        return id
+    }
+
+    /// Whether Claude Code can start T3 Code threads in this talk, and the one step that makes it so.
+    @ViewBuilder private func t3Row(_ agent: AgentConnection) -> some View {
+        let state = services.agents.t3[agent.id] ?? .unknown
+        VStack(alignment: .leading, spacing: 8) {
+            switch state {
+            case .connected:
+                Text("\(agent.name) can start threads in T3 Code").font(.system(size: 14))
+                Text("Say \u{201C}start a thread in Lip Service to fix the login\u{201D}. You say yes out loud, or click Allow, before it starts.")
+                    .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+            case .connecting:
+                Text("Connecting to T3 Code…").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+            case .failed(let reason):
+                Text(reason).font(.system(size: 13)).foregroundStyle(Theme.amber)
+            case .unknown, .notConnected:
+                Text("Connect T3 Code so \(agent.name) can start threads for you").font(.system(size: 14))
+                Text("Make a pairing code in T3 Code (Settings, Connections), paste it here and press Connect T3 Code.")
+                    .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    LabeledField(title: "Pairing code", text: $pairingCode)
+                    Button("Connect T3 Code") { services.agents.connectT3(agent, code: pairingCode); pairingCode = "" }
+                        .buttonStyle(DarkButtonStyle(kind: .prominent)).disabled(pairingCode.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { services.agents.refreshT3(agent) }
+        .onChange(of: agent.id) { services.agents.refreshT3(agent) }
     }
 
     private var voiceTag: String {

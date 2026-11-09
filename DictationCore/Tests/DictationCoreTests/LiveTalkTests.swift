@@ -546,3 +546,126 @@ struct TalkPermissionTests {
         #expect(ToolLine.permissionPhrase(title: "google_calendar_list_events", kind: nil) == "Checking your calendar")
     }
 }
+
+@Suite("Talk with T3 Code's tools")
+struct TalkT3Tests {
+    private func call(_ tool: String, input: JSONValue? = nil, kind: String? = "other",
+                      options: [String] = ["allow_once", "allow_always", "reject_once"]) -> PermissionRequest {
+        PermissionRequest(rpcID: .number(1), session: "s", title: "mcp__lip-service-t3__\(tool)",
+                          options: options.map { .init(id: $0 + "-id", name: $0, kind: $0) }, toolKind: kind,
+                          toolName: T3Talk.toolPrefix + tool, input: input)
+    }
+
+    @Test func claudeCodeCarriesTheToolsAndNobodyElseDoes() {
+        #expect(AgentPreset.with(id: "claude")!.connection().talkT3)
+        for preset in AgentPreset.all where preset.id != "claude" { #expect(!preset.connection().talkT3, "\(preset.id)") }
+        #expect(AgentPreset.with(id: "claude")!.connection().talkNote.contains("short"))
+    }
+
+    @Test func anAgentSavedBeforeGetsThePresetsSetting() throws {
+        let old = #"{"id":"claude","name":"Claude Code","presetID":"claude","command":["npx"],"spokenNames":["Claude"],"draftOptions":[],"#
+            + #""taskOptions":[],"talkOptions":[],"talkNote":"","destination":{"agentReply":{}}}"#
+        let agent = try JSONDecoder().decode(AgentConnection.self, from: Data(old.utf8))
+        #expect(agent.talkT3)
+        var off = agent
+        off.talkT3 = false
+        #expect(try JSONDecoder().decode(AgentConnection.self, from: JSONEncoder().encode(off)).talkT3 == false)
+    }
+
+    @Test func theSessionNamesAStdioServerThatHoldsNoSecret() {
+        let server = ACP.stdioServer(name: "lip-service-t3", command: "/Applications/Lip Service.app/Contents/MacOS/Dictation", args: ["--t3-mcp"])
+        #expect(server == ["name": "lip-service-t3", "command": "/Applications/Lip Service.app/Contents/MacOS/Dictation", "args": ["--t3-mcp"], "env": []])
+        #expect(ACP.newSession(cwd: "/tmp/x", mcpServers: [server])["mcpServers"]?.array?.count == 1)
+        #expect(ACP.newSession(cwd: "/tmp/x", mcpServers: []) == ["cwd": "/tmp/x", "mcpServers": []])
+        // Not "auto", where Claude Code may start a thread without asking.
+        #expect(T3Talk.sessionOptions == [.option(id: "mode", value: "default")])
+    }
+
+    private func tool(_ name: String, properties: [String: JSONValue] = [:]) -> JSONValue {
+        ["name": .string(name), "description": "d", "inputSchema": ["type": "object", "properties": .object(properties), "required": ["projectId", "runtimeMode"]],
+         "outputSchema": ["type": "object"]]
+    }
+
+    @Test func onlyFourOfTheServersSeventyToolsAreOffered() {
+        let all = ["t3_project_delete", "t3_thread_launch", "preview_evaluate", "t3_project_list", "t3_thread_read", "t3_thread_list", "request_secret",
+                   "t3_thread_send", "delegate_task"].map { tool($0) }
+        let offered = T3Talk.exposed(all)
+        #expect(offered.compactMap { $0["name"]?.string }.sorted() == ["t3_project_list", "t3_thread_launch", "t3_thread_list", "t3_thread_read"].sorted())
+        #expect(offered.allSatisfy { $0["outputSchema"] == nil })
+        #expect(T3Talk.exposed([]).isEmpty)
+    }
+
+    @Test func startingAThreadTakesOnlyTheProjectTheTaskAndATitle() {
+        let launch = tool("t3_thread_launch", properties: ["projectId": ["type": "string"], "title": ["type": "string"], "runtimeMode": ["type": "string"],
+                                                           "workspaceStrategy": ["type": "object"], "message": ["type": "string"]])
+        let schema = T3Talk.exposed([launch])[0]
+        #expect(schema["description"]?.string == T3Talk.launchDescription)
+        if case .object(let properties)? = schema["inputSchema"]?["properties"] { #expect(Set(properties.keys) == ["projectId", "title", "message"]) } else { Issue.record("no properties") }
+        #expect(schema["inputSchema"]?["required"]?.array == ["projectId"])
+        let args = T3Talk.arguments(for: "t3_thread_launch", ["projectId": "p", "title": "t", "message": "m", "runtimeMode": "full-access",
+                                                                "workspaceStrategy": ["type": "worktree"], "scratch": true], requestID: "req-1")
+        #expect(args == ["projectId": "p", "title": "t", "message": "m", "clientRequestId": "req-1"])
+        // The agent's own request id stays, so its retry after a lost answer is the same request.
+        #expect(T3Talk.arguments(for: "t3_thread_launch", ["projectId": "p", "clientRequestId": "mine"], requestID: "req-1")?["clientRequestId"]?.string == "mine")
+        #expect(T3Talk.arguments(for: "t3_thread_launch", nil, requestID: "req-2") == ["clientRequestId": "req-2"])
+    }
+
+    @Test func aToolThatIsNotOfferedIsNeverCalled() {
+        for name in ["t3_project_delete", "t3_thread_send", "preview_evaluate", "request_secret", "t3_project_create", "unknown"] {
+            #expect(T3Talk.arguments(for: name, ["projectId": "p"], requestID: "r") == nil, "\(name)")
+        }
+        #expect(T3Talk.arguments(for: "t3_thread_read", ["threadId": "x"], requestID: "r") == ["threadId": "x"])
+        #expect(T3Talk.arguments(for: "t3_project_list", nil, requestID: "r") == ["limit": 100])
+        #expect(T3Talk.arguments(for: "t3_project_list", ["limit": 5, "cursor": 20], requestID: "r") == ["limit": 5, "cursor": 20])
+    }
+
+    @Test func listingAndReadingGoAheadAndStartingAThreadTakesASpokenYes() {
+        for tool in T3Talk.readingTools { #expect(TalkPermission.decide(call(tool)) == .answer("allow_once-id"), "\(tool)") }
+        #expect(TalkPermission.decide(call("t3_thread_launch")) == .ask(byVoice: true))
+        #expect(TalkPermission.choice(call("t3_thread_launch"), allowed: true) == "allow_once-id")
+        // Only "allow once": a request that offers nothing else is refused.
+        #expect(TalkPermission.decide(call("t3_thread_launch", options: ["allow_always", "reject_once"])) == .answer("reject_once-id"))
+    }
+
+    @Test func anyOtherToolOfTheServerNeedsAClick() {
+        for tool in ["t3_project_delete", "t3_thread_send", "request_secret", "preview_evaluate", "a_tool_added_later"] {
+            #expect(TalkPermission.decide(call(tool)) == .ask(byVoice: false), "\(tool)")
+        }
+        // The same name from a server that isn't ours is no T3 tool.
+        let other = PermissionRequest(rpcID: .number(1), session: "s", title: "x", options: [.init(id: "allow_once-id", name: "a", kind: "allow_once")],
+                                      toolKind: "other", toolName: "mcp__elsewhere__t3_thread_launch")
+        #expect(TalkPermission.decide(other) == .ask(byVoice: false))
+    }
+
+    @Test func theQuestionIsBuiltFromWhatTheAgentPassesToT3() {
+        let input: JSONValue = ["projectId": "p1", "title": "Fix the login bug", "message": "The login form drops the cursor. Fix it."]
+        let request = call("t3_thread_launch", input: input)
+        #expect(T3Talk.isLaunch(request))
+        #expect(T3Talk.launchDetails(request).projectID == "p1")
+        #expect(T3Talk.launchPhrase(request, projectName: "Lip Service") == "Start a T3 Code thread in Lip Service called Fix the login bug")
+        #expect(T3Talk.launchPhrase(request, projectName: nil) == "Start a T3 Code thread called Fix the login bug")
+        let untitled = call("t3_thread_launch", input: ["message": "Fix it"])
+        #expect(T3Talk.launchPhrase(untitled, projectName: nil) == "Start a T3 Code thread called Fix it")
+        #expect(T3Talk.launchPhrase(call("t3_thread_launch"), projectName: nil) == "Start a T3 Code thread")
+        #expect(!T3Talk.isLaunch(call("t3_project_list")))
+    }
+
+    @Test func aPermissionRequestCarriesTheToolNameAndInput() {
+        let params: JSONValue = ["sessionId": "s", "toolCall": ["title": "mcp__lip-service-t3__t3_thread_launch", "kind": "other",
+                                                               "rawInput": ["projectId": "p1"],
+                                                               "_meta": ["claudeCode": ["toolName": "mcp__lip-service-t3__t3_thread_launch"]]],
+                                 "options": [["optionId": "y", "name": "Yes", "kind": "allow_once"]]]
+        let request = PermissionRequest.parse(id: 1, params: params)
+        #expect(request?.toolName == "mcp__lip-service-t3__t3_thread_launch")
+        #expect(request?.input?["projectId"]?.string == "p1")
+        #expect(T3Talk.tool(of: request!) == "t3_thread_launch")
+    }
+
+    @Test func theNoteNamesNoSecretAndLeavesTheAskingToLipService() {
+        #expect(T3Talk.note.contains("t3_thread_launch"))
+        #expect(T3Talk.note.contains("don't ask me first"))
+        #expect(!T3Talk.note.lowercased().contains("bearer"))
+        #expect(ToolLine.phrase(title: "mcp__lip-service-t3__t3_thread_launch", kind: nil) == "Starting a thread in T3 Code")
+        #expect(ToolLine.phrase(title: "t3_project_list", kind: nil) == "Looking through your T3 projects")
+    }
+}

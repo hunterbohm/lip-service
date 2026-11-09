@@ -19,6 +19,7 @@ enum Mode {
     case handOffTest(HandOffTest.Options)
     case talkTest(TalkTest.Options)
     case t3Connect(home: String?, code: String)
+    case t3Bridge(home: String?)
     case setup(Headless.SetupCommand)
     case usage(String)
 
@@ -71,6 +72,9 @@ enum Mode {
                    --note replaces the preset's per-agent talk note. --option replaces its live-talk session options.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
+               Dictation --t3-mcp [T3_HOME]
+                   An MCP server on stdin and stdout that a live talk's agent starts. It passes four of T3 Code's tools
+                   (list projects, start a thread, list and read threads) to T3 Code, with the token from the Keychain.
                Dictation setup show
                    Prints the setup as JSON: agents, drafts, voice notes, profiles and keys, with `found` (agents installed
                    on this Mac) and `help`. Prints no secret.
@@ -226,6 +230,8 @@ enum Mode {
             case "--t3-connect":
                 let code = try Self.value(of: "--t3-connect", from: &rest)
                 self = .t3Connect(home: rest.popFirst(), code: code)
+            case "--t3-mcp":
+                self = .t3Bridge(home: rest.popFirst())
             case "setup":
                 switch rest.popFirst() {
                 case "show": self = .setup(.show)

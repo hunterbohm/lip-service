@@ -50,6 +50,9 @@ case .t3Connect(let home, let code):
         }
     }
     dispatchMain()
+case .t3Bridge(let home):
+    Task { exit(await T3Bridge.run(home: home)) }
+    dispatchMain()
 case .setup(let command):
     Task { @MainActor in exit(await Headless.setup(command)) }
     dispatchMain()
