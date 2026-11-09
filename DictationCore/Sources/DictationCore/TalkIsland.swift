@@ -202,7 +202,8 @@ public enum TalkIsland {
         guard case .text(let raw) = card else { return nil }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lines = text.split(whereSeparator: \.isNewline)
-        let code = lines.count > 1 && text.contains { "{}();=<>$".contains($0) }
+        // Several lines with code marks or command flags are code or commands, which read better on a card.
+        let code = lines.count > 1 && (text.contains { "{}();=<>$".contains($0) } || text.contains(" -"))
         guard !text.isEmpty, text.count <= noticeLongest, lines.count <= 3, !code, !text.hasPrefix("```") else { return nil }
         return lines.map { Speech.caption(String($0)) }.joined(separator: "\n")
     }
