@@ -22,7 +22,7 @@ import os
     private let engine: SpeechEngine
     private let bar: Bar
     private let menu: StatusMenu
-    let agents = AgentPool()
+    let agents = AgentPool(threadsAt: TalkThreadStore.defaultURL)
     let timing = DictationTiming()
     private let formatter = SmartFormatter()
     private let learnedAlert = LearnedAlert()
@@ -70,7 +70,7 @@ import os
         keyTap = KeyTap(keys: preferences.current.settings.captureKeys, pasteLast: preferences.current.settings.pasteLast)
         engine = SpeechEngine(vocabulary: preferences.current.activeVocabulary)
         bar = Bar(voice: { [microphone, live] in live.talk?.voiceTap ?? microphone.voice })
-        menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter, updates: updates)
+        menu = StatusMenu(preferences: preferences, engine: engine, inserter: inserter, updates: updates, pool: agents)
         agents.talkExtras = { agent in await TalkT3.extras(for: agent, secrets: Keychain()) }
         ghostwriter = Ghostwriter(preferences: preferences, history: history, inserter: inserter, engine: engine, pool: agents,
                                   usageCount: usageCount,

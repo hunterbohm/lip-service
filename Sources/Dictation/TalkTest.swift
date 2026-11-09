@@ -21,6 +21,12 @@ import Foundation
         var talkOptions: [ConfigChoice] = []
         /// Starts the talk as a call back about this, with this result, before the first clip.
         var callBack: (about: String, result: String)?
+        /// The file that remembers the agent's last talk session. A talk run with one picks up where the last run with it
+        /// ended; with none, every run is a new conversation, and nothing is written, so a test never moves the thread of a
+        /// real install.
+        var threadFile: URL?
+        /// Start a new conversation first, as Start a new conversation does.
+        var startOver = false
     }
 
     static func run(_ options: Options) async -> Int32 {
@@ -49,7 +55,8 @@ import Foundation
         // The voice may still need its first download.
         ModelHub.offlineMode = false
 
-        let input = ClipInput(clips: clips), speaker = SilentSpeaker(), pool = AgentPool()
+        let input = ClipInput(clips: clips), speaker = SilentSpeaker(), pool = AgentPool(threadsAt: options.threadFile)
+        if options.startOver { pool.startOver(agent.id) }
         let secrets = T3Bridge.secrets()
         pool.talkExtras = { agent in await TalkT3.extras(for: agent, secrets: secrets) }
         let opening = options.callBack.map { call in

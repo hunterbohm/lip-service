@@ -60,17 +60,24 @@ enum Mode {
                    custom). Every permission is refused and a run stops at the agent's first tool, as in Ghostwrite;
                    "tools" counts the tool updates.
                    --prompt-file sends the prompt in PATH instead of the sample request.
+                   --talk-sessions N opens N talk sessions in a row instead, as talks do, and prints which session each is
+                   in and whether it continues an earlier one; --continue sets the agent to carry on in the last talk's
+                   session, --thread FILE remembers it in FILE between runs, --start-over forgets it first, and --cold
+                   starts a new agent process for each.
                Dictation --hand-off DESTINATION.json [--dry-run] [--window-text] WORDS
                    Sends WORDS through one Hand off destination, as the app does. --dry-run builds it and sends nothing.
                    --window-text includes the sample window text, as with Send the window's text with hand-offs on.
                Dictation --test-talk [--preset ID] [--command 'hermes acp'] [--host HOST] [--voice VOICE]
                          [--voice-server URL [--voice-name NAME]] [--option ID=VALUE]... [--note TEXT] [--out PATH.wav]
-                         [--call-back ABOUT RESULT_FILE] [--models DIR] CLIP.wav...
+                         [--call-back ABOUT RESULT_FILE] [--thread FILE [--start-over]] [--models DIR] CLIP.wav...
                    Holds a live talk with no microphone or speakers: each clip is played in as your next turn, in real
                    time, and the agent's voice is made but not played. One JSON line per turn with its timings, in
                    seconds after your speech ended, then one with the session, to delete it from the agent's history.
                    --voice is an on-Mac voice, phonon:en_us_Preston unless given, or another such as kokoro:am_michael. --out writes what the voice said.
                    --note replaces the preset's per-agent talk note. --option replaces its live-talk session options.
+                   --thread FILE remembers the talk's session in FILE, so the next run with it picks up the conversation, as the
+                   app's talks do with Hermes; --start-over forgets it first. Without it every run is a new conversation and
+                   nothing is remembered, so a test never changes the thread of the real install.
                    --call-back starts the talk as a call back about ABOUT with the result in RESULT_FILE, as `call` does
                    once answered: the greeting, then the agent says the result, then the clips. Prints {"callBack":"said"}.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
@@ -203,6 +210,10 @@ enum Mode {
                     case "--runs": options.runs = try Self.number(of: argument, from: &rest, Int.init, in: 1...200)
                     case "--speech": options.speech = try Self.number(of: argument, from: &rest, Double.init, in: 0...30)
                     case "--cold": options.cold = true
+                    case "--talk-sessions": options.talkSessions = try Self.number(of: argument, from: &rest, Int.init, in: 1...20)
+                    case "--thread": options.threadFile = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case "--continue": options.continuesTalks = true
+                    case "--start-over": options.startOver = true
                     case "--supersede": options.supersede = try Self.number(of: argument, from: &rest, Double.init, in: 0...30)
                     case "--idle-limit": options.idleLimit = try Self.number(of: argument, from: &rest, Double.init, in: 0.2...86_400)
                     case "--prompt-file": options.prompt = try String(contentsOfFile: try Self.value(of: argument, from: &rest), encoding: .utf8)
@@ -228,6 +239,8 @@ enum Mode {
                     case "--voice-server": server = try Self.value(of: argument, from: &rest)
                     case "--voice-name": serverVoice = try Self.value(of: argument, from: &rest)
                     case "--note": options.note = try Self.value(of: argument, from: &rest)
+                    case "--thread": options.threadFile = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case "--start-over": options.startOver = true
                     case "--call-back":
                         let about = try Self.value(of: argument, from: &rest)
                         let file = try Self.value(of: argument, from: &rest)

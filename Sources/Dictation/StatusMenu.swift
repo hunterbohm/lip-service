@@ -12,13 +12,14 @@ import DictationCore
     private let engine: SpeechEngine
     private let inserter: Inserter
     private let updates: UpdateNotice
+    private let pool: AgentPool
     private var recents: [String] = []
     private var engineStatus = EngineStatus.loading(.compiling)
     private var keyTapRunning = false
     private var waiting = 0
 
-    init(preferences: Preferences, engine: SpeechEngine, inserter: Inserter, updates: UpdateNotice) {
-        (self.preferences, self.engine, self.inserter, self.updates) = (preferences, engine, inserter, updates)
+    init(preferences: Preferences, engine: SpeechEngine, inserter: Inserter, updates: UpdateNotice, pool: AgentPool) {
+        (self.preferences, self.engine, self.inserter, self.updates, self.pool) = (preferences, engine, inserter, updates, pool)
         super.init()
         menu.delegate = self
         item.menu = menu
@@ -87,6 +88,12 @@ import DictationCore
                 })
             }
             menu.addItem(submenu("Agent: \(agents.current?.name ?? "")", agentMenu))
+        }
+        // Only for an agent whose talks go on in one conversation, and enabled while there is one to leave.
+        if configuration.settings.liveTalk.enabled, let talker = configuration.settings.liveTalk.agent(in: agents), talker.continuesTalks {
+            let newTalk = ActionItem("Start a New Talk Conversation") { [pool] in pool.startOver(talker.id) }
+            newTalk.isEnabled = pool.hasConversation(talker)
+            menu.addItem(newTalk)
         }
         menu.addItem(submenu("Microphone", microphoneMenu(chosen: configuration.settings.microphone)))
         menu.addItem(ActionItem("Vocabulary Boosting", checked: configuration.settings.vocabularyEnabled) { [preferences] in

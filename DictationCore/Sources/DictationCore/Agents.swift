@@ -40,6 +40,10 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
     /// A talk gives the agent T3 Code's tools for listing projects and starting threads, when T3 Code is running and
     /// connected on this Mac. For an agent that has no way to start a T3 thread of its own.
     public var talkT3 = false
+    /// Each talk goes on in the session the last one ended in, like a chat that never ends, instead of opening a new one.
+    /// Only for an agent that opens an earlier session again, and only Hermes is set to, since it is the one whose own
+    /// chat already works that way.
+    public var continuesTalks = false
     public var spokenNames: [String]
     public var destination: Destination
 
@@ -49,7 +53,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
                     taskOptions: [],
                     talkOptions: [.option(id: "model", value: "anthropic:claude-opus-5-5"), .option(id: "reasoning_effort", value: "low")],
                     talkNote: #"If I ask you to send me something, send it in the terminal through a quoted heredoc, so nothing in the text runs: hermes send -t photon <<'EOF', then the text, then EOF."#,
-                    spokenNames: ["Hermes"], destination: .iMessage(handle: "")),
+                    continuesTalks: true, spokenNames: ["Hermes"], destination: .iMessage(handle: "")),
         AgentPreset(id: "claude", name: "Claude Code", program: "npx", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
                     draftOptions: [.option(id: "model", value: "haiku"), .option(id: "effort", value: "low")],
                     taskOptions: [], talkOptions: [.option(id: "effort", value: "low")],
@@ -72,7 +76,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
     public func connection() -> AgentConnection {
         AgentConnection(id: id == "custom" ? "custom-\(UUID().uuidString.prefix(8))" : id, name: id == "custom" ? "My agent" : name,
                         presetID: id, command: command, spokenNames: spokenNames, draftOptions: draftOptions, taskOptions: taskOptions,
-                        talkOptions: talkOptions, talkNote: talkNote, talkT3: talkT3, destination: destination)
+                        talkOptions: talkOptions, talkNote: talkNote, talkT3: talkT3, continuesTalks: continuesTalks, destination: destination)
     }
 }
 
@@ -96,18 +100,20 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
     /// A talk gives the agent T3 Code's tools for listing projects and starting threads, when T3 Code is running and
     /// connected on this Mac and the agent runs here too.
     public var talkT3: Bool
+    /// Each talk goes on in the session the last one ended in. See `AgentPreset.continuesTalks`.
+    public var continuesTalks: Bool
     public var destination: Destination
 
     public init(id: String, name: String, presetID: String, command: [String], remoteHost: String? = nil, spokenNames: [String],
                 draftOptions: [ConfigChoice], taskOptions: [ConfigChoice], talkOptions: [ConfigChoice] = [], talkNote: String = "",
-                talkT3: Bool = false, destination: Destination) {
+                talkT3: Bool = false, continuesTalks: Bool = false, destination: Destination) {
         (self.id, self.name, self.presetID, self.command, self.remoteHost) = (id, name, presetID, command, remoteHost)
         (self.spokenNames, self.draftOptions, self.taskOptions, self.destination) = (spokenNames, draftOptions, taskOptions, destination)
-        (self.talkOptions, self.talkNote, self.talkT3) = (talkOptions, talkNote, talkT3)
+        (self.talkOptions, self.talkNote, self.talkT3, self.continuesTalks) = (talkOptions, talkNote, talkT3, continuesTalks)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, presetID, command, remoteHost, spokenNames, draftOptions, taskOptions, talkOptions, talkNote, talkT3, destination
+        case id, name, presetID, command, remoteHost, spokenNames, draftOptions, taskOptions, talkOptions, talkNote, talkT3, continuesTalks, destination
     }
 
     /// An agent saved before live talk existed, or before a talk setting did, gets its preset's talk settings.
@@ -126,6 +132,7 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
         talkOptions = (try? container.decodeIfPresent([ConfigChoice].self, forKey: .talkOptions)) ?? preset?.talkOptions ?? []
         talkNote = (try? container.decodeIfPresent(String.self, forKey: .talkNote)) ?? preset?.talkNote ?? ""
         talkT3 = (try? container.decodeIfPresent(Bool.self, forKey: .talkT3)) ?? preset?.talkT3 ?? false
+        continuesTalks = (try? container.decodeIfPresent(Bool.self, forKey: .continuesTalks)) ?? preset?.continuesTalks ?? false
     }
 
     /// The first letter, for the round avatar on the bar and the card.

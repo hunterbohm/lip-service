@@ -151,6 +151,12 @@ public enum ACP {
         return .object(params)
     }
 
+    /// Opens a stored session again, with `session/resume` or `session/load` (which of them the agent offers), in a folder
+    /// and with the MCP servers this talk wants. The same shape as `session/new`, plus the id.
+    public static func reopenSession(_ id: String, cwd: String, mcpServers: [JSONValue] = []) -> JSONValue {
+        .object(["sessionId": .string(id), "cwd": .string(cwd), "mcpServers": .array(mcpServers)])
+    }
+
     /// An MCP server the agent starts and talks to on its stdin and stdout.
     public static func stdioServer(name: String, command: String, args: [String], env: [String: String] = [:]) -> JSONValue {
         ["name": .string(name), "command": .string(command), "args": .array(args.map(JSONValue.string)),
@@ -214,8 +220,19 @@ public struct SessionInfo: Equatable, Sendable {
     public var models: [ConfigOption.Choice]
     public var currentModel: String?
 
+    public init(id: String, options: [ConfigOption], models: [ConfigOption.Choice], currentModel: String?) {
+        (self.id, self.options, self.models, self.currentModel) = (id, options, models, currentModel)
+    }
+
     public static func parse(_ result: JSONValue) -> SessionInfo? {
         guard let id = result["sessionId"]?.string else { return nil }
+        return parse(result, id: id)
+    }
+
+    /// What an answer says about the session `id`, whether or not the answer names it: an agent's answer to opening a
+    /// stored session again carries the settings but not always the id.
+    public static func parse(_ result: JSONValue, id: String) -> SessionInfo? {
+        guard case .object = result else { return nil }
         let models = (result["models"]?["availableModels"]?.array ?? []).compactMap { model in
             model["modelId"]?.string.map { ConfigOption.Choice(value: $0, name: model["name"]?.string ?? $0) }
         }

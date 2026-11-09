@@ -35,6 +35,8 @@ actor ACPClient {
     private var lastActivity = Instant.now
     private var stderrTail: [String] = []
     private(set) var exited = false
+    /// What the agent said it can do at `initialize`.
+    private(set) var abilities = AgentAbilities()
     private static let log = Logger(subsystem: "com.hunterbohm.dictation", category: "agent")
 
     /// Starts the process. Nothing is sent until `initialize`.
@@ -116,7 +118,7 @@ actor ACPClient {
     func notify(_ method: String, _ params: JSONValue) { write(RPCMessage.notification(method: method, params: params)) }
 
     func initialize() async throws {
-        _ = try await request("initialize", ACP.initialize(version: Self.version), timeout: 45)
+        abilities = AgentAbilities.parse(try await request("initialize", ACP.initialize(version: Self.version), timeout: 45))
     }
 
     func newSession(cwd: String, meta: JSONValue? = nil, mcpServers: [JSONValue] = []) async throws -> SessionInfo {
@@ -124,6 +126,17 @@ actor ACPClient {
         guard let info = SessionInfo.parse(result) else { throw AgentError("\(name) didn't open a session.") }
         return info
     }
+
+    /// Opens a stored session again with the method the agent offers. The agent may send the session's history back as
+    /// updates first, which nothing here listens for, so none of it reaches a turn. Throws when the agent can't or won't.
+    func reopenSession(_ id: String, cwd: String, mcpServers: [JSONValue] = []) async throws -> ReopenAnswer {
+        guard let method = abilities.reopenMethod else { throw AgentError("\(name) can't open an earlier session.") }
+        let result = try await request(method, ACP.reopenSession(id, cwd: cwd, mcpServers: mcpServers), timeout: 60)
+        return ReopenAnswer.read(result, method: method, asked: id)
+    }
+
+    /// A session that ignored a cancel, and so takes no more turns.
+    func isRetired(_ session: String) -> Bool { retired.contains(session) }
 
     func set(_ choice: ConfigChoice, session: String) async throws {
         let call = ACP.set(choice, session: session)
@@ -252,8 +265,10 @@ actor ACPClient {
     let workingDirectory: URL
     private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "agent")
 
-    init(idleLimit: Double = 30 * 60) {
+    /// `threadsAt` is the file that remembers each agent's last talk; with none, only for as long as the process runs.
+    init(idleLimit: Double = 30 * 60, threadsAt: URL? = nil) {
         self.idleLimit = idleLimit
+        threads = TalkThreadStore(url: threadsAt)
         workingDirectory = FileManager.default.temporaryDirectory.appending(path: "LipService-agent", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
     }
@@ -280,15 +295,62 @@ actor ACPClient {
     /// Set by the app: what a talk adds to an agent's session besides its own settings, such as T3 Code's tools.
     var talkExtras: (@Sendable (AgentConnection) async -> TalkExtras?)?
 
-    /// A fresh session for a live talk, with the agent's live-talk options, such as a quicker model. An option the agent
-    /// turns down leaves its own default, so the talk still starts. The session starts in the pool's scratch folder, in no
-    /// project. When the app has extras for the agent, such as T3 Code's tools, they go on the session first; if the agent
-    /// turns any of them down, the talk starts without them, since the tools are only safe with the options that come with.
-    func talkSession(_ agent: AgentConnection) async throws -> (client: ACPClient, id: String, extras: TalkExtras?) {
+    /// What a talk's session was set up with, so a later talk can use it as it stands while that is still what it wants.
+    private struct TalkSetup: Equatable {
+        var options: [ConfigChoice]
+        var servers: [JSONValue]
+        var extraOptions: [ConfigChoice]
+    }
+
+    /// The session the last talk used, still open in the running agent: a talk that starts while it is takes it at once.
+    private struct LiveTalk {
+        var client: ACPClient
+        var id: String
+        var setup: TalkSetup
+        var extras: TalkExtras?
+    }
+    private var liveTalks: [String: LiveTalk] = [:]
+    /// The session each agent's last talk ended in, which the next talk picks up.
+    let threads: TalkThreadStore
+
+    /// The next talk with this agent starts a new conversation, not the last one's.
+    func startOver(_ agentID: String) {
+        threads.forget(agentID)
+        liveTalks[agentID] = nil
+    }
+
+    /// Whether a talk with this agent would pick up a conversation now.
+    func hasConversation(_ agent: AgentConnection) -> Bool { agent.continuesTalks && threads.session(for: agent) != nil }
+
+    /// A session for a live talk, with the agent's live-talk options, such as a quicker model. For an agent set to carry
+    /// on, that is the session the last talk ended in, opened again, so the talk is one long conversation; with none to
+    /// open again, or an agent that can't, a new one, as every talk used to be. `fresh` skips the old one, for a session
+    /// that can't be trusted any more. An option the agent turns down leaves its own default, so the talk still starts. The
+    /// session starts in the pool's scratch folder, in no project. When the app has extras for the agent, such as T3
+    /// Code's tools, they go on the session first; if the agent turns any of them down, the talk starts without them, since
+    /// the tools are only safe with the options that come with. `continued` says the session is an earlier one.
+    func talkSession(_ agent: AgentConnection, fresh: Bool = false) async throws -> (client: ACPClient, id: String, extras: TalkExtras?, continued: Bool) {
         async let wanted = talkExtras?(agent)
         let client = try await client(for: agent)
         let cwd = agent.sessionDirectory(local: workingDirectory.path)
         let extras = await wanted
+        if fresh { startOver(agent.id) }
+        let wantedSetup = TalkSetup(options: agent.talkOptions, servers: extras?.servers ?? [], extraOptions: extras?.options ?? [])
+        let abilities = await client.abilities
+        let plan = TalkOpen.plan(continues: agent.continuesTalks, abilities: abilities, remembered: threads.session(for: agent))
+        if case .resume(let remembered) = plan {
+            // Still open in this agent, with what the talk wants on it: nothing to ask.
+            if let live = liveTalks[agent.id], live.client === client, live.id == remembered, live.setup == wantedSetup,
+               !(await client.isRetired(live.id)) {
+                log.info("\(agent.name, privacy: .public) talk goes on in session \(live.id, privacy: .public), still open")
+                return (client, live.id, live.extras, true)
+            }
+            if let opened = await reopen(remembered, agent: agent, client: client, cwd: cwd, extras: extras) {
+                threads.remember(opened.id, for: agent)
+                liveTalks[agent.id] = LiveTalk(client: client, id: opened.id, setup: wantedSetup, extras: opened.extras)
+                return (client, opened.id, opened.extras, opened.continued)
+            }
+        }
         var info: SessionInfo?
         if let extras {
             do {
@@ -302,14 +364,50 @@ actor ACPClient {
         let session: SessionInfo
         if let info { session = info } else { session = try await client.newSession(cwd: cwd) }
         remember(session, for: agent.id)
-        // The extras' options were set with the tools, and a saved option must not undo them, such as a saved mode=auto
-        // that would let a thread start with no question.
-        for choice in ConfigChoice.sparing(info == nil ? [] : extras?.options ?? [], from: agent.talkOptions) {
-            do { try await client.set(choice, session: session.id) } catch {
+        await applyTalkOptions(agent, client: client, session: session.id, spared: info == nil ? [] : extras?.options ?? [])
+        let applied = info == nil ? nil : extras
+        if agent.continuesTalks, abilities.continues {
+            threads.remember(session.id, for: agent)
+            liveTalks[agent.id] = LiveTalk(client: client, id: session.id, setup: wantedSetup, extras: applied)
+        }
+        return (client, session.id, applied, false)
+    }
+
+    /// The agent's live-talk options, which the extras' own options must not be undone by: a saved mode=auto would let a
+    /// T3 Code thread start with no question.
+    private func applyTalkOptions(_ agent: AgentConnection, client: ACPClient, session: String, spared: [ConfigChoice]) async {
+        for choice in ConfigChoice.sparing(spared, from: agent.talkOptions) {
+            do { try await client.set(choice, session: session) } catch {
                 log.error("\(agent.name, privacy: .public) turned down a live-talk option: \(error.localizedDescription, privacy: .public)")
             }
         }
-        return (client, session.id, info == nil ? nil : extras)
+    }
+
+    /// The remembered session opened again with the talk's extras and options. Nil when the agent can't, or won't take the
+    /// extras with it, so the caller opens a new session and the conversation starts over there.
+    private func reopen(_ id: String, agent: AgentConnection, client: ACPClient, cwd: String, extras: TalkExtras?)
+        async -> (id: String, extras: TalkExtras?, continued: Bool)? {
+        do {
+            let answer = try await client.reopenSession(id, cwd: cwd, mcpServers: extras?.servers ?? [])
+            let session: SessionInfo, continued: Bool
+            switch answer {
+            case .same(let info): (session, continued) = (info, true)
+            case .replaced(let info):
+                log.info("\(agent.name, privacy: .public) no longer has session \(id, privacy: .public); the talk starts a new conversation in \(info.id, privacy: .public)")
+                (session, continued) = (info, false)
+            case .missing:
+                log.info("\(agent.name, privacy: .public) no longer has session \(id, privacy: .public); the talk starts a new conversation")
+                return nil
+            }
+            if let extras { for choice in extras.options { try await client.set(choice, session: session.id) } }
+            remember(session, for: agent.id)
+            await applyTalkOptions(agent, client: client, session: session.id, spared: extras?.options ?? [])
+            log.info("\(agent.name, privacy: .public) talk \(continued ? "goes on" : "starts", privacy: .public) in session \(session.id, privacy: .public)")
+            return (session.id, extras, continued)
+        } catch {
+            log.error("\(agent.name, privacy: .public) wouldn't open session \(id, privacy: .public) again: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     /// Stops an agent, for a changed command or a Test that should start it fresh.
@@ -317,6 +415,7 @@ actor ACPClient {
         starting[agentID]?.cancel()
         starting[agentID] = nil
         startTokens[agentID] = nil
+        liveTalks[agentID] = nil
         guard let entry = warm.removeValue(forKey: agentID) else { return }
         entry.spare?.cancel()
         Task { await entry.client.terminate() }

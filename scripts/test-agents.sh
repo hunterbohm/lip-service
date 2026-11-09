@@ -54,4 +54,45 @@ check "stopping an agent stops what it started" 'rows[0].get("text","").startswi
 sleep 1
 if pgrep -f "$tag" >/dev/null; then print "FAIL  the agent's child outlived it"; pkill -f "$tag"; failed=1; else print "pass  the agent's child stopped with it"; fi
 rm -f "$marker"
+
+# Live talk sessions: a talk goes on in the last talk's session when the agent can open it again and is set to.
+thread=$(mktemp -u /tmp/fake-acp-thread.XXXXXX); known=$(mktemp -u /tmp/fake-acp-known.XXXXXX)
+check "a talk goes on in the last talk's session while the agent is still running it" \
+    'len({r["session"] for r in rows})==1 and [r["continued"] for r in rows]==[False,True,True] and rows[2]["text"]=="You said: talk 3"' \
+    --command "$fake --mode echo --resume --sessions $known" --talk-sessions 3 --continue --thread "$thread" --start-over
+check "a talk after the agent was stopped opens the same session again, and never says its replayed history" \
+    'len({r["session"] for r in rows})==1 and [r["continued"] for r in rows]==[True,True,True] and all(r["text"].startswith("You said: talk ") for r in rows)' \
+    --command "$fake --mode echo --resume --sessions $known" --talk-sessions 3 --continue --thread "$thread" --cold
+check "the next run of the app picks the conversation up from the file" \
+    'rows[0]["continued"]==True and rows[0]["open_s"]<5' \
+    --command "$fake --mode echo --resume --sessions $known" --talk-sessions 1 --continue --thread "$thread"
+check "starting a new conversation opens a new session, and the one after goes on in that" \
+    'rows[0]["continued"]==False and rows[1]["continued"]==True and rows[0]["session"]==rows[1]["session"]' \
+    --command "$fake --mode echo --resume --sessions $known" --talk-sessions 2 --continue --thread "$thread" --start-over
+# Each of these first has a talk in a fake agent, then loses that agent's memory of the session, as when Hermes's history was cleared.
+rm -f "$thread" "$known"
+lost() { "$bin" --agent-bench --speech 0.2 --command "$1" --talk-sessions 1 --continue --thread "$thread" >/dev/null 2>&1; rm -f "$known"; }
+lost "$fake --mode echo --resume --sessions $known"
+check "an agent that no longer has the session starts a new conversation in the one it opened, and the next talk goes on there" \
+    'rows[0]["continued"]==False and rows[1]["continued"]==True and rows[0]["session"]==rows[1]["session"] and "error" not in rows[0]' \
+    --command "$fake --mode echo --resume --sessions $known" --talk-sessions 2 --continue --thread "$thread" --cold
+rm -f "$thread" "$known"
+check "an agent without resume gets a new session for every talk, as before" \
+    'len({r["session"] for r in rows})==3 and not any(r["continued"] for r in rows)' \
+    --command "$fake --mode echo" --talk-sessions 3 --continue --thread "$thread"
+rm -f "$thread" "$known"
+check "an agent not set to carry on gets a new session for every talk, though it could" \
+    'len({r["session"] for r in rows})==3 and not any(r["continued"] for r in rows)' \
+    --command "$fake --mode echo --resume" --talk-sessions 3 --thread "$thread"
+rm -f "$thread" "$known"
+lost "$fake --mode echo --load --unknown null --sessions $known"
+check "an agent that can only load, and says null for a session it lost, starts a new conversation" \
+    'rows[0]["continued"]==False and rows[1]["continued"]==True and rows[0]["session"]==rows[1]["session"] and "error" not in rows[0]' \
+    --command "$fake --mode echo --load --unknown null --sessions $known" --talk-sessions 2 --continue --thread "$thread" --cold
+rm -f "$thread" "$known"
+lost "$fake --mode echo --resume --unknown error --sessions $known"
+check "an agent that errors on the session it lost starts a new conversation" \
+    'all("error" not in r for r in rows) and rows[0]["continued"]==False' \
+    --command "$fake --mode echo --resume --unknown error --sessions $known" --talk-sessions 1 --continue --thread "$thread"
+rm -f "$thread" "$known"
 exit $failed
