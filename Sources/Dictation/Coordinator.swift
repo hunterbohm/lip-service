@@ -256,11 +256,17 @@ import os
             return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "Lip Service couldn't read the call"))
         }
         let settings = preferences.current.settings
-        let wanted = request.agent?.trimmingCharacters(in: .whitespaces).lowercased()
-        let agent = wanted.flatMap { name in settings.agents.agents.first { $0.id.lowercased() == name || $0.name.lowercased() == name } }
-            ?? settings.liveTalk.agent(in: settings.agents)
-        guard let agent else {
-            return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "no agent is set up for Live talk"))
+        let agent: AgentConnection
+        if let wanted = request.agent?.trimmingCharacters(in: .whitespaces).lowercased(), !wanted.isEmpty {
+            guard let named = settings.agents.agents.first(where: { $0.id.lowercased() == wanted || $0.name.lowercased() == wanted }) else {
+                return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "no agent named \(request.agent ?? "")"))
+            }
+            agent = named
+        } else {
+            guard let live = settings.liveTalk.agent(in: settings.agents) else {
+                return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "no agent is set up for Live talk"))
+            }
+            agent = live
         }
         if let busy = CallSignals.busy(talking: live.talk != nil || ringing != nil,
                                        dictating: keyTap.machine.isCapturing || pending > 0 || toAgent) {

@@ -96,7 +96,8 @@ enum Mode {
                    detail. Exits 0 when the result was said, 3 when it should be texted instead, 4 when you are busy (a
                    meeting, a Focus, a locked screen, a talk) and it should be tried later, 5 when it could not ring.
                Dictation call --check
-                   Prints whether you look busy on this Mac now, as JSON, and exits 0 when free and 4 when busy.
+                   Prints whether this Mac says you are busy now (locked, a Focus, the camera, another app's microphone), as
+                   JSON, and exits 0 when free and 4 when busy. A talk or dictation running is checked only when a call rings.
                Dictation --import-willow-dry-run WILLOW_FOLDER
                    Prints what Import from Willow would add and change. Writes nothing.
                Dictation --install-formatter ARCHIVE
