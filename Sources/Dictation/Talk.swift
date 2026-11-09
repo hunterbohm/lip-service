@@ -93,6 +93,13 @@ struct TalkTurnReport {
     var failed: String?
 }
 
+/// How a call back starts its talk: the voice on this Mac says `greeting` at once, and once it has played and the
+/// session is open, `prompt` goes to the agent as the first turn, so the agent's first words are the result.
+struct TalkOpening {
+    var greeting: String
+    var prompt: String
+}
+
 /// How a talk ended.
 enum TalkEnd: Equatable {
     case byYou
@@ -119,6 +126,9 @@ enum TalkEnd: Equatable {
     /// You are listening and the agent's turn is over, so the next words are yours.
     var onListening: (() -> Void)?
     var onEnd: ((TalkEnd) -> Void)?
+    /// A call back's opening was said: true once the agent's first reply played to the end or you talked over it, false
+    /// when that turn failed. Called at most once; a talk that ends before then never calls it.
+    var onOpening: ((Bool) -> Void)?
     /// The session the talk went to, once it is open.
     private(set) var sessionID: String?
 
@@ -158,6 +168,18 @@ enum TalkEnd: Equatable {
     private var permissionTimeout: Task<Void, Never>?
     /// What this talk's session carries beyond the agent's own settings, such as T3 Code's tools.
     private var extras: TalkExtras?
+    /// A call back's opening, until its prompt is sent.
+    private var opening: TalkOpening?
+    /// The greeting is still to finish playing.
+    private var greeting = false
+    /// The turn that carries the opening, until it is said.
+    private var openingTurn: Int?
+    /// Some of the agent's reply to the opening has played, not only a tool line.
+    private var openingHeard = false
+    /// A line of the reply to the opening couldn't be voiced, so part of the result may be missing: not said.
+    private var openingLost = false
+    /// Until then the opening can't be talked over or superseded: a "hello" after the greeting would cancel the result.
+    private var openingPending: Bool { opening != nil || (openingTurn != nil && !openingHeard) }
 
     private struct Line {
         var turn: Int
@@ -174,8 +196,9 @@ enum TalkEnd: Equatable {
     private var utterances = 0
 
     init(agent: AgentConnection, pool: AgentPool, engine: SpeechEngine, voice: any VoiceProvider, input: any TalkInput,
-         speaker: any TalkSpeaker) {
+         speaker: any TalkSpeaker, opening: TalkOpening? = nil) {
         (self.agent, self.pool, self.engine, self.voice, self.input, self.speaker) = (agent, pool, engine, voice, input, speaker)
+        self.opening = opening
         bar = TalkBar(agent: BarAgent(initial: agent.initial, name: agent.name), phase: .connecting)
     }
 
@@ -200,6 +223,10 @@ enum TalkEnd: Equatable {
                 await self.say(line)
             }
         }
+        if let opening {
+            greeting = true
+            queue(opening.greeting, turn: turn)
+        }
         connecting = Task { [weak self] in await self?.connect() }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
@@ -220,7 +247,9 @@ enum TalkEnd: Equatable {
             guard !ended else { return }
             (self.client, sessionID, self.extras, connected) = (client, id, extras, true)
             log.info("talk with \(agent.name, privacy: .public) in session \(id, privacy: .public)")
-            if let waitingTurn {
+            if opening != nil {
+                if !greeting { sendOpening() }
+            } else if let waitingTurn {
                 self.waitingTurn = nil
                 transcribe(waitingTurn)
             } else if bar.phase == .connecting {
@@ -281,7 +310,9 @@ enum TalkEnd: Equatable {
             hearing()
         case .cutIn:
             log.info("you talked over \(self.agent.name, privacy: .public)")
-            if permission == nil {
+            if openingPending {
+                hearing()
+            } else if permission == nil {
                 stopReply()
             } else {
                 // The question stays open for your answer, but its voice stops, so the microphone hears only you.
@@ -309,6 +340,12 @@ enum TalkEnd: Equatable {
             }
         case .ended(let utterance):
             previews?.cancel()
+            // Until the result starts playing, the next words are the agent's, so what you said meanwhile is dropped.
+            if openingPending {
+                ear.agentWorking(at: time)
+                bar = TalkBar(agent: bar.agent, phase: connected ? .thinking : .connecting, activity: "Calling back")
+                return
+            }
             bar = TalkBar(agent: bar.agent, phase: .thinking, line: bar.line)
             if connected { transcribe(utterance) } else { waitingTurn = utterance }
         case .idleWarning:
@@ -398,10 +435,35 @@ enum TalkEnd: Equatable {
 
     // MARK: The agent's turn
 
+    /// Sends a call back's result as the first turn, once the greeting has played and the session is open.
+    private func sendOpening() {
+        guard connected, !greeting, let opening else { return }
+        self.opening = nil
+        send(opening.prompt, clock: TurnClock(speechEnd: .now))
+        (openingTurn, openingHeard, openingLost) = (turn, false, false)
+        bar.line = ""
+        bar.activity = "Calling back"
+    }
+
+    /// The opening turn is over: said, talked over, or failed.
+    private func openingDone(_ said: Bool) {
+        guard openingTurn != nil else { return }
+        openingTurn = nil
+        let said = said && !openingLost
+        log.info("call back \(said ? "said" : "failed", privacy: .public)")
+        onOpening?(said)
+    }
+
     private func send(_ words: String, clock: TurnClock, retried: Bool = false) {
         guard let client, let sessionID else { return heardNothing() }
+        let carriesOpening = openingTurn != nil && openingTurn == turn
         turn += 1
         let current = turn
+        if carriesOpening {
+            // The opening goes on in a new session, or you said something before the agent answered it: you are on
+            // the line and the agent has the result, so that counts as said.
+            if retried { openingTurn = current } else { openingDone(openingHeard) }
+        }
         (splitter, chunker, replyDone) = (ShowSplitter(), SpeechChunker(), false)
         self.clock = clock
         report = TalkTurnReport(words: words, reply: "", tools: [], cards: 0, clock: clock)
@@ -516,11 +578,17 @@ enum TalkEnd: Equatable {
             guard line.turn == turn, !ended else { return }
             log.error("talk voice failed: \(error.localizedDescription, privacy: .public)")
             onNotice?(.failed(error.localizedDescription))
+            if openingTurn == line.turn { openingLost = true }
+            if greeting {
+                greeting = false
+                sendOpening()
+            }
         }
     }
 
     private func started(_ caption: String) {
         guard !ended else { return }
+        if openingTurn == turn, let report, !report.tools.contains(where: { Speech.caption($0 + ".") == caption }) { openingHeard = true }
         clock?.mark(.firstAudio, at: .now)
         ear.agentSpeaking(at: .now)
         bar = TalkBar(agent: bar.agent, phase: .speaking, line: caption, endingSoon: false)
@@ -528,7 +596,13 @@ enum TalkEnd: Equatable {
 
     /// Everything handed to the speaker has played.
     private func idle() {
-        guard !ended, !ear.isHearing else { return }
+        guard !ended else { return }
+        if greeting {
+            greeting = false
+            if !connected { bar = TalkBar(agent: bar.agent, phase: .connecting, activity: "Calling back") }
+            return sendOpening()
+        }
+        guard !ear.isHearing else { return }
         if replyDone, permission == nil { return turnOver() }
         ear.agentWorking(at: .now)
         bar = TalkBar(agent: bar.agent, phase: .thinking, activity: permission == nil ? bar.activity : permissionHint)
@@ -541,6 +615,7 @@ enum TalkEnd: Equatable {
         if let clock { finished.clock = clock }
         log.info("talk turn: \(finished.clock.summary, privacy: .public)")
         onTurn?(finished)
+        if openingTurn == turn { openingDone(finished.failed == nil && openingHeard) }
         ear.agentDone(at: .now)
         bar = TalkBar(agent: bar.agent, phase: .listening)
         onListening?()
@@ -549,6 +624,8 @@ enum TalkEnd: Equatable {
     /// You talked over the reply: the agent stops, and what it hasn't said is dropped.
     private func stopReply() {
         guard report != nil else { return }
+        // You talked over the result, so you are there and heard it start; the talk goes on from what you say.
+        if openingTurn == turn { openingDone(openingHeard) }
         turn += 1
         report = nil
         speaker.stop()

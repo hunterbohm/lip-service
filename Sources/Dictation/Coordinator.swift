@@ -57,6 +57,11 @@ import os
     private let talkCards = TalkCardPanel()
     /// The island at the top of the screen that shows a talk.
     private let island = TalkIslandPanel()
+    /// A call back ringing on the island, until it is answered, declined or missed.
+    private var ringing: RingingCall?
+    /// The call back whose talk is under way, until the result is said or the talk ends.
+    private var callInTalk: String?
+    private var callObserver: (any NSObjectProtocol)?
 
     init() {
         inserter = Inserter(preferences: preferences)
@@ -87,6 +92,8 @@ import os
         talkCards.onPermission = { [unowned self] allowed in live.talk?.answerPermission(allowed) }
         island.model.level = { [bar] in bar.meter.reading(at: Date.timeIntervalSinceReferenceDate).level(delay: 0) }
         island.model.onEnd = { [unowned self] in live.talk?.end(.byYou) }
+        island.model.onAnswer = { [unowned self] in answerCall() }
+        island.model.onDecline = { [unowned self] in endRinging(.declined) }
         island.onMoved = { [unowned self] rect in
             bar.talkAnchor = rect
             talkCards.move(under: (rect, .top))
@@ -131,6 +138,12 @@ import os
             forName: SettingsStore.appliedNotification, object: nil, queue: .main) { [weak self] note in
             let settings = note.userInfo?["settings"] as? String, record = note.userInfo?["record"] as? String
             MainActor.assumeIsolated { self?.setupApplied(settings: settings, record: record) }
+        }
+        // `Dictation call` runs in another process, often over SSH from the agent's Mac, and asks for a call back.
+        callObserver = DistributedNotificationCenter.default().addObserver(
+            forName: CallChannel.request, object: nil, queue: .main) { [weak self] note in
+            let id = note.userInfo?["id"] as? String
+            MainActor.assumeIsolated { if let id { self?.incomingCall(id) } }
         }
         // The checker asks GitHub at most once a day, so an app left open for weeks still hears of a new release.
         Task { [updates] in
@@ -180,23 +193,40 @@ import os
         keyTap.talkKey = settings.liveTalk.enabled && LiveTalkKey.conflict(with: settings.captureKeys) == nil
     }
 
-    /// Double-tapping Left Control: starts a talk, or ends the one running.
+    /// Double-tapping Left Control: answers a call back that is ringing, starts a talk, or ends the one running.
     private func toggleTalk() {
+        if ringing != nil { return answerCall() }
         if let talk = live.talk { return talk.end(.byYou) }
         let settings = preferences.current.settings
         guard settings.liveTalk.enabled, !keyTap.machine.isCapturing else { return }
         guard let agent = settings.liveTalk.agent(in: settings.agents) else {
             return show(.talkFailed("Set up an agent in Settings > Ghostwrite to talk with it."))
         }
+        startTalk(with: agent)
+    }
+
+    private func startTalk(with agent: AgentConnection, opening: TalkOpening? = nil) {
+        let settings = preferences.current.settings
         let talk = Talk(agent: agent, pool: agents, engine: engine, voice: Voices.provider(for: settings.liveTalk.voice),
-                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut())
+                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut(), opening: opening)
         let barAgent = BarAgent(initial: agent.initial, name: agent.name)
         talk.onBar = { [unowned self] _ in render() }
         talk.onNotice = { [unowned self] notice in show(notice) }
         talk.onCard = { [unowned self] event in talkCards.handle(event, agent: barAgent, under: (island.islandRect, .top)) }
+        talk.onOpening = { [unowned self] said in
+            guard let id = callInTalk else { return }
+            callInTalk = nil
+            CallChannel.post(CallbackUpdate(id: id, status: said ? .delivered : .failed,
+                                            detail: said ? nil : "\(agent.name) couldn't say the result"))
+        }
         talk.onEnd = { [unowned self, weak talk] reason in
             guard let talk, live.talk === talk else { return }
             live.talk = nil
+            if let id = callInTalk {
+                callInTalk = nil
+                let detail = if case .failed(let why) = reason { why } else { "the talk ended before the result was said" }
+                CallChannel.post(CallbackUpdate(id: id, status: .hungUp, detail: detail))
+            }
             keyTap.suspended = false
             talkCards.dropPermissions()
             microphone.prepare(preferences.current.settings.microphone)
@@ -216,6 +246,73 @@ import os
         if settings.sounds { sounds.play(.start) }
         show(.talkStarted(agent: agent.name))
         talk.start()
+    }
+
+    // MARK: Call back
+
+    /// `Dictation call` asked for a call back. It rings unless you are busy, and says why when it won't.
+    private func incomingCall(_ id: String) {
+        guard let request = CallChannel.take(id) else {
+            return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "Lip Service couldn't read the call"))
+        }
+        let settings = preferences.current.settings
+        let agent: AgentConnection
+        if let wanted = request.agent?.trimmingCharacters(in: .whitespaces).lowercased(), !wanted.isEmpty {
+            guard let named = settings.agents.agents.first(where: { $0.id.lowercased() == wanted || $0.name.lowercased() == wanted }) else {
+                return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "no agent named \(request.agent ?? "")"))
+            }
+            agent = named
+        } else {
+            guard let live = settings.liveTalk.agent(in: settings.agents) else {
+                return CallChannel.post(CallbackUpdate(id: id, status: .failed, detail: "no agent is set up for Live talk"))
+            }
+            agent = live
+        }
+        if let busy = CallSignals.busy(talking: live.talk != nil || ringing != nil,
+                                       dictating: keyTap.machine.isCapturing || pending > 0 || toAgent) {
+            log.info("call back from \(request.from, privacy: .public) not rung: \(busy.detail, privacy: .public)")
+            return CallChannel.post(CallbackUpdate(id: id, status: .busy, detail: busy.detail))
+        }
+        log.info("call back from \(request.from, privacy: .public)")
+        let call = RingingCall(request: request, agent: agent)
+        ringing = call
+        if request.ringSeconds <= 0 { return answerCall() }
+        CallChannel.post(CallbackUpdate(id: id, status: .ringing))
+        call.ring = Task { [unowned self, sounds] in
+            let ends = Instant.now + request.ringSeconds
+            while !Task.isCancelled, Instant.now < ends {
+                sounds.play(.start)
+                try? await Task.sleep(for: .milliseconds(350))
+                sounds.play(.start)
+                try? await Task.sleep(for: .seconds(2.5))
+            }
+            guard !Task.isCancelled else { return }
+            endRinging(.missed)
+        }
+        render()
+    }
+
+    /// Double-tapping Left Control or Answer on the island: the talk starts and says the result first.
+    private func answerCall() {
+        guard let call = ringing else { return }
+        call.ring?.cancel()
+        ringing = nil
+        let request = call.request
+        CallChannel.post(CallbackUpdate(id: request.id, status: .answered))
+        callInTalk = request.id
+        startTalk(with: call.agent, opening: TalkOpening(
+            greeting: CallbackPrompt.greeting(from: request.from, about: request.about),
+            prompt: CallbackPrompt.opening(from: request.from, about: request.about, result: request.result)))
+    }
+
+    /// Decline on the island, or the ring ran out.
+    private func endRinging(_ status: CallbackStatus) {
+        guard let call = ringing else { return }
+        call.ring?.cancel()
+        ringing = nil
+        log.info("call back \(status.rawValue, privacy: .public)")
+        CallChannel.post(CallbackUpdate(id: call.request.id, status: status))
+        render()
     }
 
     /// The window's shortcut recorder borrows the keyboard from dictation until it has a result.
@@ -487,8 +584,21 @@ import os
                                    notice: notice, showsIdle: !settings.hideBarWhenIdle, agent: agent?.agent, working: agent?.working,
                                    busy: agent?.busy ?? false, talk: live.talk?.bar),
                    edge: settings.barEdge)
-        island.show(live.talk?.bar)
+        island.show(live.talk?.bar ?? ringing?.bar)
         menu.show(engine: engineStatus, keyTapRunning: keyTap.isRunning, waiting: pending)
+    }
+}
+
+/// A call back that is ringing, and the agent its talk goes to.
+@MainActor final class RingingCall {
+    let request: CallbackRequest
+    let agent: AgentConnection
+    var ring: Task<Void, Never>?
+
+    init(request: CallbackRequest, agent: AgentConnection) { (self.request, self.agent) = (request, agent) }
+
+    var bar: TalkBar {
+        TalkBar(agent: BarAgent(initial: agent.initial, name: request.from), phase: .ringing, line: CallbackPrompt.cleanAbout(request.about))
     }
 }
 

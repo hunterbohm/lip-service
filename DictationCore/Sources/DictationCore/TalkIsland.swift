@@ -69,13 +69,14 @@ public enum TalkIsland {
         switch bar.phase {
         case .thinking: return !bar.line.isEmpty || bar.activity != nil
         case .speaking: return !bar.line.isEmpty
+        case .ringing: return true
         case .connecting, .listening, .hearing: return false
         }
     }
 
     /// What the orb's colours say: blues while you can talk, violet and pink while the agent thinks, amber while it
     /// speaks, and greys while the talk connects.
-    public enum Mood: Equatable, Sendable { case connecting, you, thinking, speaking }
+    public enum Mood: Equatable, Sendable { case connecting, you, thinking, speaking, ringing }
 
     public static func mood(_ phase: TalkBar.Phase) -> Mood {
         switch phase {
@@ -83,6 +84,7 @@ public enum TalkIsland {
         case .listening, .hearing: .you
         case .thinking: .thinking
         case .speaking: .speaking
+        case .ringing: .ringing
         }
     }
 
@@ -95,13 +97,14 @@ public enum TalkIsland {
         case .you: [(0.2, 0.85, 1), (0.25, 0.45, 1), (0.4, 1, 0.85)]
         case .thinking: [(0.62, 0.4, 1), (0.95, 0.4, 0.85), (0.35, 0.45, 1)]
         case .speaking: [(1, 0.72, 0.25), (1, 0.45, 0.35), (1, 0.88, 0.5)]
+        case .ringing: [(0.25, 0.9, 0.45), (0.15, 0.7, 0.5), (0.6, 1, 0.55)]
         }
     }
 
     /// How fast the orb's colours turn, in radians a second: quick while the agent works, slow while it waits on you.
     public static func orbSpeed(_ mood: Mood) -> Double {
         switch mood {
-        case .thinking, .connecting: 2.4
+        case .thinking, .connecting, .ringing: 2.4
         case .speaking: 1.2
         case .you: 0.6
         }
@@ -109,7 +112,7 @@ public enum TalkIsland {
 
     /// The orb's scale: it swells with the voice, and breathes while the agent works.
     public static func orbScale(level: Double, mood: Mood, time: Double) -> Double {
-        let breathe = mood == .thinking || mood == .connecting ? 0.07 * sin(time * 4.5) : 0
+        let breathe = mood == .thinking || mood == .connecting || mood == .ringing ? 0.07 * sin(time * 4.5) : 0
         return 1 + min(max(level, 0), 1) * 0.22 + breathe
     }
 
@@ -123,7 +126,7 @@ public enum TalkIsland {
 
     public static func ear(_ phase: TalkBar.Phase) -> Ear {
         switch phase {
-        case .connecting, .thinking: .working
+        case .connecting, .thinking, .ringing: .working
         case .listening, .hearing: .voice(agent: false)
         case .speaking: .voice(agent: true)
         }
@@ -149,6 +152,7 @@ public enum TalkIsland {
         case .connecting: "Connecting"
         case .listening, .hearing: "Listening"
         case .thinking, .speaking: bar.agent.name
+        case .ringing: "\(bar.agent.name) is calling"
         }
     }
 }

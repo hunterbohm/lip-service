@@ -21,6 +21,7 @@ enum Mode {
     case t3Connect(home: String?, code: String)
     case t3Bridge(home: String?)
     case setup(Headless.SetupCommand)
+    case call(CallCommand.Options)
     case usage(String)
 
     static let usage = """
@@ -64,12 +65,14 @@ enum Mode {
                    --window-text includes the sample window text, as with Send the window's text with hand-offs on.
                Dictation --test-talk [--preset ID] [--command 'hermes acp'] [--host HOST] [--voice VOICE]
                          [--voice-server URL [--voice-name NAME]] [--option ID=VALUE]... [--note TEXT] [--out PATH.wav]
-                         [--models DIR] CLIP.wav...
+                         [--call-back ABOUT RESULT_FILE] [--models DIR] CLIP.wav...
                    Holds a live talk with no microphone or speakers: each clip is played in as your next turn, in real
                    time, and the agent's voice is made but not played. One JSON line per turn with its timings, in
                    seconds after your speech ended, then one with the session, to delete it from the agent's history.
                    --voice is an on-Mac voice, phonon:en_us_Preston unless given, or another such as kokoro:am_michael. --out writes what the voice said.
                    --note replaces the preset's per-agent talk note. --option replaces its live-talk session options.
+                   --call-back starts the talk as a call back about ABOUT with the result in RESULT_FILE, as `call` does
+                   once answered: the greeting, then the agent says the result, then the clips. Prints {"callBack":"said"}.
                Dictation --t3-connect PAIRING_CODE [T3_HOME]
                    Signs in to T3 Code's MCP endpoint and keeps the token in this user's Keychain, as Connect does.
                Dictation --t3-mcp [T3_HOME]
@@ -84,6 +87,17 @@ enum Mode {
                    Lip Service, which shows "NAME set up Lip Service" with the changes.
                Dictation setup test [AGENT_ID]
                    Asks the agent (the default one unless given) to answer, and prints how long it took or why it did not.
+               Dictation call --about TEXT [--from NAME] [--agent ID_OR_NAME] [--ring SECONDS] [--result-file PATH] < RESULT
+                   Calls you back with a finished job's result: the running app rings on the island, and when you answer, a
+                   live talk starts in which the agent says the result. The result is read from stdin unless --result-file.
+                   --from is who calls (Hermes unless given), --agent the agent the talk goes to (Live talk's unless given),
+                   --ring how long it rings before it counts as missed (30 s; 0 starts the talk without ringing). Prints one
+                   JSON line per status: ringing, answered, then delivered, declined, missed, hung-up, busy or failed, with a
+                   detail. Exits 0 when the result was said, 3 when it should be texted instead, 4 when you are busy (a
+                   meeting, a Focus, a locked screen, a talk) and it should be tried later, 5 when it could not ring.
+               Dictation call --check
+                   Prints whether this Mac says you are busy now (locked, a Focus, the camera, another app's microphone), as
+                   JSON, and exits 0 when free and 4 when busy. A talk or dictation running is checked only when a call rings.
                Dictation --import-willow-dry-run WILLOW_FOLDER
                    Prints what Import from Willow would add and change. Writes nothing.
                Dictation --install-formatter ARCHIVE
@@ -214,6 +228,10 @@ enum Mode {
                     case "--voice-server": server = try Self.value(of: argument, from: &rest)
                     case "--voice-name": serverVoice = try Self.value(of: argument, from: &rest)
                     case "--note": options.note = try Self.value(of: argument, from: &rest)
+                    case "--call-back":
+                        let about = try Self.value(of: argument, from: &rest)
+                        let file = try Self.value(of: argument, from: &rest)
+                        options.callBack = (about, try String(contentsOfFile: file, encoding: .utf8))
                     case "--option":
                         let pair = try Self.value(of: argument, from: &rest).split(separator: "=", maxSplits: 1).map(String.init)
                         guard pair.count == 2 else { throw DictationError("--option takes ID=VALUE") }
@@ -245,6 +263,21 @@ enum Mode {
                 case "test": self = .setup(.test(agentID: rest.popFirst()))
                 default: throw DictationError("setup takes show, apply or test")
                 }
+            case "call":
+                var options = CallCommand.Options()
+                while let argument = rest.popFirst() {
+                    switch argument {
+                    case "--about": options.about = try Self.value(of: argument, from: &rest)
+                    case "--from": options.from = try Self.value(of: argument, from: &rest)
+                    case "--agent": options.agent = try Self.value(of: argument, from: &rest)
+                    case "--ring": options.ring = try Self.number(of: argument, from: &rest, Double.init, in: 0...300)
+                    case "--result-file": options.resultFile = URL(fileURLWithPath: try Self.value(of: argument, from: &rest))
+                    case "--check": options.check = true
+                    default: throw DictationError("unknown option \(argument)")
+                    }
+                }
+                if options.from.trimmingCharacters(in: .whitespaces).isEmpty { throw DictationError("--from can't be empty") }
+                self = .call(options)
             case "--hand-off":
                 var options = HandOffTest.Options(destination: URL(fileURLWithPath: try Self.value(of: "--hand-off", from: &rest)))
                 while let argument = rest.popFirst() {

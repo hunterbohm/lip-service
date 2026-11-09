@@ -114,6 +114,8 @@ public struct TalkBar: Equatable, Sendable {
         case thinking
         /// The agent's voice is playing.
         case speaking
+        /// An agent is calling you back, and the island rings until you answer or decline. `line` says what about.
+        case ringing
     }
 
     public var agent: BarAgent
@@ -138,6 +140,7 @@ public struct TalkBar: Equatable, Sendable {
         case .hearing: "Listening"
         case .thinking: "Thinking…"
         case .speaking: "\(agent.name) is talking"
+        case .ringing: "\(agent.name) is calling back"
         }
     }
 }
