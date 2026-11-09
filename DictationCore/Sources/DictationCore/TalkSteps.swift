@@ -319,11 +319,21 @@ public struct RichCard: Equatable, Sendable {
         return text.isEmpty ? nil : ToolLine.clip(text, to: most)
     }
 
-    /// A link the island may open on a click: a web page, or a note in Obsidian.
+    /// A link the island may open on a click: a web page, or a note in Obsidian. An Obsidian address may only open a
+    /// note: its other actions, which make or change notes or run a plugin's commands, are never kept, since the address
+    /// comes from the agent and a click would run it.
     static func link(_ value: JSONValue?) -> URL? {
         guard let text = value?.string?.trimmingCharacters(in: .whitespaces), text.count <= 2000, let url = URL(string: text),
-              let scheme = url.scheme?.lowercased(), ["http", "https", "obsidian"].contains(scheme) else { return nil }
-        return url
+              let parts = URLComponents(url: url, resolvingAgainstBaseURL: false), let scheme = parts.scheme?.lowercased() else { return nil }
+        switch scheme {
+        case "http", "https":
+            return parts.host?.isEmpty == false ? url : nil
+        case "obsidian":
+            let names = Set((parts.queryItems ?? []).map { $0.name.lowercased() })
+            return parts.host?.lowercased() == "open" && parts.path.isEmpty && names.isSubset(of: ["vault", "file", "path"]) ? url : nil
+        default:
+            return nil
+        }
     }
 }
 

@@ -83,13 +83,13 @@ import Testing
         var steps = StepQueue()
         steps.offer("Checking Stripe", app: .stripe, call: "a")
         _ = steps.next(at: Instant(seconds: 0))
-        #expect(steps.fail(call: "a"))
-        #expect(steps.step?.failed == true)
+        let current = steps.fail(call: "a")
+        #expect(current && steps.step?.failed == true)
         steps.offer("Checking Gmail", app: .gmail, call: "b")
         _ = steps.next(at: Instant(seconds: 2))
         #expect(steps.trail.map(\.failed) == [true])
-        #expect(steps.fail(call: "b"))
-        #expect(!steps.fail(call: "nobody"))
+        let (known, unknown) = (steps.fail(call: "b"), steps.fail(call: "nobody"))
+        #expect(known && !unknown)
     }
 
     @Test func theTrailKeepsOnlyTheLastFew() {
@@ -142,6 +142,19 @@ import Testing
         let one = try #require(RichCard.parse(#"{"type":"task","title":"Call Theo","actions":["Mark it done"]}"#))
         #expect(one.actions == ["Mark it done"])
         #expect(ResultRow.day("Nov 12")?.day == "12")
+    }
+
+    @Test func aClickOnlyOpensAWebPageOrANote() {
+        func link(_ text: String) -> URL? { RichCard.link(.string(text)) }
+        for kept in ["https://united.com/x", "http://example.com", "obsidian://open?vault=Main&file=Tasks%2FPP-3", "obsidian://open?path=%2FUsers%2Fh%2Fvault%2Fa.md"] {
+            #expect(link(kept) == URL(string: kept), "\(kept)")
+        }
+        // An Obsidian address that makes or changes a note, or runs a plugin's command, is not a link.
+        for dropped in ["file:///etc/passwd", "javascript:alert(1)", "https://", "obsidian://new?vault=Main&name=x&content=y",
+                        "obsidian://advanced-uri?vault=Main&commandid=app%3Adelete-file", "obsidian://open?vault=Main&file=a&commandid=x",
+                        "obsidian://shell-commands/?execute=1", "x-apple.systempreferences:com.apple.preference", "ssh://host", ""] {
+            #expect(link(dropped) == nil, "\(dropped)")
+        }
     }
 
     @Test func anythingElseStaysTheCardItWas() {
