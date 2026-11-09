@@ -54,6 +54,9 @@ import WebKit
         case .permissionAnswered:
             cards.removeAll { if case .permission = $0.content { true } else { false } }
             layout()
+        case .result, .callBackPromised:
+            // The island draws these itself.
+            break
         }
     }
 

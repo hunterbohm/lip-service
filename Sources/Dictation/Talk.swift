@@ -81,6 +81,10 @@ enum TalkCardEvent {
     /// `byVoice`.
     case permission(agent: String, phrase: String, detail: String, byVoice: Bool)
     case permissionAnswered
+    /// A result the island draws itself: flights, tasks, meetings, emails.
+    case result(RichCard)
+    /// The agent set up a call back for a job that takes a while, so you can hang up.
+    case callBackPromised(agent: String)
 }
 
 /// One finished turn, for the log and the end-to-end test.
@@ -132,7 +136,15 @@ enum TalkEnd: Equatable {
     /// The session the talk went to, once it is open.
     private(set) var sessionID: String?
 
-    private(set) var bar: TalkBar { didSet { if bar != oldValue { onBar?(bar) } } }
+    private(set) var bar: TalkBar {
+        didSet {
+            // Setting it here doesn't run this again. Every bar carries the step behind its activity, so no place that
+            // builds one has to.
+            let full = withSteps(bar)
+            if full != bar { bar = full }
+            if bar != oldValue { onBar?(bar) }
+        }
+    }
     private var ear = TalkEar()
     private var pending: [Float] = []
     private var ticker: Task<Void, Never>?
@@ -158,6 +170,11 @@ enum TalkEnd: Equatable {
     /// Each tool the agent starts shows on the island, held long enough to read before the next replaces it.
     private var steps = StepQueue()
     private var stepTimer: Task<Void, Never>?
+    /// When your turn went to the agent, for the island's timer until a step shows.
+    private var workingSince: Instant?
+    /// Tool calls that set up a call back, until they finish and the island can say so.
+    private var promised: Set<String> = []
+    private var choosing: Task<Void, Never>?
     private var clock: TurnClock?
     private var report: TalkTurnReport?
     private var replyDone = false
@@ -463,6 +480,7 @@ enum TalkEnd: Equatable {
         turn += 1
         let current = turn
         (steps, stepTimer) = (StepQueue(), stepTimer.map { $0.cancel(); return nil } ?? nil)
+        (workingSince, promised) = (.now, [])
         if carriesOpening {
             // The opening goes on in a new session, or you said something before the agent answered it: you are on
             // the line and the agent has the result, so that counts as said.
@@ -522,7 +540,13 @@ enum TalkEnd: Equatable {
             for piece in splitter.feed(text) { take(piece, turn: current) }
         case .tool(let title, let status, let kind, let id):
             // Every step shows; only some are said, so the voice doesn't chatter.
-            if status != "completed" && status != "failed" { showStep(ToolLine.phrase(title: title, kind: kind), turn: current) }
+            if status == "failed" {
+                if let id, steps.fail(call: id) { refreshBar() }
+            } else if status != "completed", !(title.isEmpty && id.map({ steps.has(call: $0) }) == true) {
+                // An update with no title only says the call moved on; its step is already up.
+                showStep(title: title, kind: kind, call: id, turn: current)
+            }
+            notePromise(title: title, status: status, kind: kind, id: id)
             guard let phrase = announcer.announce(id: id, title: title, kind: kind, at: .now) else { return }
             report?.tools.append(phrase)
             queue(phrase + ".", turn: current)
@@ -532,9 +556,60 @@ enum TalkEnd: Equatable {
     }
 
     /// Shows each step in turn, each up long enough to read.
-    private func showStep(_ line: String, turn current: Int) {
-        steps.offer(line)
+    private func showStep(title: String, kind: String?, call: String?, turn current: Int) {
+        let showing = bar.phase == .thinking && bar.activity != nil && bar.activity == steps.shown
+        steps.offer(ToolLine.phrase(title: title, kind: kind), app: ToolLine.app(title: title, kind: kind), call: call)
+        // A call that said more about itself changed the step on show.
+        var next = bar
+        if showing { next.activity = steps.shown }
+        bar = next
         drainSteps(turn: current)
+    }
+
+    /// The bar with the step behind its activity, the steps before it, and when the wait began.
+    private func withSteps(_ bar: TalkBar) -> TalkBar {
+        var bar = bar
+        let step = bar.phase == .thinking ? steps.step.flatMap { $0.line == bar.activity ? $0 : nil } : nil
+        (bar.step, bar.trail) = (step, step == nil ? [] : steps.trail)
+        bar.since = bar.phase == .thinking && report != nil ? (step == nil ? workingSince : steps.since) : nil
+        return bar
+    }
+
+    /// Shows a change to the steps that left the bar's own words alone, such as a step that failed.
+    private func refreshBar() {
+        let same = bar
+        bar = same
+    }
+
+    /// Once `call-me-back run` has started the job, the island says the agent will ring when it is done.
+    private func notePromise(title: String, status: String?, kind: String?, id: String?) {
+        let over = status == "completed" || status == "failed"
+        if ToolLine.promisesCallBack(title: title, kind: kind) {
+            if let id { promised.insert(id) } else if !over { onCard?(.callBackPromised(agent: agent.name)) }
+        }
+        guard over, let id, promised.remove(id) != nil, status == "completed" else { return }
+        onCard?(.callBackPromised(agent: agent.name))
+    }
+
+    /// A button on a result was pressed: its label goes to the agent as your next words, over whatever it was saying.
+    /// False when the talk can't take it now: it is still connecting, or it waits on a permission.
+    @discardableResult
+    func choose(_ words: String) -> Bool {
+        guard !ended, connected, permission == nil, !openingPending, let client, let sessionID else { return false }
+        log.info("talk chose a button, \(words.count) characters")
+        let busy = report != nil
+        stopReply()
+        bar = TalkBar(agent: bar.agent, phase: .thinking, line: words)
+        ear.agentWorking(at: .now)
+        let current = turn
+        choosing?.cancel()
+        choosing = Task { [weak self] in
+            // The agent has let go of the reply it was on before the words go, so the stop can't land on them.
+            if busy { await client.cancel(session: sessionID) }
+            guard let self, !Task.isCancelled, !self.ended, current == self.turn else { return }
+            self.send(words, clock: TurnClock(speechEnd: .now))
+        }
+        return true
     }
 
     private func drainSteps(turn current: Int) {
@@ -567,7 +642,7 @@ enum TalkEnd: Equatable {
             }
         case .show(let body):
             report?.cards += 1
-            onCard?(.show(ShowCard.classify(body)))
+            if let card = RichCard.parse(body) { onCard?(.result(card)) } else { onCard?(.show(ShowCard.classify(body))) }
         }
     }
 

@@ -238,11 +238,12 @@ public enum ToolLine {
         "execute": "Running a command", "think": "Thinking it over", "fetch": "Looking at a web page", "switch_mode": "Changing modes",
     ]
 
-    /// Apps a command or tool can be checking, by a word it uses, and their names.
-    private static let services: [(String, String)] = [
-        ("gmail", "Gmail"), ("calendar", "your calendar"), ("gcal", "your calendar"), ("drive", "Google Drive"),
-        ("sheets", "Google Sheets"), ("slack", "Slack"), ("notion", "Notion"), ("stripe", "Stripe"), ("linear", "Linear"),
-        ("discord", "Discord"), ("imessage", "iMessage"), ("obsidian", "Obsidian"),
+    /// Apps a command or tool can be checking, by a word it uses, their names, and the app whose icon stands for them.
+    static let services: [(word: String, name: String, app: StepApp)] = [
+        ("gmail", "Gmail", .gmail), ("calendar", "your calendar", .calendar), ("gcal", "your calendar", .calendar),
+        ("drive", "Google Drive", .drive), ("sheets", "Google Sheets", .sheets), ("slack", "Slack", .slack),
+        ("notion", "Notion", .notion), ("stripe", "Stripe", .stripe), ("linear", "Linear", .linear),
+        ("discord", "Discord", .discord), ("imessage", "iMessage", .messages), ("obsidian", "Obsidian", .obsidian),
     ]
 
     /// The phrase for a permission the agent asks for. The kind decides it when the agent gives one, so a title that
@@ -272,6 +273,7 @@ public enum ToolLine {
     public static func symbol(_ line: String) -> String {
         let rules: [(String, String)] = [
             ("Running some code", "chevron.left.forwardslash.chevron.right"), ("Running", "terminal"),
+            ("Setting up a call back", "phone.arrow.up.right"), ("Calling you back", "phone"),
             ("Loading", "book.closed"), ("Looking through its skills", "books.vertical"), ("Updating a skill", "book.closed"),
             ("Checking Gmail", "envelope"), ("Checking your email", "envelope"), ("Checking your calendar", "calendar"),
             ("Checking your messages", "message"), ("Checking iMessage", "message"), ("Sending", "paperplane"),
@@ -333,14 +335,35 @@ public enum ToolLine {
             return words(preview, most: 3).map { $0.prefix(1).uppercased() + $0.dropFirst() }
         default:
             if kind == "execute", !preview.isEmpty { return command(preview) }
-            if let service = services.first(where: { tool.contains($0.0) }) { return "Checking \(service.1)" }
+            if let service = services.first(where: { tool.contains($0.word) }) { return "Checking \(service.name)" }
             return nil
         }
     }
 
     /// "Running t3-run status": the program, and its subcommand when it has one. An app it checks, such as Gmail, says
-    /// that instead. Wrappers like `sudo`, `timeout 60`, `infisical run --` and `KEY=value` are skipped.
+    /// that instead, and so does a call back it sets up.
     static func command(_ text: String) -> String? {
+        let tokens = commandTokens(text)
+        guard let first = tokens.first else { return nil }
+        let program = String(first.split(separator: "/").last ?? "")
+        guard isWord(program) else { return "Running a command" }
+        if program == "call-me-back" { return tokens.dropFirst().first == "done" ? "Calling you back" : "Setting up a call back" }
+        if let service = service(tokens) { return "Checking \(service.name)" }
+        let interpreters: Set<String> = ["python", "python3", "node", "bun", "deno", "ruby", "perl", "bash", "sh", "zsh", "osascript", "swift"]
+        if interpreters.contains(program.lowercased()) {
+            guard let script = tokens.dropFirst().first(where: { !$0.hasPrefix("-") }), script.contains(".") || script.contains("/"),
+                  let name = fileName(script) else { return program.lowercased().hasPrefix("python") ? "Running some code" : "Running \(program)" }
+            return "Running \(name)"
+        }
+        if let sub = tokens.dropFirst().first, isWord(sub), sub.first?.isLetter == true, sub == sub.lowercased(), !sub.contains(".") {
+            return "Running \(program) \(sub)"
+        }
+        return "Running \(program)"
+    }
+
+    /// A command's words from its program on: `cd somewhere &&` and wrappers like `sudo`, `timeout 60`, `infisical run --`
+    /// and `KEY=value` are skipped.
+    static func commandTokens(_ text: String) -> [String] {
         var tokens = text.replacingOccurrences(of: "\n", with: " ").split(whereSeparator: \.isWhitespace).map(String.init)
         if tokens.first == "$" { tokens.removeFirst() }
         // `cd somewhere && git status` runs git.
@@ -362,22 +385,19 @@ public enum ToolLine {
                 break
             }
         }
-        guard let first = tokens.first else { return nil }
-        let program = String(first.split(separator: "/").last ?? "")
-        guard isWord(program) else { return "Running a command" }
+        return tokens
+    }
+
+    /// The app a command checks, from its first few words before any quoted one: `gog gmail search`, or a tool's dotted
+    /// path such as `tools.google.gmail.search`. Flags and file paths are not read, and `drive.py` is a file, not Drive.
+    static func service(_ tokens: [String]) -> (word: String, name: String, app: StepApp)? {
         let head = tokens.prefix(6).map { $0.lowercased() }
         let quoted = head.firstIndex { $0.hasPrefix("'") || $0.hasPrefix("\"") || $0.hasPrefix("<") } ?? head.count
-        if let service = services.first(where: { head[..<quoted].contains($0.0) }) { return "Checking \(service.1)" }
-        let interpreters: Set<String> = ["python", "python3", "node", "bun", "deno", "ruby", "perl", "bash", "sh", "zsh", "osascript", "swift"]
-        if interpreters.contains(program.lowercased()) {
-            guard let script = tokens.dropFirst().first(where: { !$0.hasPrefix("-") }), script.contains(".") || script.contains("/"),
-                  let name = fileName(script) else { return program.lowercased().hasPrefix("python") ? "Running some code" : "Running \(program)" }
-            return "Running \(name)"
+        let words = head[..<quoted].filter { !$0.hasPrefix("-") && !$0.contains("/") }.flatMap { token -> [String] in
+            let parts = token.split(whereSeparator: { $0 == "." || $0 == ":" }).map(String.init)
+            return parts.count > 2 ? parts : [token]
         }
-        if let sub = tokens.dropFirst().first, isWord(sub), sub.first?.isLetter == true, sub == sub.lowercased(), !sub.contains(".") {
-            return "Running \(program) \(sub)"
-        }
-        return "Running \(program)"
+        return services.first { words.contains($0.word) }
     }
 
     /// "productivity/executor-connected-accounts" is the skill `executor-connected-accounts`.
@@ -441,32 +461,92 @@ public enum ToolLine {
     }
 }
 
+/// One step of the agent's turn, as the island shows it.
+public struct TalkStep: Equatable, Sendable, Identifiable {
+    /// "Checking Gmail".
+    public var line: String
+    /// The app it uses, when one is known, for its icon.
+    public var app: StepApp?
+    /// The tool call's id, when the agent gives one.
+    public var call: String?
+    /// The tool said it failed, so the step never shows as done.
+    public var failed: Bool
+    /// Counts the steps of a turn, so each row keeps its place as others come and go.
+    public var id: Int
+
+    public init(line: String, app: StepApp? = nil, call: String? = nil, failed: Bool = false, id: Int = 0) {
+        (self.line, self.app, self.call, self.failed, self.id) = (line, app, call, failed, id)
+    }
+}
+
 /// The steps the island shows, in order, each up for at least `hold` seconds so it can be read. When steps come faster
 /// than that, they wait their turn; past `most` waiting, the oldest waiting ones are skipped, so the island never lags
-/// far behind what the agent is doing.
+/// far behind what the agent is doing. The steps that were shown stay behind it as a short trail.
 public struct StepQueue: Sendable {
     public static let hold = 0.9
     public static let most = 3
-    /// The step on the island now.
-    public private(set) var shown: String?
-    private var shownAt: Instant?
-    private var waiting: [String] = []
+    /// How many earlier steps stay under the one on the island.
+    public static let trailMost = 3
+    /// The step on the island now, and when it went up.
+    public private(set) var step: TalkStep?
+    public private(set) var since: Instant?
+    /// The steps shown before it, oldest first.
+    public private(set) var trail: [TalkStep] = []
+    private var waiting: [TalkStep] = []
+    private var count = 0
 
     public init() {}
 
-    public mutating func offer(_ line: String) {
-        guard line != (waiting.last ?? shown) else { return }
-        waiting.append(line)
+    public var shown: String? { step?.line }
+
+    /// Whether a step of tool call `call` was offered and is still known.
+    public func has(call: String) -> Bool { step?.call == call || waiting.contains { $0.call == call } || trail.contains { $0.call == call } }
+
+    /// A tool call that says more about itself, as some agents do once they know the file or the command, changes its
+    /// own step instead of adding one. A new call is a new step even in the same words, so its timer, its failure and
+    /// the island's reopening are its own; only a call with no id is told from the last one by its words.
+    public mutating func offer(_ line: String, app: StepApp? = nil, call: String? = nil) {
+        if let call {
+            if step?.call == call {
+                step?.line = line
+                step?.app = app
+                return
+            }
+            if let index = waiting.firstIndex(where: { $0.call == call }) {
+                waiting[index].line = line
+                waiting[index].app = app
+                return
+            }
+            if trail.contains(where: { $0.call == call }) { return }
+        } else if line == (waiting.last ?? step)?.line {
+            return
+        }
+        count += 1
+        waiting.append(TalkStep(line: line, app: app, call: call, id: count))
         if waiting.count > Self.most { waiting.removeFirst(waiting.count - Self.most) }
+    }
+
+    /// Tool call `call` failed: its step says so, wherever it is. False when no step of that call is known.
+    @discardableResult
+    public mutating func fail(call: String) -> Bool {
+        guard has(call: call) else { return false }
+        if step?.call == call { step?.failed = true }
+        for index in waiting.indices where waiting[index].call == call { waiting[index].failed = true }
+        for index in trail.indices where trail[index].call == call { trail[index].failed = true }
+        return true
     }
 
     /// The next step to show now, or how long to wait before asking again, or neither when none is waiting.
     public mutating func next(at time: Instant) -> (line: String?, wait: Double?) {
         guard !waiting.isEmpty else { return (nil, nil) }
-        if let shownAt, time - shownAt < Self.hold { return (nil, Self.hold - (time - shownAt)) }
-        let line = waiting.removeFirst()
-        (shown, shownAt) = (line, time)
-        return (line, nil)
+        if let since, time - since < Self.hold { return (nil, Self.hold - (time - since)) }
+        if let step {
+            trail.append(step)
+            if trail.count > Self.trailMost { trail.removeFirst(trail.count - Self.trailMost) }
+        }
+        let next = waiting.removeFirst()
+        (step, since) = (next, time)
+        return (next.line, nil)
     }
 }
 
@@ -501,7 +581,13 @@ public enum TalkPrompt {
         first. No markdown, lists or links in what you say. To put something on my screen, like a link, an image URL, a list, \
         code or numbers, wrap it in <show></show>: I see it, and it is not read out. For a chart, diagram, timeline or table, \
         put one self-contained HTML snippet in <show> instead: inline CSS and SVG, about 500px wide, labels kept inside it, \
-        on a dark background that is already set.
+        on a dark background that is already set. For flights, a task, a meeting or an email, put JSON in <show> and I get \
+        a live card: {"type":"flights","from":"AUS","to":"SFO","date":"Fri, Nov 14","options":[{"airline":"United",\
+        "depart":"7:05 AM","arrive":"9:00 AM","duration":"3h 55m","price":"$214","best":true,"url":"https://..."}],\
+        "actions":["Hold the 7:05"]}, or {"type":"task","id":"PP-3","title":"...","status":"Task added","due":"today"}, \
+        {"type":"event","title":"...","date":"2026-11-12","time":"2:00 PM","where":"..."} or {"type":"email","from":"...",\
+        "subject":"...","time":"..."}, alone or several in a JSON list. A "url" opens when I click the row. Each action is a \
+        button, and its label comes back as my next words. Show flights again as more come in: the new card replaces the last.
         """
 
     public static func message(_ words: String, extra: String) -> String {

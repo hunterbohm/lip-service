@@ -126,9 +126,17 @@ public struct TalkBar: Equatable, Sendable {
     public var activity: String?
     /// No one has talked for a while, and the talk ends soon.
     public var endingSoon: Bool
+    /// The step behind `activity`, with the app it uses, when the activity is a step of the agent's work.
+    public var step: TalkStep?
+    /// The steps before it this turn, oldest first.
+    public var trail: [TalkStep]
+    /// When the step on show began, or the agent's turn when it shows none: what the island's timer counts from.
+    public var since: Instant?
 
-    public init(agent: BarAgent, phase: Phase, line: String = "", activity: String? = nil, endingSoon: Bool = false) {
+    public init(agent: BarAgent, phase: Phase, line: String = "", activity: String? = nil, endingSoon: Bool = false,
+                step: TalkStep? = nil, trail: [TalkStep] = [], since: Instant? = nil) {
         (self.agent, self.phase, self.line, self.activity, self.endingSoon) = (agent, phase, line, activity, endingSoon)
+        (self.step, self.trail, self.since) = (step, trail, since)
     }
 
     /// What is happening, in a few words.
