@@ -120,7 +120,7 @@ public enum TalkIsland {
     public static func globeSize(_ screen: Screen) -> Double { min(30, screen.barHeight - 6) }
 
     /// Dots across the globe, so each is a few pixels: the globe reads as a grid of dots, not a solid ball.
-    public static let globeGrid = 13
+    public static let globeGrid = 11
     /// How high the globe floats up and down, in points, and how many times a second.
     public static let globeBob = 1.2
 
@@ -160,8 +160,8 @@ public enum TalkIsland {
                 let land = globeLand(latitude: latitude, longitude: longitude)
                 let lit = max(0, (x * light.x + y * light.y + z * light.z) / lightLength)
                 let ripple = level * 0.35 * max(0, sin(r2.squareRoot() * 9 - time * 11))
-                let brightness = min(1, (land ? 1 : 0.5) * (0.5 + 0.5 * lit) * (0.85 + 0.3 * level) + ripple)
-                let size = globeStep(0.3 + 0.75 * brightness)
+                let brightness = min(1, (land ? 1 : 0.55) * (0.6 + 0.4 * lit) * (0.9 + 0.2 * level) + ripple)
+                let size = globeStep(0.35 + 0.65 * brightness)
                 guard brightness > 0.06 else { continue }
                 let turn = (longitude / (2 * Double.pi)).truncatingRemainder(dividingBy: 1)
                 dots.append(GlobeDot(column: column, row: row, size: size, brightness: brightness, tint: (turn < 0 ? turn + 1 : turn) * 3))
@@ -179,7 +179,7 @@ public enum TalkIsland {
 
     /// Dot sizes come in four steps, as an ASCII ramp has a few characters.
     static func globeStep(_ size: Double) -> Double {
-        let steps = [0.35, 0.55, 0.75, 0.95]
+        let steps = [0.45, 0.62, 0.8, 0.95]
         return steps.last { $0 <= size } ?? steps[0]
     }
 
