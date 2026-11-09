@@ -176,6 +176,8 @@ enum TalkEnd: Equatable {
     private var openingTurn: Int?
     /// Some of the agent's reply to the opening has played, not only a tool line.
     private var openingHeard = false
+    /// A line of the reply to the opening couldn't be voiced, so part of the result may be missing: not said.
+    private var openingLost = false
     /// Until then the opening can't be talked over or superseded: a "hello" after the greeting would cancel the result.
     private var openingPending: Bool { opening != nil || (openingTurn != nil && !openingHeard) }
 
@@ -438,7 +440,7 @@ enum TalkEnd: Equatable {
         guard connected, !greeting, let opening else { return }
         self.opening = nil
         send(opening.prompt, clock: TurnClock(speechEnd: .now))
-        (openingTurn, openingHeard) = (turn, false)
+        (openingTurn, openingHeard, openingLost) = (turn, false, false)
         bar.line = ""
         bar.activity = "Calling back"
     }
@@ -447,6 +449,7 @@ enum TalkEnd: Equatable {
     private func openingDone(_ said: Bool) {
         guard openingTurn != nil else { return }
         openingTurn = nil
+        let said = said && !openingLost
         log.info("call back \(said ? "said" : "failed", privacy: .public)")
         onOpening?(said)
     }
@@ -575,6 +578,7 @@ enum TalkEnd: Equatable {
             guard line.turn == turn, !ended else { return }
             log.error("talk voice failed: \(error.localizedDescription, privacy: .public)")
             onNotice?(.failed(error.localizedDescription))
+            if openingTurn == line.turn { openingLost = true }
             if greeting {
                 greeting = false
                 sendOpening()
