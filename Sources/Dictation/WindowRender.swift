@@ -129,6 +129,20 @@ private final class RenderWindow: NSWindow {
                 preferences.change { $0.keepHistory = false }
                 history.deleteAll()
             }),
+            ("microphone-automatic", {
+                state.page = .microphone
+                window.setContentSize(NSSize(width: 1000, height: 820))
+                preferences.change { $0.microphone = .automatic }
+            }),
+            ("microphone-automatic-ordered", {
+                preferences.change {
+                    $0.automaticOrder = AutomaticOrder(devices: [
+                        .init(uid: airPods.uid, name: airPods.name),
+                        .init(uid: "AppleUSBAudioEngine:Shure Inc:Shure MV7+:2B0E000:1", name: "Shure MV7+"),
+                        .init(uid: builtIn.uid, name: builtIn.name),
+                    ])
+                }
+            }),
         ]
         var failures = 0
         if let card = ShareImage.png(UsageReport(entries: statsSample, period: .all, now: .now, calendar: .current), now: .now) {
