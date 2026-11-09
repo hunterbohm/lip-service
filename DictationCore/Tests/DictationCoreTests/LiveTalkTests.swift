@@ -96,6 +96,19 @@ import Testing
         #expect(TalkThresholds.floor(of: [0.5, 0.5, 0.5]) == Float(400) / 32768)
     }
 
+    @Test func theStartSoundIsNotTakenForTheRoom() {
+        // Half a second of the start sound from the speakers, then the quiet room.
+        let blocks = Array(repeating: echo, count: 17) + Array(repeating: quiet, count: 23)
+        var ear = TalkEar(cue: 0.5)
+        #expect(run(&ear, blocks, from: 0).isEmpty)
+        #expect(ear.thresholds.start == calibrated().thresholds.start)
+        #expect(run(&ear, Array(repeating: voice, count: 3), from: 1.2).map(\.0) == [.began])
+        // Read from the first block, the sound would be the room, and a quiet voice would go unheard.
+        var early = TalkEar()
+        _ = run(&early, blocks, from: 0)
+        #expect(early.thresholds.start > ear.thresholds.start)
+    }
+
     @Test func aTurnEndsAfterEightTenthsOfQuiet() throws {
         var ear = calibrated()
         let events = run(&ear, Array(repeating: quiet, count: 5) + Array(repeating: voice, count: 40) + Array(repeating: quiet, count: 40), from: 0.6)

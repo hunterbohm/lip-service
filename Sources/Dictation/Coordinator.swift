@@ -209,7 +209,8 @@ import os
     private func startTalk(with agent: AgentConnection, opening: TalkOpening? = nil) {
         let settings = preferences.current.settings
         let talk = Talk(agent: agent, pool: agents, engine: engine, voice: Voices.provider(for: settings.liveTalk.voice),
-                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut(), opening: opening)
+                        input: MicTalkInput(microphone, choice: settings.microphone), speaker: SpeakerOut(), opening: opening,
+                        cue: settings.sounds ? sounds.talkStartLength : 0)
         let barAgent = BarAgent(initial: agent.initial, name: agent.name)
         talk.onBar = { [unowned self] _ in render() }
         talk.onNotice = { [unowned self] notice in show(notice) }

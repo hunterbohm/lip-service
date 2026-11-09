@@ -20,6 +20,9 @@ import DictationCore
 
     /// The start cue's length, so muting other sound can wait for it.
     var startLength: Double { sounds[Cue.start.file]?.length ?? 0 }
+
+    /// A talk's start cue's length, so the talk reads the room after it.
+    var talkStartLength: Double { sounds[TalkCue.start.file]?.length ?? 0 }
 }
 
 private struct Sound {
