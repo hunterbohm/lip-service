@@ -6,8 +6,8 @@ import Foundation
 public struct LevelEnvelope: Sendable {
     public static let rate = 120.0
     public static let span = 2.0
-    public static let attack = 0.05
-    public static let release = 0.1
+    public static let attack = 0.025
+    public static let release = 0.09
     /// The glow's extra stage, which follows the voice envelope: slower both ways.
     public static let glowAttack = 0.12
     public static let glowRelease = 0.35

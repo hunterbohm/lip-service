@@ -29,9 +29,12 @@ public struct AutoLevel: Sendable {
     private var bucketFill = 0
     private let perBucket: Int
     private let fall: Double
+    private let noiseFloor: Double
 
-    public init(rate: Double) {
+    /// `noiseFloor` is where the room is taken to sit when it is quieter, in decibels.
+    public init(rate: Double, noiseFloor: Double = AutoLevel.noiseFloor) {
         self.rate = rate
+        self.noiseFloor = noiseFloor
         perBucket = max(1, Int((rate * Self.floorBucket).rounded()))
         buckets = []
         fall = 1 - exp(-1 / rate / Self.peakRelease)
@@ -41,7 +44,7 @@ public struct AutoLevel: Sendable {
     public mutating func fraction(rms: Float) -> Float {
         let level = max(20 * log10(Double(max(rms, 1e-5))), Self.silence)
         record(level)
-        let floor = max(buckets.min() ?? level, Self.noiseFloor)
+        let floor = max(buckets.min() ?? level, noiseFloor)
         let lowest = floor + Self.minimumSpan
         if let current = peak, level <= current { peak = current - (current - max(level, lowest)) * fall } else { peak = level }
         let top = max(peak ?? level, lowest)

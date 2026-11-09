@@ -25,6 +25,8 @@ import Testing
         #expect(LightWave.delay(along: 0.51) < 0.01 * LightWave.spread)
         // The envelope keeps two seconds, so every delay can be read back.
         #expect(LightWave.spread < LevelEnvelope.span)
+        // The ends show the voice now, not a beat ago: under a fifth of a second behind the middle.
+        #expect(LightWave.spread <= 0.2)
     }
 
     @Test func aLouderVoiceRunsFasterAndBrighter() {
@@ -61,5 +63,27 @@ import Testing
     @Test func strandsAreBlue() {
         #expect(LightWave.strands.count == 3)
         for strand in LightWave.strands { #expect(strand.blue >= strand.red && strand.blue >= strand.green) }
+    }
+
+    @Test func eachWaveFollowsItsOwnBandMostly() {
+        #expect(LightWave.strands.map(\.band) == [0, 1, 2])
+        #expect(LightWave.level(overall: 0, band: 1) == LightWave.bandShare)
+        #expect(LightWave.level(overall: 1, band: 0) == 1 - LightWave.bandShare)
+        #expect(abs(LightWave.level(overall: 0.6, band: 0.6) - 0.6) < 1e-12)
+        // Every wave still moves when only the whole voice does.
+        #expect(LightWave.level(overall: 1, band: 0) > 0.2)
+        #expect(LightWave.level(overall: 7, band: -3) == 1 - LightWave.bandShare)
+    }
+
+    @Test func columnsMatchTheDirectFormulas() {
+        let columns = LightWave.columns(steps: 92)
+        #expect(columns.count == 93 && columns.first?.along == 0 && columns.last?.along == 1)
+        for strand in LightWave.strands {
+            for column in columns {
+                #expect(abs(LightWave.offset(strand, column: column, travel: 1.3, amplitude: 9)
+                    - LightWave.offset(strand, along: column.along, travel: 1.3, amplitude: 9)) < 1e-9)
+                #expect(column.delay == LightWave.delay(along: column.along) && column.taper == LightWave.taper(column.along))
+            }
+        }
     }
 }

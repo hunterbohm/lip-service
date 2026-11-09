@@ -13,8 +13,8 @@ enum BarEvent: Equatable {
 /// BarState. It owns only what it shows: the screen it sits on, the voice meter, and a drag in progress.
 @MainActor final class Bar {
     var onEvent: ((BarEvent) -> Void)?
-    /// The smoothed microphone level the print draws from, sampled while listening.
-    let meter = VoiceMeter()
+    /// The voice the waves, the halo and the print draw from, taken from the audio thread while listening.
+    let meter: VoiceMeter
     /// The talk island's place on screen while a talk runs, which messages hang under.
     var talkAnchor: NSRect? {
         didSet { if talkAnchor != oldValue, state.body.isTalk, state.toast != nil { layout(animated: false) } }
@@ -26,7 +26,6 @@ enum BarEvent: Equatable {
     private let bodyHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let toastHost = BarHostingView(rootView: AnyView(EmptyView()))
     private let outlineHost = BarHostingView(rootView: AnyView(EmptyView()))
-    private let level: @MainActor () -> Float
     /// The visible frame of the screen to use. Defaults to the screen the bar is on, or the mouse's.
     private let area: (@MainActor (_ current: NSScreen?) -> NSRect)?
     private var state = BarState(body: .hidden)
@@ -36,7 +35,6 @@ enum BarEvent: Equatable {
     private var cleared = NSRect.zero
     private weak var clearedScreen: NSScreen?
     private var drag: Drag?
-    private var sampler: Timer?
     /// The body's capsule on screen, which is smaller than its panel while the words bar shows.
     private var capsuleFrame = NSRect.zero
     /// Checks the pointer while the words bar takes the mouse, so its panel takes clicks only over the capsule.
@@ -48,9 +46,9 @@ enum BarEvent: Equatable {
         var area: NSRect
     }
 
-    /// `level` is polled while listening, for the print. `area` replaces the screen, for --render-bar.
-    init(level: @escaping @MainActor () -> Float, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
-        self.level = level
+    /// `voice` is the tap to read the voice from while listening. `area` replaces the screen, for --render-bar.
+    init(voice: @escaping @MainActor () -> VoiceTap?, area: (@MainActor (_ current: NSScreen?) -> NSRect)? = nil) {
+        meter = VoiceMeter(feed: voice)
         self.area = area
         for (panel, host) in [(bodyPanel, bodyHost), (toastPanel, toastHost), (outlinePanel, outlineHost)] {
             panel.contentView = host
@@ -66,7 +64,7 @@ enum BarEvent: Equatable {
         if next.body.isActive && !state.body.isActive || toastOnHiddenBar { (screen, clearedScreen) = (nil, nil) }
         let movedEdge = nextEdge != edge
         (state, edge) = (next, nextEdge)
-        sampleLevels(state.body.isListening || state.body.isTalk)
+        meter.listen(state.body.isListening || state.body.isTalk)
         guard drag == nil else { return }
         layout(animated: !movedEdge)
     }
@@ -191,22 +189,6 @@ enum BarEvent: Equatable {
         return started
     }
 
-    private func sampleLevels(_ listening: Bool) {
-        guard listening != (sampler != nil) else { return }
-        sampler?.invalidate()
-        sampler = nil
-        guard listening else { return meter.follow(0) }
-        meter.reset()
-        let timer = Timer(timeInterval: 1.0 / VoiceMeter.sampleRate, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.meter.hear(rms: self.level())
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        sampler = timer
-    }
-
     /// Where the body is on screen, or where it would be, so the agent's card can sit just above it.
     func anchor() -> (frame: NSRect, edge: BarEdge) {
         if bodyPanel.isVisible { return (capsuleFrame, edge) }
@@ -306,59 +288,6 @@ private final class BarHostingView: NSHostingView<AnyView> {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-}
-
-/// The voice as the bar draws it: the microphone level, smoothed, with the last two seconds kept. Views read it with
-/// the time they are drawing for, and it moves its own clock up to that time, so every dot is continuous.
-/// Not observable: the views run on a timeline and look at it each frame.
-@MainActor final class VoiceMeter {
-    nonisolated static let sampleRate = 60.0
-    /// Kept across dictations, so the next one starts already scaled to the speaker and the room.
-    private var loudness = AutoLevel(rate: sampleRate)
-    private var envelope = LevelEnvelope()
-    /// The same voice smoothed once more, which lights the halo.
-    private var glow = LevelEnvelope(stages: LevelEnvelope.glow)
-    /// Set by --render-bar: the time every view draws for, and the envelope stays as `freeze` left it.
-    private(set) var frozenAt: Double?
-
-    func reset() {
-        guard frozenAt == nil else { return }
-        envelope.reset()
-        glow.reset()
-    }
-
-    /// The RMS of the newest audio, scaled to the voice and the room.
-    func hear(rms: Float) { follow(loudness.fraction(rms: rms)) }
-
-    func follow(_ fraction: Float) {
-        guard frozenAt == nil else { return }
-        envelope.follow(fraction)
-        glow.follow(fraction)
-    }
-
-    func freeze(at time: Double, profile: (Double) -> Float) {
-        frozenAt = time
-        envelope = LevelEnvelope(filling: profile)
-        glow = LevelEnvelope(stages: LevelEnvelope.glow, filling: profile)
-    }
-
-    func reading(at time: Double) -> VoiceReading {
-        if frozenAt == nil {
-            envelope.advance(to: time)
-            glow.advance(to: time)
-        }
-        return VoiceReading(envelope: envelope, glow: glow, time: frozenAt == nil ? time : envelope.clock ?? 0)
-    }
-}
-
-struct VoiceReading {
-    fileprivate let envelope: LevelEnvelope
-    fileprivate let glow: LevelEnvelope
-    fileprivate let time: Double
-
-    func level(delay: Double) -> Double { Double(envelope.level(delay: delay, at: time)) }
-    /// The level the halo glows with, `delay` seconds ago.
-    func glow(delay: Double) -> Double { Double(glow.level(delay: delay, at: time)) }
 }
 
 /// Sizes shared by the views and the layout.
@@ -754,17 +683,16 @@ private struct WaveView: View {
         let travelled = reduceMotion ? 0 : meter.frozenAt != nil ? time : travel.step(at: time, pace: LightWave.pace(level: now * liveness))
         let width = size.width, mid = size.height / 2
 
-        let steps = Int(width / 2)
-        let swell = (0...steps).map { index -> Double in
-            let along = Double(index) / Double(steps)
-            let voice = reduceMotion ? LightWave.restingAmplitude : LightWave.amplitude(level: reading.level(delay: LightWave.delay(along: along)))
-            return LightWave.finishingAmplitude + (voice - LightWave.finishingAmplitude) * liveness
-        }
+        // One point every two points across, built straight into each wave's path: no arrays per frame. Each wave
+        // swells with its own band of the voice, a little ahead of the ends, which hear it later.
+        let columns = Self.columns
         let paths = LightWave.strands.map { strand in
             var path = Path()
-            for index in 0...steps {
-                let along = Double(index) / Double(steps)
-                let point = CGPoint(x: along * width, y: mid - LightWave.offset(strand, along: along, travel: travelled, amplitude: swell[index]))
+            for (index, column) in columns.enumerated() {
+                let voice = reduceMotion ? LightWave.restingAmplitude : LightWave.amplitude(level: LightWave.level(
+                    overall: reading.level(delay: column.delay), band: reading.band(strand.band, delay: column.delay)))
+                let swell = LightWave.finishingAmplitude + (voice - LightWave.finishingAmplitude) * liveness
+                let point = CGPoint(x: column.along * width, y: mid - LightWave.offset(strand, column: column, travel: travelled, amplitude: swell))
                 if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
             }
             return path
@@ -782,6 +710,9 @@ private struct WaveView: View {
             context.stroke(path, with: shading(strand, 0.9, width: width), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
         }
     }
+
+    /// The points the waves are drawn at, which never change.
+    private static let columns = LightWave.columns(steps: Int(LightWave.width / 2))
 
     /// A wave's colour, faded in from each end.
     private func shading(_ strand: LightWave.Strand, _ opacity: Double, width: CGFloat) -> GraphicsContext.Shading {

@@ -177,8 +177,8 @@ struct ServerVoiceProvider: VoiceProvider {
     var onStarted: ((String) -> Void)? { get set }
     /// Everything queued has played.
     var onIdle: (() -> Void)? { get set }
-    /// The level of what is playing, 0 to 1 on the microphone's RMS scale, for the bar.
-    var level: Float { get }
+    /// What is playing, measured for the bar's waves. Nil when nothing is.
+    var voice: VoiceTap? { get }
     var isPlaying: Bool { get }
     func start() throws
     func play(_ clip: VoiceClip, caption: String)
@@ -198,10 +198,10 @@ struct ServerVoiceProvider: VoiceProvider {
     private var queue: [String] = []
     private var generation = 0
     private var observer: (any NSObjectProtocol)?
-    private let meter = PlayingLevel()
+    private let meter = VoiceTap(chunkLatency: 0.06)
     private let log = Logger(subsystem: "com.hunterbohm.dictation", category: "talk")
 
-    var level: Float { isPlaying ? meter.value : 0 }
+    var voice: VoiceTap? { meter }
     var isPlaying: Bool { !queue.isEmpty }
 
     func start() throws {
@@ -209,7 +209,7 @@ struct ServerVoiceProvider: VoiceProvider {
         let engine = AVAudioEngine(), player = AVAudioPlayerNode()
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil, block: meter.tapBlock())
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil, block: meter.outputTapBlock())
         engine.prepare()
         try engine.start()
         player.play()
@@ -264,7 +264,6 @@ struct ServerVoiceProvider: VoiceProvider {
         generation += 1
         let wasPlaying = !queue.isEmpty
         queue = []
-        meter.value = 0
         if wasPlaying { onIdle?() }
     }
 
@@ -305,26 +304,6 @@ struct ServerVoiceProvider: VoiceProvider {
     }
 }
 
-/// The level of what plays, written on the audio thread and read on main.
-private final class PlayingLevel: Sendable {
-    private let level = Mutex<Float>(0)
-    var value: Float {
-        get { level.withLock { $0 } }
-        set { level.withLock { $0 = newValue } }
-    }
-
-    /// Formed here rather than in SpeakerOut, because a closure formed inside a main-actor method is inferred main-actor
-    /// and traps when the audio thread calls it.
-    func tapBlock() -> AVAudioNodeTapBlock {
-        { [self] buffer, _ in
-            guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
-            var sum: Float = 0
-            for index in 0..<Int(buffer.frameLength) { sum += channel[index] * channel[index] }
-            value = (sum / Float(buffer.frameLength)).squareRoot()
-        }
-    }
-}
-
 /// Plays nothing, but takes each clip's real length, so the end-to-end test's turns time like a real talk. Keeps what
 /// it was given, to write out as a WAV.
 @MainActor final class SilentSpeaker: TalkSpeaker {
@@ -335,7 +314,7 @@ private final class PlayingLevel: Sendable {
     private(set) var recorded: [Float] = []
     private(set) var recordedRate = 24_000.0
 
-    var level: Float { isPlaying ? 0.1 : 0 }
+    var voice: VoiceTap? { nil }
     var isPlaying: Bool { !queue.isEmpty }
 
     func start() throws {}

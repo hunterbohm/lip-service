@@ -5,7 +5,7 @@ private func run(_ envelope: inout LevelEnvelope, from start: Double, seconds: D
     envelope.follow(target)
     let end = start + seconds
     var time = start
-    while time < end { time += 1.0 / 60; envelope.advance(to: time) }
+    while time < end - 1e-9 { time += 1.0 / 120; envelope.advance(to: time) }
     return time
 }
 

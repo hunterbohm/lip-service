@@ -152,6 +152,11 @@ import DictationCore
     nonisolated private static func speaking(_ age: Double) -> Float {
         Float(min(max(0.45 + 0.4 * cos(age * 10) * exp(-age * 0.7), 0), 1))
     }
+    /// The same speech as heard in each band, a little apart, so the three waves are not the same shape.
+    nonisolated private static func speakingBand(_ band: Int, _ age: Double) -> Float {
+        let shift = [0.0, 0.11, 0.23][band], scale = [1.0, 0.85, 0.6][band]
+        return Float(min(max(scale * Double(speaking(age + shift)), 0), 1))
+    }
     private static let frozenAt = 0.9
     private static let short = "Teo Yep, I'll share the latest version in a few minutes"
     private static let long = "Okay so the plan for Friday is to ship the new onboarding flow to everyone, then check the "
@@ -201,7 +206,7 @@ import DictationCore
             FileHandle.standardError.write(Data("cannot create \(directory.path): \(error.localizedDescription)\n".utf8))
             return 1
         }
-        let bar = Bar(level: { 0 }, area: { _ in stage })
+        let bar = Bar(voice: { nil }, area: { _ in stage })
         let cards = CardPanel()
         let talkCards = TalkCardPanel()
         let island = TalkIslandPanel()
@@ -211,7 +216,7 @@ import DictationCore
         for scene in scenes + agentScenes + talkScenes {
             bar.render(BarState(body: .hidden), edge: scene.edge)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-            bar.meter.freeze(at: frozenAt, profile: scene.quiet ? { _ in 0 } : speaking)
+            if scene.quiet { bar.meter.freeze(at: frozenAt, profile: { _ in 0 }) } else { bar.meter.freeze(at: frozenAt, profile: speaking, band: speakingBand) }
             bar.render(scene.state, edge: scene.edge)
             bar.showOutlines(nearest: scene.dragNearest)
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
