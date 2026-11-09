@@ -557,11 +557,12 @@ enum TalkEnd: Equatable {
 
     /// Shows each step in turn, each up long enough to read.
     private func showStep(title: String, kind: String?, call: String?, turn current: Int) {
-        let before = steps.shown
+        let showing = bar.phase == .thinking && bar.activity != nil && bar.activity == steps.shown
         steps.offer(ToolLine.phrase(title: title, kind: kind), app: ToolLine.app(title: title, kind: kind), call: call)
         // A call that said more about itself changed the step on show.
-        if let before, bar.phase == .thinking, bar.activity == before, let now = steps.shown { bar.activity = now }
-        refreshBar()
+        var next = bar
+        if showing { next.activity = steps.shown }
+        bar = next
         drainSteps(turn: current)
     }
 
