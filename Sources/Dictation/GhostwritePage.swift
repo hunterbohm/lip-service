@@ -321,10 +321,13 @@ private struct LiveTalkSection: View {
                     .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
             case .connecting:
                 Text("Connecting to T3 Code…").font(.system(size: 14)).foregroundStyle(Theme.secondary)
-            case .failed(let reason):
-                Text(reason).font(.system(size: 13)).foregroundStyle(Theme.amber)
-            case .unknown, .notConnected:
-                Text("Connect T3 Code so \(agent.name) can start threads for you").font(.system(size: 14))
+            case .unknown, .notConnected, .failed:
+                if case .failed(let reason) = state {
+                    // Under the error, so a wrong or expired code can be replaced at once.
+                    Text(reason).font(.system(size: 13)).foregroundStyle(Theme.amber)
+                } else {
+                    Text("Connect T3 Code so \(agent.name) can start threads for you").font(.system(size: 14))
+                }
                 Text("Make a pairing code in T3 Code (Settings, Connections), paste it here and press Connect T3 Code.")
                     .font(.system(size: 12.5)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {

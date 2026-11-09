@@ -302,7 +302,9 @@ actor ACPClient {
         let session: SessionInfo
         if let info { session = info } else { session = try await client.newSession(cwd: cwd) }
         remember(session, for: agent.id)
-        for choice in agent.talkOptions {
+        // The extras' options were set with the tools, and a saved option must not undo them, such as a saved mode=auto
+        // that would let a thread start with no question.
+        for choice in ConfigChoice.sparing(info == nil ? [] : extras?.options ?? [], from: agent.talkOptions) {
             do { try await client.set(choice, session: session.id) } catch {
                 log.error("\(agent.name, privacy: .public) turned down a live-talk option: \(error.localizedDescription, privacy: .public)")
             }

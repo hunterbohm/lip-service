@@ -6,6 +6,20 @@ import Foundation
 public enum ConfigChoice: Equatable, Hashable, Codable, Sendable {
     case option(id: String, value: String)
     case model(String)
+
+    /// `options` without any that would change a setting `required` sets, so a saved choice can never undo one the
+    /// session needs, such as the mode that makes starting a T3 Code thread ask first.
+    public static func sparing(_ required: [ConfigChoice], from options: [ConfigChoice]) -> [ConfigChoice] {
+        options.filter { option in !required.contains { $0.sets(sameSettingAs: option) } }
+    }
+
+    private func sets(sameSettingAs other: ConfigChoice) -> Bool {
+        switch (self, other) {
+        case (.option(let a, _), .option(let b, _)): a == b
+        case (.model, .model): true
+        default: false
+        }
+    }
 }
 
 /// The agents Lip Service knows how to start. A table, so adding one is a row.
