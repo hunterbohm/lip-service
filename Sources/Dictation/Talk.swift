@@ -110,6 +110,8 @@ struct TalkOpening {
 enum TalkEnd: Equatable {
     case byYou
     case goodbye
+    /// The agent said it will call back and started the job: nothing is left to wait for on the line.
+    case callBack
     case quiet
     case failed(String)
 }
@@ -176,6 +178,8 @@ enum TalkEnd: Equatable {
     private var workingSince: Instant?
     /// Tool calls that set up a call back, until they finish and the island can say so.
     private var promised: Set<String> = []
+    /// This turn's reply set up a call back, so the talk hangs up once the reply has played.
+    private var callingBack = false
     private var choosing: Task<Void, Never>?
     private var clock: TurnClock?
     private var report: TalkTurnReport?
@@ -507,7 +511,7 @@ enum TalkEnd: Equatable {
         turn += 1
         let current = turn
         (steps, stepTimer) = (StepQueue(), stepTimer.map { $0.cancel(); return nil } ?? nil)
-        (workingSince, promised) = (.now, [])
+        (workingSince, promised, callingBack) = (.now, [], false)
         if carriesOpening {
             // The opening goes on in a new session, or you said something before the agent answered it: you are on
             // the line and the agent has the result, so that counts as said.
@@ -613,6 +617,7 @@ enum TalkEnd: Equatable {
     private func notePromise(title: String, status: String?, kind: String?, id: String?) {
         let over = status == "completed" || status == "failed"
         if ToolLine.promisesCallBack(title: title, kind: kind) {
+            callingBack = true
             if let id { promised.insert(id) } else if !over { onCard?(.callBackPromised(agent: agent.name)) }
         }
         guard over, let id, promised.remove(id) != nil, status == "completed" else { return }
@@ -757,6 +762,15 @@ enum TalkEnd: Equatable {
         onTurn?(finished)
         if openingTurn == turn { openingDone(finished.failed == nil && openingHeard) }
         ear.agentDone(at: .now)
+        if callingBack {
+            // It said it will call back, and the job runs without the talk: hang up, after a breath.
+            bar = TalkBar(agent: bar.agent, phase: .listening, activity: "Calling back when it's done")
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(700))
+                self?.end(.callBack)
+            }
+            return
+        }
         bar = TalkBar(agent: bar.agent, phase: .listening)
         onListening?()
     }

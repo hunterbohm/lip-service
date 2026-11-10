@@ -374,6 +374,8 @@ private struct IslandView: View {
             .frame(width: side, alignment: .trailing)
         }
         .frame(height: CGFloat(screen.barHeight))
+        // Open, the round top corners come close to the globe, so the header sits a little lower.
+        .padding(.top, open ? 6 : 0)
         .animation(.easeOut(duration: 0.25), value: model.keepsNotices)
     }
 

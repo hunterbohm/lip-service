@@ -219,23 +219,23 @@ public enum ToolLine {
         ("email", "Checking your email"), ("mail", "Checking your email"), ("inbox", "Checking your email"),
         ("session_search", "Searching your past talks"), ("memory", "Checking what it remembers"), ("remember", "Checking what it remembers"),
         ("weather", "Checking the weather"),
-        ("web_search", "Searching the web"), ("web search", "Searching the web"), ("search the web", "Searching the web"),
-        ("browser", "Using the browser"), ("browse", "Using the browser"), ("fetch", "Looking at a web page"), ("web", "Searching the web"),
+        ("web_search", "Digging around"), ("web search", "Digging around"), ("search the web", "Digging around"),
+        ("browser", "Clicking through pages"), ("browse", "Clicking through pages"), ("fetch", "Doing some reading"), ("web", "Digging around"),
         ("send", "Sending that"), ("message", "Checking your messages"), ("slack", "Checking Slack"),
         ("notion", "Checking Notion"), ("github", "Checking GitHub"), ("linear", "Checking Linear"), ("stripe", "Checking Stripe"),
         ("cron", "Managing scheduled jobs"), ("schedule", "Managing scheduled jobs"),
-        ("delegat", "Asking a helper"), ("agent", "Asking a helper"), ("vision", "Looking at an image"), ("image", "Working on an image"),
+        ("delegat", "Checking with another agent"), ("agent", "Checking with another agent"), ("vision", "Looking at an image"), ("image", "Working on an image"),
         ("todo", "Updating the to-do list"), ("task", "Checking your tasks"),
-        ("skills_list", "Looking through its skills"), ("skill_manage", "Updating a skill"), ("skill", "Loading a skill"),
-        ("search", "Searching"), ("grep", "Searching"), ("find", "Searching"),
-        ("read", "Reading a file"), ("write", "Writing a file"), ("edit", "Making an edit"), ("patch", "Making an edit"),
-        ("terminal", "Running a command"), ("bash", "Running a command"), ("shell", "Running a command"), ("execute", "Running a command"),
-        ("code_execution", "Running some code"), ("python", "Running some code"),
+        ("skills_list", "Thinking it through"), ("skill_manage", "Updating a skill"), ("skill", "Thinking it through"),
+        ("search", "Digging around"), ("grep", "Digging around"), ("find", "Digging around"),
+        ("read", "Doing some reading"), ("write", "Jotting it down"), ("edit", "Making some edits"), ("patch", "Making some edits"),
+        ("terminal", "Running a few commands"), ("bash", "Running a few commands"), ("shell", "Running a few commands"), ("execute", "Running a few commands"),
+        ("code_execution", "Running a few commands"), ("python", "Running a few commands"),
     ]
 
     private static let byKind: [String: String] = [
-        "read": "Reading a file", "edit": "Making an edit", "delete": "Deleting a file", "move": "Moving files", "search": "Searching",
-        "execute": "Running a command", "think": "Thinking it over", "fetch": "Looking at a web page", "switch_mode": "Changing modes",
+        "read": "Doing some reading", "edit": "Making some edits", "delete": "Deleting a file", "move": "Moving files over", "search": "Digging around",
+        "execute": "Running a few commands", "think": "Thinking it through", "fetch": "Doing some reading", "switch_mode": "Changing modes",
     ]
 
     /// Apps a command or tool can be checking, by a word it uses, their names, and the app whose icon stands for them.
@@ -249,6 +249,8 @@ public enum ToolLine {
     /// The phrase for a permission the agent asks for. The kind decides it when the agent gives one, so a title that
     /// sounds harmless can't dress up a command or a deletion as something else.
     public static func permissionPhrase(title: String, kind: String?) -> String {
+        // A question needs the exact thing it asks about, not a status line's loose words.
+        if kind == "execute" { return "Running a command" }
         if let kind, let phrase = byKind[kind] { return phrase }
         return generic(title: title, kind: nil)
     }
@@ -266,13 +268,16 @@ public enum ToolLine {
         let name = title.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == ":" || $0 == "(" }).prefix(2).joined(separator: " ")
         if let match = byTitle.first(where: { name.contains($0.0) }) { return match.1 }
         if let kind, let phrase = byKind[kind] { return phrase }
-        return "Working on it"
+        return "Chipping away"
     }
 
     /// The SF Symbol the island shows beside a line, from its first words.
     public static func symbol(_ line: String) -> String {
         let rules: [(String, String)] = [
-            ("Running some code", "chevron.left.forwardslash.chevron.right"), ("Running", "terminal"),
+            ("Running", "terminal"), ("Digging around", "magnifyingglass"), ("Doing some reading", "doc.text"),
+            ("Jotting it down", "square.and.pencil"), ("Making some edits", "pencil"), ("Clicking through pages", "safari"),
+            ("Checking with another agent", "person.2"), ("Checking your notes", "note.text"), ("Thinking back", "clock.arrow.circlepath"),
+            ("Checking GitHub", "chevron.left.forwardslash.chevron.right"),
             ("Setting up a call back", "phone.arrow.up.right"), ("Calling you back", "phone"),
             ("Loading", "book.closed"), ("Looking through its skills", "books.vertical"), ("Updating a skill", "book.closed"),
             ("Checking Gmail", "envelope"), ("Checking your email", "envelope"), ("Checking your calendar", "calendar"),
@@ -313,23 +318,23 @@ public enum ToolLine {
         case "terminal", "bash", "shell", "execute", "run_command":
             return command(preview)
         case "skill_view", "skill":
-            return skillName(preview).map { "Loading \($0) skill" }
+            return "Thinking it through"
         case "read_file", "read":
-            return fileName(preview).map { "Reading \($0)" }
+            return preview.lowercased().contains("/vault/") ? "Checking your notes" : "Doing some reading"
         case "write_file", "write":
-            return fileName(preview).map { "Writing \($0)" }
+            return "Jotting it down"
         case "patch", "edit":
-            return fileName(preview).map { "Editing \($0)" }
-        case "web_search":
-            return words(preview, most: 4).map { "Searching the web for \($0)" }
-        case "search_files", "grep":
-            return words(preview, most: 3).map { "Searching files for \($0)" }
+            return "Making some edits"
+        case "web_search", "search_files", "grep":
+            return "Digging around"
         case "web_extract", "fetch":
-            return host(preview).map { "Reading \($0)" }
+            return "Doing some reading"
         case let name where name.hasPrefix("browser"):
-            return host(preview).map { "Opening \($0)" } ?? "Using the browser"
+            return "Clicking through pages"
         case "execute_code":
-            return "Running some code"
+            return "Running a few commands"
+        case "delegate_task":
+            return "Checking with another agent"
         case "tool_call":
             // Hermes's tool bridge names what it does in a word or two: "Scheduling".
             return words(preview, most: 3).map { $0.prefix(1).uppercased() + $0.dropFirst() }
@@ -340,26 +345,28 @@ public enum ToolLine {
         }
     }
 
-    /// "Running t3-run status": the program, and its subcommand when it has one. An app it checks, such as Gmail, says
-    /// that instead, and so does a call back it sets up.
+    /// What a command is for, in plain words, as Grok Bot's status line says it: never the command itself. An app it
+    /// checks, such as Gmail, is named, and so is a call back it sets up; anything else is "Running a few commands".
     static func command(_ text: String) -> String? {
         let tokens = commandTokens(text)
         guard let first = tokens.first else { return nil }
-        let program = String(first.split(separator: "/").last ?? "")
-        guard isWord(program) else { return "Running a command" }
+        let program = String(first.split(separator: "/").last ?? "").lowercased()
         if program == "call-me-back" { return tokens.dropFirst().first == "done" ? "Calling you back" : "Setting up a call back" }
         if let service = service(tokens) { return "Checking \(service.name)" }
-        let interpreters: Set<String> = ["python", "python3", "node", "bun", "deno", "ruby", "perl", "bash", "sh", "zsh", "osascript", "swift"]
-        if interpreters.contains(program.lowercased()) {
-            guard let script = tokens.dropFirst().first(where: { !$0.hasPrefix("-") }), script.contains(".") || script.contains("/"),
-                  let name = fileName(script) else { return program.lowercased().hasPrefix("python") ? "Running some code" : "Running \(program)" }
-            return "Running \(name)"
-        }
-        if let sub = tokens.dropFirst().first, isWord(sub), sub.first?.isLetter == true, sub == sub.lowercased(), !sub.contains(".") {
-            return "Running \(program) \(sub)"
-        }
-        return "Running \(program)"
+        if program == "hermes" { return tokens.dropFirst().first == "send" ? "Sending you a message" : "Checking with another agent" }
+        if let line = byProgram[program] { return line }
+        return "Running a few commands"
     }
+
+    /// Programs that stand for something Hunter knows, and what using them is.
+    private static let byProgram: [String: String] = [
+        "t3-run": "Checking T3 Code", "t3": "Checking T3 Code", "gh": "Checking GitHub",
+        "obsidian": "Checking your notes", "obsidian-cli": "Checking your notes", "stripe": "Checking Stripe",
+        "stripe-invoices": "Checking Stripe", "kb": "Thinking back", "curl": "Doing some reading", "ssh": "Running a few commands",
+    ]
+
+    /// What a step says when the one before it said the same, so a run of commands reads as progress, not a stutter.
+    public static let progress = ["Chipping away", "Making progress", "Getting it done"]
 
     /// A command's words from its program on: `cd somewhere &&` and wrappers like `sudo`, `timeout 60`, `infisical run --`
     /// and `KEY=value` are skipped.
@@ -494,6 +501,8 @@ public struct StepQueue: Sendable {
     public private(set) var trail: [TalkStep] = []
     private var waiting: [TalkStep] = []
     private var count = 0
+    /// The words of the last new step, before any were swapped for progress.
+    private var lastOffered: String?
 
     public init() {}
 
@@ -522,6 +531,14 @@ public struct StepQueue: Sendable {
             return
         }
         count += 1
+        var line = line
+        // A new call in the same words as the last says progress instead, each in turn, so the trail doesn't stutter.
+        if line == lastOffered {
+            let shown = (waiting.last ?? step)?.line ?? ""
+            line = ToolLine.progress[ToolLine.progress.firstIndex(of: shown).map { ($0 + 1) % ToolLine.progress.count } ?? 0]
+        } else {
+            lastOffered = line
+        }
         waiting.append(TalkStep(line: line, app: app, call: call, id: count))
         if waiting.count > Self.most { waiting.removeFirst(waiting.count - Self.most) }
     }

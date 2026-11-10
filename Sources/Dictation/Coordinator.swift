@@ -251,7 +251,7 @@ import os
             if preferences.current.settings.sounds { sounds.play(talk: .end) }
             switch reason {
             case .failed(let why): show(.talkFailed(why))
-            case .quiet, .goodbye, .byYou: render()
+            case .quiet, .goodbye, .byYou, .callBack: render()
             }
         }
         stopPreviews()

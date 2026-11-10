@@ -336,47 +336,47 @@ import Testing
 
     @Test func toolsGetPlainLinesWithoutTheirArguments() {
         #expect(ToolLine.phrase(title: "google_calendar_list_events", kind: "fetch") == "Checking your calendar")
-        // A command shows its program and subcommand, never the quoted text after it.
-        #expect(ToolLine.phrase(title: "terminal: hermes send -t photon \"call mom about the gmail thing\"", kind: "execute") == "Running hermes send")
-        #expect(ToolLine.phrase(title: "Read ~/.ssh/id_ed25519", kind: "read") == "Reading id_ed25519")
-        #expect(ToolLine.phrase(title: "zz", kind: "search") == "Searching")
-        #expect(ToolLine.phrase(title: "", kind: nil) == "Working on it")
+        // A step says what it is for in plain words, as Grok Bot's status line does: never a command, file or host.
+        #expect(ToolLine.phrase(title: "terminal: hermes send -t photon \"call mom about the gmail thing\"", kind: "execute") == "Sending you a message")
+        #expect(ToolLine.phrase(title: "Read ~/.ssh/id_ed25519", kind: "read") == "Doing some reading")
+        #expect(ToolLine.phrase(title: "zz", kind: "search") == "Digging around")
+        #expect(ToolLine.phrase(title: "", kind: nil) == "Chipping away")
     }
 
     @Test func toolLinesSayWhatTheAgentIsDoing() {
         let lines: [(String, String?, String)] = [
-            ("terminal: t3-run status 1a7431fb-4f9e-45ec-a8f2-200f1da", "execute", "Running t3-run status"),
+            ("terminal: t3-run status 1a7431fb-4f9e-45ec-a8f2-200f1da", "execute", "Checking T3 Code"),
             ("terminal: ~/bin/gog --account hunterbohm8@gmail.com gmail search 'from:x' --max 5", "execute", "Checking Gmail"),
-            ("terminal: python3 skills/custom-skills/meet/prep.py --a", "execute", "Running prep.py"),
-            ("terminal: python3 - <<'EOF' print(1) EOF", "execute", "Running some code"),
-            ("terminal: K=$(cat ~/.config/cli-gateway/management.key) curl -s -H \"x: $K\" http://x", "execute", "Running a command"),
-            ("terminal: OPENAI_API_KEY=sk-abc123 infisical run --env=prod -- git push origin main", "execute", "Running git push"),
-            ("terminal: timeout 60 hermes cron list", "execute", "Running hermes cron"),
-            ("terminal: git commit -m 'fix the gmail bug'", "execute", "Running git commit"),
-            ("terminal: ghp_abcdefghijklmnop1234567890 --x", "execute", "Running a command"),
-            ("`cd ~/code && git status`", "execute", "Running git status"),
-            ("skill_view: productivity/media-request", "read", "Loading media-request skill"),
-            ("skill_view: obsidian → references/tasks.md", nil, "Loading obsidian skill"),
-            ("skill_view", nil, "Loading a skill"),
-            ("read_file: plan.md", "read", "Reading plan.md"),
-            ("write_file: /tmp/a/notes.md", "edit", "Writing notes.md"),
-            ("web_search: cheap flights to denver friday morning", "fetch", "Searching the web for cheap flights to denver…"),
-            ("search_files: 'demo-password'", "search", "Searching"),
-            ("web_search: don't share this", "fetch", "Searching the web"),
-            ("web_search: cheap flights to denver \"private\"", "fetch", "Searching the web"),
-            ("web_extract: https://www.example.com/a?b=c", "fetch", "Reading example.com"),
-            ("browser_navigate: https://mail.google.com/mail/u/0", nil, "Opening mail.google.com"),
-            ("browser_exec", nil, "Using the browser"),
+            ("terminal: python3 skills/custom-skills/meet/prep.py --a", "execute", "Running a few commands"),
+            ("terminal: python3 - <<'EOF' print(1) EOF", "execute", "Running a few commands"),
+            ("terminal: K=$(cat ~/.config/cli-gateway/management.key) curl -s -H \"x: $K\" http://x", "execute", "Running a few commands"),
+            ("terminal: OPENAI_API_KEY=sk-abc123 infisical run --env=prod -- git push origin main", "execute", "Running a few commands"),
+            ("terminal: timeout 60 hermes cron list", "execute", "Checking with another agent"),
+            ("terminal: git commit -m 'fix the gmail bug'", "execute", "Running a few commands"),
+            ("terminal: ghp_abcdefghijklmnop1234567890 --x", "execute", "Running a few commands"),
+            ("`cd ~/code && git status`", "execute", "Running a few commands"),
+            ("skill_view: productivity/media-request", "read", "Thinking it through"),
+            ("skill_view: obsidian → references/tasks.md", nil, "Thinking it through"),
+            ("skill_view", nil, "Thinking it through"),
+            ("read_file: plan.md", "read", "Doing some reading"),
+            ("write_file: /tmp/a/notes.md", "edit", "Jotting it down"),
+            ("web_search: cheap flights to denver friday morning", "fetch", "Digging around"),
+            ("search_files: 'demo-password'", "search", "Digging around"),
+            ("web_search: don't share this", "fetch", "Digging around"),
+            ("web_search: cheap flights to denver \"private\"", "fetch", "Digging around"),
+            ("web_extract: https://www.example.com/a?b=c", "fetch", "Doing some reading"),
+            ("browser_navigate: https://mail.google.com/mail/u/0", nil, "Clicking through pages"),
+            ("browser_exec", nil, "Clicking through pages"),
             ("tool_call: Scheduling", nil, "Scheduling"),
             ("cronjob_manage: create", nil, "Managing scheduled jobs"),
-            ("delegate_task: Research flights", nil, "Asking a helper"),
+            ("delegate_task: Research flights", nil, "Checking with another agent"),
             ("google_calendar_list_events", "fetch", "Checking your calendar"),
         ]
         for (title, kind, line) in lines { #expect(ToolLine.phrase(title: title, kind: kind) == line, "\(title)") }
         // Short enough for the island, whatever the agent sends.
         #expect(ToolLine.phrase(title: "terminal: " + String(repeating: "a", count: 39) + " status", kind: "execute").count <= ToolLine.longest)
-        #expect(ToolLine.symbol("Running t3-run status") == "terminal")
-        #expect(ToolLine.symbol("Loading media-request skill") == "book.closed")
+        #expect(ToolLine.symbol("Running a few commands") == "terminal")
+        #expect(ToolLine.symbol("Digging around") == "magnifyingglass")
         #expect(ToolLine.symbol("Checking Gmail") == "envelope")
         #expect(ToolLine.symbol("Something new") == "sparkle")
     }
@@ -430,12 +430,12 @@ import Testing
 
     @Test func atMostOneToolLineEveryFewSeconds() {
         var announcer = ToolAnnouncer()
-        #expect(announcer.announce(id: "a", title: "web_search", kind: nil, at: Instant(seconds: 0)) == "Searching the web")
+        #expect(announcer.announce(id: "a", title: "web_search", kind: nil, at: Instant(seconds: 0)) == "Digging around")
         #expect(announcer.announce(id: "a", title: "web_search", kind: nil, at: Instant(seconds: 5)) == nil)
         #expect(announcer.announce(id: "b", title: "read_file", kind: nil, at: Instant(seconds: 2)) == nil)
-        #expect(announcer.announce(id: "c", title: "read_file", kind: nil, at: Instant(seconds: 6)) == "Reading a file")
+        #expect(announcer.announce(id: "c", title: "read_file", kind: nil, at: Instant(seconds: 6)) == "Doing some reading")
         #expect(announcer.announce(id: "d", title: "read_file", kind: nil, at: Instant(seconds: 11)) == nil)
-        #expect(announcer.announce(id: "e", title: "read_file", kind: nil, at: Instant(seconds: 19)) == "Reading a file")
+        #expect(announcer.announce(id: "e", title: "read_file", kind: nil, at: Instant(seconds: 19)) == "Doing some reading")
     }
 
     @Test func eachTurnCarriesTheNoteAndTheAgentsExtra() {
@@ -467,6 +467,15 @@ import Testing
         let agent = try JSONDecoder().decode(AgentConnection.self, from: Data(old.utf8))
         #expect(agent.talkOptions == [.option(id: "model", value: "anthropic:claude-opus-5-5"), .option(id: "reasoning_effort", value: "low")])
         #expect(agent.talkNote.contains("hermes send -t photon"))
+        // It says how to call back without a skill, and a Hermes saved with the earlier note gets this one.
+        #expect(agent.talkNote.contains("call-me-back run --about"))
+        #expect(agent.talkNote.contains("don't load a skill"))
+        var saved = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(agent)) as! [String: Any]
+        saved["talkNote"] = AgentPreset.formerTalkNotes["hermes"]!.first!
+        let reloaded = try! JSONDecoder().decode(AgentConnection.self, from: JSONSerialization.data(withJSONObject: saved))
+        #expect(reloaded.talkNote == AgentPreset.hermesTalkNote)
+        saved["talkNote"] = "My own note."
+        #expect(try! JSONDecoder().decode(AgentConnection.self, from: JSONSerialization.data(withJSONObject: saved)).talkNote == "My own note.")
         #expect(agent.remoteHost == "mini")
         var changed = agent
         changed.talkOptions = []
@@ -532,17 +541,21 @@ import Testing
 @Suite("Live talk bar") struct TalkBarTests {
     private let hermes = BarAgent(initial: "H", name: "Hermes")
 
-    @Test func mutedShowsWhileTheTurnIsYours() {
+    @Test func mutedShowsAllThroughTheTalk() {
         let muted = TalkBar(agent: hermes, phase: .listening, muted: true)
         #expect(muted.status == "Muted")
         #expect(TalkIsland.headline(muted) == "Muted")
         #expect(TalkIsland.ear(muted) == .muted)
         #expect(TalkIsland.mood(muted) == .muted)
-        // The agent's turn shows as usual: its voice still plays while you are muted.
+        // While the agent works or speaks the globe stays red, so the shortcut always shows it took. Its voice still plays,
+        // so the ear shows that while it speaks.
         let speaking = TalkBar(agent: hermes, phase: .speaking, line: "Two meetings.", muted: true)
         #expect(TalkIsland.ear(speaking) == .voice(agent: true))
-        #expect(TalkIsland.mood(speaking) == .speaking)
-        #expect(TalkIsland.ear(TalkBar(agent: hermes, phase: .thinking, muted: true)) == .working)
+        #expect(TalkIsland.mood(speaking) == .muted)
+        let thinking = TalkBar(agent: hermes, phase: .thinking, muted: true)
+        #expect(TalkIsland.mood(thinking) == .muted)
+        #expect(TalkIsland.ear(thinking) == .muted)
+        #expect(TalkIsland.mood(TalkBar(agent: hermes, phase: .connecting, muted: true)) == .connecting)
         #expect(TalkIsland.ear(TalkBar(agent: hermes, phase: .listening)) == .voice(agent: false))
     }
 
@@ -615,7 +628,7 @@ import Testing
         #expect(TalkIsland.compactWidth(.plain) == 132 + 2 * 62)
         #expect(TalkIsland.compactWidth(.plain) > 220 && TalkIsland.Screen.plain.barHeight > 40)
         // The globe fits the header with black around it as it floats, under a notch too.
-        for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 7) }
+        for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 10) }
         #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))
         #expect(TalkIsland.openWidth(TalkIsland.Screen(hasNotch: true, notchWidth: 900, barHeight: 32)) == TalkIsland.widest)
     }

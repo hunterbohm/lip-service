@@ -189,7 +189,8 @@ extension ToolLine {
         "Making": "Made", "Sending": "Sent", "Using": "Used", "Asking": "Asked", "Updating": "Updated", "Managing": "Managed",
         "Working": "Worked", "Thinking": "Thought", "Deleting": "Deleted", "Moving": "Moved", "Changing": "Changed",
         "Calling": "Called", "Scheduling": "Scheduled", "Setting": "Set", "Creating": "Created", "Adding": "Added",
-        "Saving": "Saved", "Fetching": "Fetched",
+        "Saving": "Saved", "Fetching": "Fetched", "Digging": "Dug", "Doing": "Did", "Jotting": "Jotted", "Clicking": "Clicked",
+        "Chipping": "Chipped", "Getting": "Got",
     ]
 
     /// A step's line once the step is over: "Checking Gmail" becomes "Checked Gmail". A line that starts with a word this
@@ -208,6 +209,11 @@ extension ToolLine {
         "Working on it": "Working", "Running some code": "Code", "Running a command": "Command", "Calling you back": "Calling back",
         "Sending that": "Sending", "Looking through its skills": "Skills", "Using the browser": "Browser",
         "Looking at a web page": "Web page", "Searching": "Searching", "Thinking": "Thinking",
+        "Running a few commands": "Commands", "Digging around": "Digging", "Doing some reading": "Reading",
+        "Jotting it down": "Notes", "Making some edits": "Edits", "Clicking through pages": "Browsing",
+        "Checking with another agent": "Agent", "Thinking it through": "Thinking", "Chipping away": "Working",
+        "Making progress": "Working", "Getting it done": "Working", "Thinking back": "Memory", "Sending you a message": "Message",
+        "Checking your notes": "Notes",
     ]
 
     /// A step in a word or two, for the closed island: "Checking Gmail" is "Gmail", "Running t3-run status" is "t3-run

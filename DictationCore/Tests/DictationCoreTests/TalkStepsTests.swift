@@ -55,6 +55,10 @@ import Testing
         #expect(ToolLine.short("Searching the web for flights to San Francisco") == "Web search")
         #expect(ToolLine.short("Reading a note in your vault") == "Note")
         #expect(ToolLine.short("Setting up a call back") == "Call back")
+        #expect(ToolLine.short("Digging around") == "Digging")
+        #expect(ToolLine.short("Running a few commands") == "Commands")
+        #expect(ToolLine.short("Checking T3 Code") == "T3 Code")
+        #expect(ToolLine.done("Digging around") == "Dug around")
         for line in ["Running a-very-long-program-name with-arguments", "Something the table has never heard of at all", "Checking"] {
             #expect(ToolLine.short(line).count <= ToolLine.shortLongest)
             #expect(!ToolLine.short(line).isEmpty)
@@ -92,13 +96,27 @@ import Testing
         #expect(known && !unknown)
     }
 
+    @Test func aRunOfTheSameStepReadsAsProgress() {
+        var steps = StepQueue()
+        var lines: [String?] = []
+        for (index, call) in ["a", "b", "c", "d", "e"].enumerated() {
+            steps.offer("Running a few commands", app: .terminal, call: call)
+            lines.append(steps.next(at: Instant(seconds: Double(index) * 2)).line)
+        }
+        #expect(lines == ["Running a few commands", "Chipping away", "Making progress", "Getting it done", "Chipping away"])
+        // Something new says what it is.
+        steps.offer("Checking Gmail", app: .gmail, call: "f")
+        #expect(steps.next(at: Instant(seconds: 12)).line == "Checking Gmail")
+    }
+
     @Test func aNewCallInTheSameWordsIsItsOwnStep() {
         var steps = StepQueue()
         steps.offer("Checking Gmail", app: .gmail, call: "a")
         _ = steps.next(at: Instant(seconds: 0))
         steps.offer("Checking Gmail", app: .gmail, call: "b")
         #expect(steps.has(call: "b"))
-        #expect(steps.next(at: Instant(seconds: 3)).line == "Checking Gmail")
+        // Its words say progress, so the trail doesn't read "Checking Gmail" twice.
+        #expect(steps.next(at: Instant(seconds: 3)).line == "Chipping away")
         #expect(steps.since == Instant(seconds: 3))
         let failed = steps.fail(call: "b")
         #expect(failed && steps.step?.failed == true && steps.trail.map(\.failed) == [false])

@@ -93,8 +93,9 @@ public struct TalkTiming: Equatable, Sendable {
     public var calibrationBlocks = 20
     /// Loud blocks in a row that start your turn.
     public var startBlocks = 3
-    /// Loud blocks in a row, above the agent's own voice from the speakers, that cut in on the agent.
-    public var cutInBlocks = 6
+    /// Loud blocks in a row, above the agent's own voice from the speakers, that cut in on the agent: about a tenth of a
+    /// second, so starting to talk stops it at once.
+    public var cutInBlocks = 4
     /// Quiet that ends your turn.
     public var endOfTurn = 0.8
     /// Quiet after which your words so far are transcribed, while the rest of `endOfTurn` runs out, so the text is ready
