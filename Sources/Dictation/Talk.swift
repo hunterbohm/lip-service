@@ -242,6 +242,9 @@ enum TalkEnd: Equatable {
             if ear.muted(at: .now) { handle(.dropped, at: .now) }
             bar.endingSoon = false
         } else {
+            // What the microphone heard while muted, and not yet read, is thrown away too.
+            _ = input.read()
+            pending.removeAll()
             ear.unmuted(at: .now)
         }
         refreshBar()
