@@ -194,6 +194,8 @@ struct ServerVoiceProvider: VoiceProvider {
     var onIdle: (() -> Void)?
     private var engine: AVAudioEngine?
     private var player: AVAudioPlayerNode?
+    /// How much faster than the voice made it the speech plays, with its pitch kept: the voices speak a little slowly.
+    static let pace: Float = 1.12
     private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24_000, channels: 1, interleaved: false)!
     private var queue: [String] = []
     private var generation = 0
@@ -206,9 +208,12 @@ struct ServerVoiceProvider: VoiceProvider {
 
     func start() throws {
         guard engine == nil else { return }
-        let engine = AVAudioEngine(), player = AVAudioPlayerNode()
+        let engine = AVAudioEngine(), player = AVAudioPlayerNode(), pace = AVAudioUnitTimePitch()
+        pace.rate = Self.pace
         engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: format)
+        engine.attach(pace)
+        engine.connect(player, to: pace, format: format)
+        engine.connect(pace, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: nil, block: meter.outputTapBlock())
         engine.prepare()
         try engine.start()

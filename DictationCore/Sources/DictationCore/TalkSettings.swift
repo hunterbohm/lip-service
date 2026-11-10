@@ -142,7 +142,8 @@ public struct TalkBar: Equatable, Sendable {
     }
 
     /// Whether the island shows you muted: while the turn is yours. While the agent works or speaks it shows that.
-    public var showsMuted: Bool { muted && (phase == .listening || phase == .hearing) }
+    /// Muted shows all through the talk, while the agent works and speaks too, so the shortcut always shows it took.
+    public var showsMuted: Bool { muted && phase != .connecting && phase != .ringing }
 
     /// What is happening, in a few words.
     public var status: String {

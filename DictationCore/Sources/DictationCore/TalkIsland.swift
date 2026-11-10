@@ -182,8 +182,9 @@ public enum TalkIsland {
         return 1 + min(max(level, 0), 1) * 0.22 + breathe
     }
 
-    /// The globe's size in points: about seven tenths of the header, so black shows around it as it floats and swells.
-    public static func globeSize(_ screen: Screen) -> Double { min(30, (screen.barHeight * 0.7).rounded()) }
+    /// The globe's size in points: about three fifths of the header, so black shows above and below it as it floats and
+    /// swells.
+    public static func globeSize(_ screen: Screen) -> Double { min(26, (screen.barHeight * 0.6).rounded()) }
 
     /// Dots across the globe, so each is a few pixels: the globe reads as a grid of dots, not a solid ball.
     public static let globeGrid = 11
@@ -333,7 +334,8 @@ public enum TalkIsland {
     }
 
     /// The right ear for a talk, with muting taken into account.
-    public static func ear(_ bar: TalkBar) -> Ear { bar.showsMuted ? .muted : ear(bar.phase) }
+    /// Muted, the ear shows the crossed-out microphone, except while the agent speaks: its voice is still playing.
+    public static func ear(_ bar: TalkBar) -> Ear { bar.showsMuted && bar.phase != .speaking ? .muted : ear(bar.phase) }
 
     public static func ear(_ phase: TalkBar.Phase) -> Ear {
         switch phase {

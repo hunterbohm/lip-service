@@ -52,7 +52,7 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
                     draftOptions: [.option(id: "model", value: "anthropic:claude-haiku-5-5"), .option(id: "reasoning_effort", value: "low")],
                     taskOptions: [],
                     talkOptions: [.option(id: "model", value: "anthropic:claude-opus-5-5"), .option(id: "reasoning_effort", value: "low")],
-                    talkNote: #"If I ask you to send me something, send it in the terminal through a quoted heredoc, so nothing in the text runs: hermes send -t photon <<'EOF', then the text, then EOF."#,
+                    talkNote: hermesTalkNote,
                     continuesTalks: true, spokenNames: ["Hermes"], destination: .iMessage(handle: "")),
         AgentPreset(id: "claude", name: "Claude Code", program: "npx", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
                     draftOptions: [.option(id: "model", value: "haiku"), .option(id: "effort", value: "low")],
@@ -69,6 +69,21 @@ public struct AgentPreset: Equatable, Sendable, Identifiable {
         AgentPreset(id: "custom", name: "Custom", program: "", command: [], draftOptions: [], taskOptions: [], spokenNames: [],
                     destination: .agentReply),
     ]
+
+    /// Hermes's note on every turn of a talk. A call back starts straight from here, without loading a skill, and the
+    /// promise is said before the job starts, so it comes at once; the talk hangs up on its own once it is said.
+    public static let hermesTalkNote = #"""
+        If I ask you to send me something, send it in the terminal through a quoted heredoc, so nothing in the text runs: \#
+        hermes send -t photon <<'EOF', then the text, then EOF. If I ask you to call me back, or to let me know when \#
+        something is done, don't load a skill: first say one short sentence like "Okay, I'll call you back when the flight \#
+        search is done", then run in the terminal call-me-back run --about "the flight search" -- hermes -z "$(cat <<'TASK'
+        the full task, with everything you know from our talk, ending with a short plain summary for me, answer first
+        TASK
+        )", and say nothing more: the call hangs up on its own.
+        """#
+
+    /// Notes Hermes's preset had before, which a saved Hermes still carrying one of them gets replaced by the current.
+    static let formerTalkNotes: [String: [String]] = ["hermes": [#"If I ask you to send me something, send it in the terminal through a quoted heredoc, so nothing in the text runs: hermes send -t photon <<'EOF', then the text, then EOF."#]]
 
     public static func with(id: String) -> AgentPreset? { all.first { $0.id == id } }
 
@@ -131,6 +146,8 @@ public struct AgentConnection: Equatable, Codable, Sendable, Identifiable {
         let preset = AgentPreset.with(id: presetID)
         talkOptions = (try? container.decodeIfPresent([ConfigChoice].self, forKey: .talkOptions)) ?? preset?.talkOptions ?? []
         talkNote = (try? container.decodeIfPresent(String.self, forKey: .talkNote)) ?? preset?.talkNote ?? ""
+        // A note left as an earlier version of the preset had it follows the preset; one written by hand stays.
+        if let preset, AgentPreset.formerTalkNotes[preset.id]?.contains(talkNote) == true { talkNote = preset.talkNote }
         talkT3 = (try? container.decodeIfPresent(Bool.self, forKey: .talkT3)) ?? preset?.talkT3 ?? false
         continuesTalks = (try? container.decodeIfPresent(Bool.self, forKey: .continuesTalks)) ?? preset?.continuesTalks ?? false
     }
