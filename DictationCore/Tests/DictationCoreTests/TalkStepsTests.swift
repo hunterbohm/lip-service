@@ -104,6 +104,9 @@ import Testing
             lines.append(steps.next(at: Instant(seconds: Double(index) * 2)).line)
         }
         #expect(lines == ["Running a few commands", "Chipping away", "Making progress", "Getting it done", "Chipping away"])
+        // The same call saying the same again keeps its progress words.
+        steps.offer("Running a few commands", app: .terminal, call: "e")
+        #expect(steps.shown == "Chipping away")
         // Something new says what it is.
         steps.offer("Checking Gmail", app: .gmail, call: "f")
         #expect(steps.next(at: Instant(seconds: 12)).line == "Checking Gmail")

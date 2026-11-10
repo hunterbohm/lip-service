@@ -617,10 +617,17 @@ enum TalkEnd: Equatable {
     private func notePromise(title: String, status: String?, kind: String?, id: String?) {
         let over = status == "completed" || status == "failed"
         if ToolLine.promisesCallBack(title: title, kind: kind) {
-            callingBack = true
-            if let id { promised.insert(id) } else if !over { onCard?(.callBackPromised(agent: agent.name)) }
+            if let id {
+                promised.insert(id)
+            } else if !over {
+                // With no id its end can't be told, so the start is the promise.
+                callingBack = true
+                onCard?(.callBackPromised(agent: agent.name))
+            }
         }
+        // Only a job that started is a promise to hang up on: an updated call carries its id, often without its title.
         guard over, let id, promised.remove(id) != nil, status == "completed" else { return }
+        callingBack = true
         onCard?(.callBackPromised(agent: agent.name))
     }
 
@@ -765,9 +772,12 @@ enum TalkEnd: Equatable {
         if callingBack {
             // It said it will call back, and the job runs without the talk: hang up, after a breath.
             bar = TalkBar(agent: bar.agent, phase: .listening, activity: "Calling back when it's done")
+            let current = turn
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(700))
-                self?.end(.callBack)
+                // You said something meanwhile, or pressed a button: the talk goes on.
+                guard let self, current == self.turn, self.report == nil, !self.ear.isHearing else { return }
+                self.end(.callBack)
             }
             return
         }

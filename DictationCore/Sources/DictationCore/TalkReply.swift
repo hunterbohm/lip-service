@@ -516,13 +516,16 @@ public struct StepQueue: Sendable {
     /// the island's reopening are its own; only a call with no id is told from the last one by its words.
     public mutating func offer(_ line: String, app: StepApp? = nil, call: String? = nil) {
         if let call {
+            // A call that says the same about itself again keeps the progress words it was given.
+            let before = lastOffered
+            let kept = { (shown: String) in ToolLine.progress.contains(shown) && line == before }
             if step?.call == call {
-                step?.line = line
+                if let shown = step?.line, !kept(shown) { step?.line = line }
                 step?.app = app
                 return
             }
             if let index = waiting.firstIndex(where: { $0.call == call }) {
-                waiting[index].line = line
+                if !kept(waiting[index].line) { waiting[index].line = line }
                 waiting[index].app = app
                 return
             }
