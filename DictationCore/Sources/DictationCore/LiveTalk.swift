@@ -62,6 +62,17 @@ public enum LiveTalkKey {
     /// "Left Control", as the settings and the hint name it.
     public static let name = "Left Control"
 
+    /// Control-Option-M mutes and unmutes your microphone while a talk runs. M's key code is the same on every layout's
+    /// physical key; while no talk runs the shortcut reaches the app in front as usual.
+    public static let muteKeyCode = 46
+    public static let muteModifiers: Modifiers = [.control, .option]
+    public static let muteName = "⌃⌥M"
+
+    /// Whether a key press is the mute shortcut: M with Control and Option and no other modifier.
+    public static func isMute(keyCode: Int, flags: UInt64) -> Bool {
+        keyCode == muteKeyCode && Modifiers(flags: flags) == muteModifiers
+    }
+
     /// Why double-tapping Left Control can't start a talk with these keys, or nil when it can. A dictation key on Left
     /// Control alone already uses a double tap for hands-free dictation.
     public static func conflict(with keys: CaptureKeys) -> String? {
@@ -275,6 +286,25 @@ public struct TalkEar: Sendable {
     public mutating func agentWorking(at time: Instant) {
         phase = .agent(graceUntil: time + 0.3, speaking: false)
         loud = 0
+    }
+
+    /// You muted the microphone. Nothing is heard until `unmuted`. A turn of yours under way is dropped, not sent: you
+    /// muted to say something the agent shouldn't hear. Returns true when a turn was dropped.
+    public mutating func muted(at time: Instant) -> Bool {
+        guard case .hearing = phase else { return false }
+        heard = []
+        preroll = []
+        loud = 0
+        phase = .waiting(quietSince: time, warned: false)
+        return true
+    }
+
+    /// You unmuted at `time`. The quiet before the talk ends counts from now, so time spent muted never ends the talk,
+    /// and nothing from before the mute starts your next turn.
+    public mutating func unmuted(at time: Instant) {
+        preroll = []
+        loud = 0
+        if case .waiting = phase { phase = .waiting(quietSince: time, warned: false) }
     }
 
     /// The agent finished its turn and everything it said has played. What the microphone heard meanwhile was its echo.

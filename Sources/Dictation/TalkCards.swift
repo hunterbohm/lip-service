@@ -3,8 +3,8 @@ import DictationCore
 import SwiftUI
 import WebKit
 
-/// What the agent put on screen during a talk, in a stack of cards under the bar, newest on top. A card stays until it
-/// is closed or for two minutes, even after the talk ends. The panel never takes focus. With no card, the panel and its
+/// What the agent put on screen during a talk, in a stack of cards under the bar, newest on top. A card stays until you
+/// close it, the agent says it is done with it, two minutes pass, or the talk ends. The panel never takes focus. With no card, the panel and its
 /// views are gone.
 @MainActor final class TalkCardPanel {
     struct Card: Identifiable {
@@ -53,6 +53,11 @@ import WebKit
             add(Card(content: .permission(agent: name, phrase: phrase, detail: detail, byVoice: byVoice), agent: agent))
         case .permissionAnswered:
             cards.removeAll { if case .permission = $0.content { true } else { false } }
+            layout()
+        case .clear:
+            // The agent is done with what it showed. A question it is waiting on stays.
+            cards.removeAll { if case .permission = $0.content { false } else { true } }
+            heights = heights.filter { id, _ in cards.contains { $0.id == id } }
             layout()
         case .result, .callBackPromised:
             // The island draws these itself.

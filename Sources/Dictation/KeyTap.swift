@@ -50,6 +50,8 @@ import os
         didSet { if !talkKey { stopWatchingClicks() } }
     }
     var onDoubleTap: (() -> Void)?
+    /// ⌃⌥M while a talk runs, which mutes or unmutes it.
+    var onMuteKey: (() -> Void)?
     /// While a talk runs, the dictation keys do nothing, since the talk has the microphone.
     var suspended = false {
         didSet { if suspended, machine != .idle { abort() } }
@@ -136,7 +138,7 @@ import os
                 DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.onDoubleTap?() } }
             }
         }
-        if suspended { return false }
+        if suspended { return duringTalk(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat) }
         var input: KeyInput?
         switch CaptureRouting.route(kind: kind, keyCode: keyCode, flags: flags, isRepeat: isRepeat, machine: machine, active: active,
                                     keys: keys, at: .now) {
@@ -173,6 +175,19 @@ import os
             swallow = true
         }
         return swallow
+    }
+
+    /// A key while a talk runs, when the dictation keys do nothing. Only the mute shortcut is taken, with its repeats and
+    /// its release, so it doesn't also type into the app in front. Returns whether to swallow the key.
+    private func duringTalk(kind: KeyInput.EventKind, keyCode: Int, flags: UInt64, isRepeat: Bool) -> Bool {
+        if kind == .keyDown, LiveTalkKey.isMute(keyCode: keyCode, flags: flags) {
+            if !isRepeat { DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.onMuteKey?() } } }
+            swallowedKey = keyCode
+            return true
+        }
+        guard kind != .flagsChanged, swallowedKey == keyCode else { return false }
+        if kind == .keyUp { swallowedKey = nil }
+        return true
     }
 
     private func watchClicks() {

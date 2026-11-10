@@ -85,6 +85,8 @@ enum TalkCardEvent {
     case result(RichCard)
     /// The agent set up a call back for a job that takes a while, so you can hang up.
     case callBackPromised(agent: String)
+    /// The agent is done with what it showed: every card and note it put up goes.
+    case clear
 }
 
 /// One finished turn, for the log and the end-to-end test.
@@ -226,6 +228,26 @@ enum TalkEnd: Equatable {
     /// The voice the bar's meter shows: the agent's while it talks, yours otherwise.
     var voiceTap: VoiceTap? { bar.phase == .speaking ? speaker.voice : input.voice }
 
+    /// Your microphone is muted for the talk: nothing you say reaches the agent until you unmute. The agent's own turn
+    /// goes on, and its voice still plays.
+    private(set) var muted = false
+
+    /// Mutes or unmutes your microphone, from the island's button or its shortcut. Muting drops a turn of yours under
+    /// way, so what you said after deciding to mute never goes to the agent.
+    func setMuted(_ on: Bool) {
+        guard !ended, on != muted else { return }
+        muted = on
+        log.info("talk \(on ? "muted" : "unmuted", privacy: .public)")
+        if on {
+            if ear.muted(at: .now) { handle(.dropped, at: .now) }
+            bar.endingSoon = false
+        } else {
+            ear.unmuted(at: .now)
+        }
+        refreshBar()
+    }
+
+
     func start() {
         do {
             try speaker.start()
@@ -312,6 +334,8 @@ enum TalkEnd: Equatable {
 
     private func tick() {
         pending += input.read()
+        // Muted, what the microphone hears is thrown away, and the quiet that ends a talk doesn't count.
+        if muted { return pending.removeAll() }
         let block = Int(ear.timing.block * Recording.sampleRate)
         let now = Instant.now
         while pending.count >= block {
@@ -569,6 +593,7 @@ enum TalkEnd: Equatable {
     /// The bar with the step behind its activity, the steps before it, and when the wait began.
     private func withSteps(_ bar: TalkBar) -> TalkBar {
         var bar = bar
+        bar.muted = muted
         let step = bar.phase == .thinking ? steps.step.flatMap { $0.line == bar.activity ? $0 : nil } : nil
         (bar.step, bar.trail) = (step, step == nil ? [] : steps.trail)
         bar.since = bar.phase == .thinking && report != nil ? (step == nil ? workingSince : steps.since) : nil
@@ -640,6 +665,8 @@ enum TalkEnd: Equatable {
                 guard let self, !Task.isCancelled, seen == self.textCount, current == self.turn, self.chunker.sentenceEndWait != nil else { return }
                 for chunk in self.chunker.finish() { self.queue(chunk, turn: current) }
             }
+        case .show(let body) where TalkPrompt.isClear(body):
+            onCard?(.clear)
         case .show(let body):
             report?.cards += 1
             if let card = RichCard.parse(body) { onCard?(.result(card)) } else { onCard?(.show(ShowCard.classify(body))) }

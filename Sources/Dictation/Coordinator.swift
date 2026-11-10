@@ -90,8 +90,14 @@ import os
         keyTap.onCardKey = { [unowned self] key in ghostwriter.cardKey(key) }
         keyTap.onDoubleTap = { [unowned self] in toggleTalk() }
         talkCards.onPermission = { [unowned self] allowed in live.talk?.answerPermission(allowed) }
-        island.model.level = { [bar] in bar.meter.reading(at: Date.timeIntervalSinceReferenceDate).level(delay: 0) }
+        island.model.level = { [bar, live] in
+            // Muted, your voice doesn't move the island; the agent's still does.
+            if let talk = live.talk, talk.muted, talk.bar.phase != .speaking { return 0 }
+            return bar.meter.reading(at: Date.timeIntervalSinceReferenceDate).level(delay: 0)
+        }
         island.model.onEnd = { [unowned self] in live.talk?.end(.byYou) }
+        island.model.onMute = { [unowned self] in toggleMute() }
+        keyTap.onMuteKey = { [unowned self] in toggleMute() }
         island.model.onAnswer = { [unowned self] in answerCall() }
         island.model.onDecline = { [unowned self] in endRinging(.declined) }
         island.model.onAction = { [unowned self] words in live.talk?.choose(words) ?? false }
@@ -194,6 +200,12 @@ import os
         keyTap.talkKey = settings.liveTalk.enabled && LiveTalkKey.conflict(with: settings.captureKeys) == nil
     }
 
+    /// The island's mute button or ⌃⌥M: mutes or unmutes your microphone for the talk running.
+    private func toggleMute() {
+        guard let talk = live.talk else { return }
+        talk.setMuted(!talk.muted)
+    }
+
     /// Double-tapping Left Control: answers a call back that is ringing, starts a talk, or ends the one running.
     private func toggleTalk() {
         if ringing != nil { return answerCall() }
@@ -233,7 +245,8 @@ import os
                 CallChannel.post(CallbackUpdate(id: id, status: .hungUp, detail: detail))
             }
             keyTap.suspended = false
-            talkCards.dropPermissions()
+            // What the agent showed was for the talk, so it goes with it.
+            talkCards.closeAll()
             microphone.prepare(preferences.current.settings.microphone)
             if preferences.current.settings.sounds { sounds.play(talk: .end) }
             switch reason {

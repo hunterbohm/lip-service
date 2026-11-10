@@ -29,6 +29,8 @@ import SwiftUI
     /// The level of whoever is talking, 0 to 1. Read every frame, not observed.
     @ObservationIgnored var level: () -> Double = { 0 }
     @ObservationIgnored var onEnd: () -> Void = {}
+    /// The mute button: mutes or unmutes your microphone.
+    @ObservationIgnored var onMute: () -> Void = {}
     /// Answer and Decline on a call back that is ringing.
     @ObservationIgnored var onAnswer: () -> Void = {}
     @ObservationIgnored var onDecline: () -> Void = {}
@@ -140,6 +142,13 @@ import SwiftUI
         case .result(let card): content = .rich(card)
         case .callBackPromised(let agent): content = .callBack(agent: agent)
         case .permission, .permissionAnswered: return false
+        case .clear:
+            // What the agent showed goes; its word that it will call back stays, since that job is still running. The
+            // cards hear this too.
+            model.notices.removeAll { if case .callBack = $0.content { false } else { true } }
+            if model.notices.isEmpty { model.noticeOpen = false }
+            expireNotices()
+            return false
         }
         let now = model.frozenNow ?? .now
         model.notices = TalkIsland.adding(content, to: model.notices, at: now)
@@ -270,7 +279,7 @@ private struct IslandView: View {
 
     var body: some View {
         let open = model.open, screen = model.screen, step = model.compactStep
-        let rim = TalkIsland.edgeColor(TalkIsland.mood(bar.phase)), light = Color(red: rim.red, green: rim.green, blue: rim.blue)
+        let rim = TalkIsland.edgeColor(TalkIsland.mood(bar)), light = Color(red: rim.red, green: rim.green, blue: rim.blue)
         VStack(spacing: 0) {
             header(open: open)
             if open {
@@ -310,7 +319,7 @@ private struct IslandView: View {
         let side = CGFloat(width - center) / 2
         return HStack(spacing: 0) {
             HStack(spacing: 8) {
-                Globe(model: model, mood: TalkIsland.mood(bar.phase), size: CGFloat(TalkIsland.globeSize(screen)))
+                Globe(model: model, mood: TalkIsland.mood(bar), size: CGFloat(TalkIsland.globeSize(screen)))
                     .overlay(alignment: .topTrailing) {
                         if model.keepsNotices {
                             Circle().fill(Color(red: 0.3, green: 0.9, blue: 0.5))
@@ -358,7 +367,7 @@ private struct IslandView: View {
                 } else if step != nil {
                     StepTimer(model: model, since: bar.since) { EarView(model: model, ear: .working) }
                 } else {
-                    EarView(model: model, ear: TalkIsland.ear(bar.phase))
+                    EarView(model: model, ear: TalkIsland.ear(bar))
                 }
             }
             .padding(.trailing, open ? 20 : (screen.hasNotch ? 14 : 18))
@@ -425,6 +434,7 @@ private struct IslandView: View {
                         .foregroundStyle(.white.opacity(0.5))
                         .lineLimit(1)
                     Spacer()
+                    MuteButton(muted: bar.muted) { model.onMute() }
                     EndButton { model.onEnd() }
                 }
                 .transition(.opacity.combined(with: .offset(y: -4)))
@@ -576,6 +586,11 @@ struct EarView: View {
                         Circle().fill(.white.opacity(0.45 + 0.5 * lift)).frame(width: 5, height: 5).offset(y: -2.5 * lift)
                     }
                 }
+            case .muted:
+                Image(systemName: "mic.slash.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(red: 1, green: 0.45, blue: 0.45))
+                    .accessibilityLabel("Muted")
             case .voice(let agent):
                 let level = model.level()
                 HStack(spacing: 2.5) {
@@ -611,6 +626,30 @@ private struct CallButton: View {
         .help(label)
         .accessibilityLabel(label)
         .onHover { inside in withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { hover = inside } }
+    }
+}
+
+/// Mutes and unmutes your microphone. White with a crossed-out microphone while muted, so the state reads at a glance.
+private struct MuteButton: View {
+    let muted: Bool
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: muted ? "mic.slash.fill" : "mic.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(muted ? .black : .white)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(muted ? Color.white : Color.white.opacity(0.16)))
+                .scaleEffect(hover ? 1.08 : 1)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .help(TalkIsland.muteHelp(muted: muted))
+        .accessibilityLabel(muted ? "Unmute" : "Mute")
+        .onHover { inside in withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { hover = inside } }
+        .animation(.easeOut(duration: 0.15), value: muted)
     }
 }
 
