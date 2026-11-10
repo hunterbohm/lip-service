@@ -343,7 +343,8 @@ enum TalkEnd: Equatable {
     private var played: [(time: Double, level: Float)] = []
     private var playedCursor = 0
     /// How far back the agent's voice can still be heard: the speakers' and the microphone's delays, and the room's echo.
-    private static let echoReach = 0.5
+    /// Short, so what is measured as playing matches what the microphone hears now.
+    private static let echoReach = 0.2
 
     /// The loudest the agent's voice played in the `echoReach` before host time `time`.
     private func playing(before time: Double) -> Float {

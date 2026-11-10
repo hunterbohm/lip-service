@@ -250,6 +250,18 @@ import Testing
         #expect(echo.gain == 0)
     }
 
+    @Test func aLoudSyllableThenQuieterOnesDoNotHideTheEcho() {
+        var echo = TalkEcho()
+        echo.begin(speakers: true)
+        // The echo is 0.3 of what plays. A loud syllable at 0.3, then quieter ones at 0.03, measured as their slices go.
+        for _ in 0..<7 { echo.learn(heard: 0.09, playing: 0.3, room: 0.008) }
+        for _ in 0..<13 { echo.learn(heard: 0.009, playing: 0.03, room: 0.008) }
+        echo.settle()
+        #expect(abs(echo.gain - 0.3) < 0.0001)
+        // So the loud syllable's echo, when it comes back, stays under the bar.
+        #expect(echo.level(0.3) > 0.09)
+    }
+
     @Test func talkInSomeOfTheFirstWordsIsNotTakenForEcho() {
         var echo = TalkEcho()
         // An echo at 0.03 all through, and you saying a word at 0.2 over part of it.

@@ -153,7 +153,9 @@ public struct TalkEcho: Sendable {
     /// all through the first words of reply after reply, each cut in on, can't pile up into a far louder echo.
     private var trusted: Float = 0
     public static let growth: Float = 1.5
-    private var current: (most: Float, blocks: Int, learned: Bool) = (0, 0, false)
+    /// The slice under way: the loudest the microphone heard and the loudest that played in it, compared as a pair, so a
+    /// loud syllable and the quieter one after it are measured over the same stretch.
+    private var current: (heard: Float, playing: Float, blocks: Int) = (0, 0, 0)
     /// How much louder than the echo you have to be.
     public static let margin: Float = 2
     /// Playing quieter than this teaches nothing: the microphone can't hear it over the room.
@@ -171,19 +173,24 @@ public struct TalkEcho: Sendable {
         gain = speakers ? (trusted > 0 ? trusted : gain) / 2 : 0
         self.speakers = speakers
         slices = []
-        current = (0, 0, false)
+        current = (0, 0, 0)
     }
 
     /// One block of the first words, in which the microphone heard `heard` while `playing` played. Only sound above
     /// `room`, the level that would start a turn, is echo: the room's own noise teaches nothing.
     public mutating func learn(heard: Float, playing: Float, room: Float) {
         guard speakers else { return }
-        if playing > Self.audible, heard > room { current = (max(current.most, heard / playing), current.blocks, true) }
+        current.playing = max(current.playing, playing)
+        if heard > room { current.heard = max(current.heard, heard) }
         current.blocks += 1
         guard current.blocks >= Self.slice else { return }
-        // A slice in which nothing could be heard, such as a pause, says nothing either way.
-        if current.learned { slices.append(current.most) }
-        current = (0, 0, false)
+        closeSlice()
+    }
+
+    /// A slice in which nothing could be heard, such as a pause, or only the room, says nothing either way.
+    private mutating func closeSlice() {
+        if current.playing > Self.audible, current.heard > 0 { slices.append(current.heard / current.playing) }
+        current = (0, 0, 0)
     }
 
     /// The reply played to the end without anyone talking over it, so what was learned from it can be built on.
@@ -191,13 +198,13 @@ public struct TalkEcho: Sendable {
 
     /// The first words are over: keeps the quietest slice's echo.
     public mutating func settle() {
-        if current.learned { slices.append(current.most) }
+        closeSlice()
         if let quietest = slices.min() {
             let bound = trusted > 0 ? trusted * Self.growth : Self.most
             gain = min(Self.most, bound, max(gain, quietest))
         }
         slices = []
-        current = (0, 0, false)
+        current = (0, 0, 0)
     }
 
     /// The level that counts as you while `playing` plays.
