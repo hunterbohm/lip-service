@@ -1,17 +1,26 @@
 import Foundation
 
-/// A piece of the agent's streamed reply: words to say, or something to put on screen.
+/// A piece of the agent's streamed reply: words to say, something to put on screen, or what it is doing for you now.
 public enum ReplyPiece: Equatable, Sendable {
     case speech(String)
     case show(String)
+    /// A `<step>` line: what the agent is about to do, in its own plain words, such as "Turning on your lights".
+    case step(String)
 }
 
-/// Splits a streamed reply into speech and `<show>…</show>` blocks. A tag can arrive split across chunks, so a tail
-/// that could be the start of one waits for the next chunk.
+/// Splits a streamed reply into speech, `<show>…</show>` blocks and `<step>…</step>` lines. A tag can arrive split
+/// across chunks, so a tail that could be the start of one waits for the next chunk.
 public struct ShowSplitter: Sendable {
     private var buffer = ""
-    private var inShow = false
-    private static let open = "<show>", close = "</show>"
+    /// The tag open now, if any.
+    private var inside: Tag?
+
+    private enum Tag: String, CaseIterable {
+        case show, step
+        var open: String { "<\(rawValue)>" }
+        var close: String { "</\(rawValue)>" }
+        func piece(_ body: String) -> ReplyPiece { self == .show ? .show(body) : .step(body) }
+    }
 
     public init() {}
 
@@ -25,26 +34,27 @@ public struct ShowSplitter: Sendable {
     private mutating func drain(final: Bool) -> [ReplyPiece] {
         var out: [ReplyPiece] = []
         while true {
-            if inShow {
-                if let range = buffer.range(of: Self.close, options: .caseInsensitive) {
+            if let tag = inside {
+                if let range = buffer.range(of: tag.close, options: .caseInsensitive) {
                     let body = buffer[..<range.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !body.isEmpty { out.append(.show(body)) }
+                    if !body.isEmpty { out.append(tag.piece(body)) }
                     buffer = String(buffer[range.upperBound...])
-                    inShow = false
+                    inside = nil
                     continue
                 }
                 if final {
                     let body = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !body.isEmpty { out.append(.show(body)) }
+                    if !body.isEmpty { out.append(tag.piece(body)) }
                     buffer = ""
                 }
                 return out
             }
-            if let range = buffer.range(of: Self.open, options: .caseInsensitive) {
+            let opens = Tag.allCases.compactMap { tag in buffer.range(of: tag.open, options: .caseInsensitive).map { (tag, $0) } }
+            if let (tag, range) = opens.min(by: { $0.1.lowerBound < $1.1.lowerBound }) {
                 let before = String(buffer[..<range.lowerBound])
                 if !before.isEmpty { out.append(.speech(before)) }
                 buffer = String(buffer[range.upperBound...])
-                inShow = true
+                inside = tag
                 continue
             }
             let keep = final ? 0 : Self.partialTagLength(buffer)
@@ -55,11 +65,13 @@ public struct ShowSplitter: Sendable {
         }
     }
 
-    /// How many trailing characters could be the start of `<show>`.
+    /// How many trailing characters could be the start of `<show>` or `<step>`.
     static func partialTagLength(_ text: String) -> Int {
         let lower = text.lowercased()
-        for count in stride(from: min(open.count - 1, lower.count), through: 1, by: -1) where open.hasPrefix(String(lower.suffix(count))) {
-            return count
+        let longest = Tag.allCases.map(\.open.count).max()! - 1
+        for count in stride(from: min(longest, lower.count), through: 1, by: -1) {
+            let tail = String(lower.suffix(count))
+            if Tag.allCases.contains(where: { $0.open.hasPrefix(tail) }) { return count }
         }
         return 0
     }
@@ -459,6 +471,17 @@ public enum ToolLine {
         return run.count >= 20 && run.contains(where: \.isNumber) && run.contains(where: \.isLetter)
     }
 
+    /// The agent's own `<step>` line, made fit for the island and the voice: markdown and the closing stop gone, its first
+    /// letter a capital, and no longer than `longest`. Nil when nothing is left, or when it holds something that looks like
+    /// a key, so a secret it pasted by mistake is never shown or said.
+    public static func agentLine(_ text: String) -> String? {
+        var line = Speech.caption(text.replacing(/<[^>]*>/, with: " "))
+        while let last = line.last, ".!…:;,".contains(last) { line.removeLast() }
+        line = line.trimmingCharacters(in: .whitespaces)
+        guard let first = line.first, !line.split(separator: " ").contains(where: { looksLikeKey(String($0)) }) else { return nil }
+        return fit(first.uppercased() + line.dropFirst())
+    }
+
     /// At most `longest` characters, cut at a word with an ellipsis.
     static func fit(_ line: String) -> String {
         guard line.count > longest else { return line }
@@ -503,18 +526,54 @@ public struct StepQueue: Sendable {
     private var count = 0
     /// The words of the last new step, before any were swapped for progress.
     private var lastOffered: String?
+    /// The step that is the agent's own line, while its tool calls still go under it.
+    private var agentStep: Int?
+    /// Tool calls that go under one of the agent's own lines, so their updates never put a step of their own up.
+    private var claimed: Set<String> = []
 
     public init() {}
 
     public var shown: String? { step?.line }
 
     /// Whether a step of tool call `call` was offered and is still known.
-    public func has(call: String) -> Bool { step?.call == call || waiting.contains { $0.call == call } || trail.contains { $0.call == call } }
+    public func has(call: String) -> Bool {
+        claimed.contains(call) || step?.call == call || waiting.contains { $0.call == call } || trail.contains { $0.call == call }
+    }
+
+    /// The agent's own line for what it is doing, from `<step>`. The tool calls after it go under it, by `claim`, until
+    /// it says something else, so the island and the voice keep its words, not a tool's.
+    public mutating func offerAgent(_ line: String) {
+        offer(line)
+        agentStep = (waiting.last ?? step)?.id
+    }
+
+    /// The agent said something other than a step, so its last line no longer covers the tool calls that come next.
+    public mutating func endAgentStep() { agentStep = nil }
+
+    /// Puts tool call `call` under the agent's own line, if one is up or waiting: the first call it covers becomes that
+    /// step's call, so its failure shows there. False when no line covers it, and the call gets a step of its own.
+    public mutating func claim(call: String, app: StepApp?) -> Bool {
+        if claimed.contains(call) { return true }
+        guard let id = agentStep else { return false }
+        if let index = waiting.firstIndex(where: { $0.id == id }) {
+            if waiting[index].call == nil { (waiting[index].call, waiting[index].app) = (call, app) }
+        } else if step?.id == id {
+            if step?.call == nil {
+                step?.call = call
+                step?.app = app
+            }
+        } else {
+            return false
+        }
+        claimed.insert(call)
+        return true
+    }
 
     /// A tool call that says more about itself, as some agents do once they know the file or the command, changes its
     /// own step instead of adding one. A new call is a new step even in the same words, so its timer, its failure and
     /// the island's reopening are its own; only a call with no id is told from the last one by its words.
     public mutating func offer(_ line: String, app: StepApp? = nil, call: String? = nil) {
+        if let call, claimed.contains(call) { return }
         if let call {
             // A call that says the same about itself again keeps the progress words it was given.
             let before = lastOffered
@@ -570,26 +629,22 @@ public struct StepQueue: Sendable {
     }
 }
 
-/// Decides which tool starts get a spoken line: each tool call once, and at most one line every `spacing` seconds.
+/// Decides which of the agent's own step lines are said out loud: each new line once, and at most one every `spacing`
+/// seconds. A tool's own words, such as "Running a few commands", are only shown, never said: they tell you nothing, so
+/// a talk stays quiet while the agent works unless it says what it is doing.
 public struct ToolAnnouncer: Sendable {
     public var spacing = 4.0
-    private var seen: Set<String> = []
     private var lastAt: Instant?
-    private var lastPhrase: String?
+    private var said: Set<String> = []
 
     public init() {}
 
-    /// The line to say and show, or nil to stay quiet. `id` is the tool call's id; one without an id is new each time.
-    public mutating func announce(id: String?, title: String, kind: String?, at time: Instant) -> String? {
-        if let id {
-            guard seen.insert(id).inserted else { return nil }
-        }
+    /// The line to say, or nil to stay quiet.
+    public mutating func announce(_ line: String, at time: Instant) -> String? {
         if let lastAt, time - lastAt < spacing { return nil }
-        let phrase = ToolLine.phrase(title: title, kind: kind)
-        // The same phrase again soon after says nothing new.
-        if phrase == lastPhrase, let lastAt, time - lastAt < spacing * 3 { return nil }
-        (lastAt, lastPhrase) = (time, phrase)
-        return phrase
+        guard said.insert(line.lowercased()).inserted else { return nil }
+        lastAt = time
+        return line
     }
 }
 
@@ -609,7 +664,10 @@ public enum TalkPrompt {
         "subject":"...","time":"..."}, alone or several in a JSON list. A "url" opens when I click the row. Each action is a \
         button, and its label comes back as my next words. Show flights again as more come in: the new card replaces the last. \
         When we're done with what you put on my screen, or the talk moves on to something else, send <show>clear</show> and \
-        it all goes away.
+        it all goes away. Before each tool call, write what it does for me in a few plain words in <step></step>, like \
+        <step>Turning on your lights</step> or <step>Looking for flights to Denver</step>: I hear it and see it while you \
+        work. Say what it does for me, never a command, tool, skill or file: not <step>Running top</step> but \
+        <step>Checking what's using your CPU</step>.
         """
 
     /// Whether a `<show>` block asks to take everything the agent showed off the screen: `clear`, alone.
