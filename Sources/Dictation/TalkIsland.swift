@@ -343,7 +343,7 @@ private struct IslandView: View {
                         .transition(.opacity)
                 }
             }
-            .padding(.leading, open ? 18 : (screen.hasNotch ? 10 : 12))
+            .padding(.leading, open ? 22 : (screen.hasNotch ? 14 : 16))
             .frame(width: side, alignment: .leading)
 
             Group {

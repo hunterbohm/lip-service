@@ -182,8 +182,8 @@ public enum TalkIsland {
         return 1 + min(max(level, 0), 1) * 0.22 + breathe
     }
 
-    /// The globe's size in points: as big as the header allows, with room to float.
-    public static func globeSize(_ screen: Screen) -> Double { min(34, screen.barHeight - 6) }
+    /// The globe's size in points: about seven tenths of the header, so black shows around it as it floats and swells.
+    public static func globeSize(_ screen: Screen) -> Double { min(30, (screen.barHeight * 0.7).rounded()) }
 
     /// Dots across the globe, so each is a few pixels: the globe reads as a grid of dots, not a solid ball.
     public static let globeGrid = 11

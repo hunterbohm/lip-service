@@ -614,8 +614,8 @@ import Testing
         // Floating, it is a little bigger than the bar a dictation shows, which is 220 by 40.
         #expect(TalkIsland.compactWidth(.plain) == 132 + 2 * 62)
         #expect(TalkIsland.compactWidth(.plain) > 220 && TalkIsland.Screen.plain.barHeight > 40)
-        // The globe fits the header with room to float, under a notch too.
-        for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 2) }
+        // The globe fits the header with black around it as it floats, under a notch too.
+        for screen in [notched, .plain] { #expect(TalkIsland.globeSize(screen) + 2 * TalkIsland.globeBob <= screen.barHeight - 7) }
         #expect(TalkIsland.openWidth(notched) > TalkIsland.compactWidth(notched))
         #expect(TalkIsland.openWidth(TalkIsland.Screen(hasNotch: true, notchWidth: 900, barHeight: 32)) == TalkIsland.widest)
     }
