@@ -124,6 +124,28 @@ enum AudioDevices {
         return OutputMute.Output(device: uid, muted: muted)
     }
 
+    /// Whether the default output is headphones, which the microphone can't hear: Bluetooth, such as AirPods, or
+    /// headphones plugged into the Mac's own jack. Anything else may be speakers.
+    static func outputIsHeadphones() -> Bool {
+        var id = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &id) == noErr, id != 0
+        else { return false }
+        switch kind(of: id) {
+        case .bluetooth: return true
+        case .builtIn:
+            var source = UInt32(0)
+            var sourceSize = UInt32(MemoryLayout<UInt32>.size)
+            var sourceAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDataSource, mScope: kAudioDevicePropertyScopeOutput,
+                                                           mElement: kAudioObjectPropertyElementMain)
+            guard AudioObjectGetPropertyData(id, &sourceAddress, 0, nil, &sourceSize, &source) == noErr else { return false }
+            return source == 0x6864_706E // 'hdpn'
+        default: return false
+        }
+    }
+
     /// Sets the mute of the output with this UID. False when it is gone or refuses.
     @discardableResult static func setOutputMute(_ muted: Bool, uid: String) -> Bool {
         guard let ids: [AudioDeviceID] = arrayProperty(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyDevices),

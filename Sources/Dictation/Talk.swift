@@ -339,17 +339,38 @@ enum TalkEnd: Equatable {
 
     // MARK: Hearing
 
+    /// The levels of the agent's voice as it went to the speakers, by host time, for the last second.
+    private var played: [(time: Double, level: Float)] = []
+    private var playedCursor = 0
+    /// How far back the agent's voice can still be heard: the speakers' and the microphone's delays, and the room's echo.
+    /// Short, so what is measured as playing matches what the microphone hears now.
+    private static let echoReach = 0.2
+
+    /// The loudest the agent's voice played in the `echoReach` before host time `time`.
+    private func playing(before time: Double, over reach: Double = echoReach) -> Float {
+        played.reduce(0) { $1.time > time - reach && $1.time <= time ? max($0, $1.level) : $0 }
+    }
+
+    /// About how long the agent's voice takes from leaving the app to reaching the microphone's samples.
+    private static let echoDelay = 0.05
+
     private func tick() {
         pending += input.read()
+        let host = VoiceTap.now, now = Instant.now
+        if let tap = speaker.voice {
+            tap.read(from: &playedCursor, until: host) { played.append(($0, $1.rms)) }
+            played.removeAll { $0.time < host - 1 }
+        }
         // Muted, what the microphone hears is thrown away, and the quiet that ends a talk doesn't count.
         if muted { return pending.removeAll() }
         let block = Int(ear.timing.block * Recording.sampleRate)
-        let now = Instant.now
         while pending.count >= block {
             let samples = Array(pending.prefix(block))
             pending.removeFirst(block)
-            let time = now + -Double(pending.count) / Recording.sampleRate
-            let event = ear.hear(samples, at: time)
+            let ago = Double(pending.count) / Recording.sampleRate
+            let time = now + -ago
+            let event = ear.hear(samples, at: time, playing: playing(before: host - ago),
+                                 playingNow: playing(before: host - ago - Self.echoDelay, over: ear.timing.block))
             if ear.isHearing, event?.startsTurn != true { words.append(samples) }
             if let event { handle(event, at: time) }
             if ended { return }
@@ -734,7 +755,7 @@ enum TalkEnd: Equatable {
         let toolLine = report?.tools.contains(where: { Speech.caption($0 + ".") == caption }) ?? false
         if openingTurn == turn, !toolLine, report != nil { openingHeard = true }
         clock?.mark(.firstAudio, at: .now)
-        ear.agentSpeaking(at: .now)
+        ear.agentSpeaking(at: .now, speakers: !AudioDevices.outputIsHeadphones())
         if toolLine {
             // A step said out loud shows as a step, under your words, not as something the agent is telling you.
             let step = steps.shown ?? (caption.hasSuffix(".") ? String(caption.dropLast()) : caption)
