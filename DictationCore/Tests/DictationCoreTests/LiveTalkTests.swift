@@ -262,6 +262,26 @@ import Testing
         #expect(echo.level(0.3) > 0.09)
     }
 
+    @Test func theEchoIsLearnedOverTheSameStretchItPlayed() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        ear.agentSpeaking(at: Instant(seconds: 2.4))
+        // A loud syllable then quieter ones; the bar's level still remembers the loud one for a while, but the echo is
+        // learned from what played over each block's own stretch.
+        let loud = [Float](repeating: 0.09, count: 480), soft = [Float](repeating: 0.012, count: 480)
+        var time = 2.4
+        for _ in 0..<7 { time += 0.03; _ = ear.hear(loud, at: Instant(seconds: time), playing: 0.3, playingNow: 0.3) }
+        for _ in 0..<13 { time += 0.03; _ = ear.hear(soft, at: Instant(seconds: time), playing: 0.3, playingNow: 0.04) }
+        // The loud syllable comes back after the first words: its echo doesn't cut in.
+        var events: [TalkEar.Event] = []
+        for _ in 0..<20 {
+            time += 0.03
+            if let event = ear.hear(loud, at: Instant(seconds: time), playing: 0.3, playingNow: 0.3) { events.append(event) }
+        }
+        #expect(events.isEmpty)
+        #expect(ear.echo.gain >= 0.29)
+    }
+
     @Test func talkInSomeOfTheFirstWordsIsNotTakenForEcho() {
         var echo = TalkEcho()
         // An echo at 0.03 all through, and you saying a word at 0.2 over part of it.

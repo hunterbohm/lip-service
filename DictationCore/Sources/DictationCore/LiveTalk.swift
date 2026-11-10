@@ -288,7 +288,11 @@ public struct TalkEar: Sendable {
 
     /// One block of audio that ends at `time`. `playing` is the loudest the agent's voice played just before, as the
     /// speakers were given it: the microphone hears that too.
-    public mutating func hear(_ block: [Float], at time: Instant, playing: Float = 0) -> Event? {
+    ///
+    /// `playingNow` is the loudest that played over this block's own stretch, moved back by the time sound takes from the
+    /// speakers to the microphone. The echo is learned from it, so what was heard and what played are compared over the
+    /// same stretch; `playing`, which reaches further back, only sets the bar. Without it, `playing` serves for both.
+    public mutating func hear(_ block: [Float], at time: Instant, playing: Float = 0, playingNow: Float? = nil) -> Event? {
         let level = Self.rms(block)
         switch phase {
         case .calibrating:
@@ -350,7 +354,7 @@ public struct TalkEar: Sendable {
         case .agent(let graceUntil, let speaking):
             remember(block)
             guard time >= graceUntil else {
-                if speaking { echo.learn(heard: level, playing: playing, room: thresholds.start) }
+                if speaking { echo.learn(heard: level, playing: playingNow ?? playing, room: thresholds.start) }
                 return nil
             }
             settleEcho()

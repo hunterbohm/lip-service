@@ -347,9 +347,12 @@ enum TalkEnd: Equatable {
     private static let echoReach = 0.2
 
     /// The loudest the agent's voice played in the `echoReach` before host time `time`.
-    private func playing(before time: Double) -> Float {
-        played.reduce(0) { $1.time > time - Self.echoReach && $1.time <= time ? max($0, $1.level) : $0 }
+    private func playing(before time: Double, over reach: Double = echoReach) -> Float {
+        played.reduce(0) { $1.time > time - reach && $1.time <= time ? max($0, $1.level) : $0 }
     }
+
+    /// About how long the agent's voice takes from leaving the app to reaching the microphone's samples.
+    private static let echoDelay = 0.05
 
     private func tick() {
         pending += input.read()
@@ -366,7 +369,8 @@ enum TalkEnd: Equatable {
             pending.removeFirst(block)
             let ago = Double(pending.count) / Recording.sampleRate
             let time = now + -ago
-            let event = ear.hear(samples, at: time, playing: playing(before: host - ago))
+            let event = ear.hear(samples, at: time, playing: playing(before: host - ago),
+                                 playingNow: playing(before: host - ago - Self.echoDelay, over: ear.timing.block))
             if ear.isHearing, event?.startsTurn != true { words.append(samples) }
             if let event { handle(event, at: time) }
             if ended { return }
