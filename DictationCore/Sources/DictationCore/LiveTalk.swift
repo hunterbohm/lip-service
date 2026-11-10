@@ -134,6 +134,76 @@ public struct TalkThresholds: Equatable, Sendable {
     }
 }
 
+/// How loud the agent's own voice comes back into the microphone from the speakers, so it is never taken for you. On a
+/// laptop's speakers its echo can be louder than the plain cut-in level, so it would cut the agent off mid-sentence.
+/// While the agent's first words play, which can't cut in anyway, the ear learns how much of what plays it hears; after
+/// that, only talk clearly louder than that share of what is playing counts as you. With headphones nothing is learned.
+///
+/// An echo is there all through the first words; someone talking over them is there only while they talk. So the first
+/// words are cut into slices and the echo is the quietest slice's loudest share: talk in some slices doesn't count.
+public struct TalkEcho: Sendable {
+    /// The microphone's level per unit of the level playing.
+    public private(set) var gain: Float = 0
+    /// Blocks in a slice: about 0.2 s.
+    public static let slice = 7
+    private var slices: [Float] = []
+    private var speakers = true
+    /// The echo as of the last reply that played to the end. Nobody talked over that one, so it is the agent alone. Once
+    /// there is one, a reply can raise it by `growth` at most, and only a reply that plays to the end builds on that: talk
+    /// all through the first words of reply after reply, each cut in on, can't pile up into a far louder echo.
+    private var trusted: Float = 0
+    public static let growth: Float = 1.5
+    private var current: (most: Float, blocks: Int, learned: Bool) = (0, 0, false)
+    /// How much louder than the echo you have to be.
+    public static let margin: Float = 2
+    /// Playing quieter than this teaches nothing: the microphone can't hear it over the room.
+    public static let audible: Float = 0.02
+    /// The most the microphone hears of the speakers. Laptop speakers beside it give about a third; more is someone talking
+    /// all through the first words.
+    public static let most: Float = 0.75
+
+    public init() {}
+
+    /// A new reply halves what was learned and learns again, so turning the volume down is followed within a turn or two.
+    /// With headphones, the microphone hears none of it, and nothing is kept.
+    public mutating func begin(speakers: Bool) {
+        if !speakers { trusted = 0 }
+        gain = speakers ? (trusted > 0 ? trusted : gain) / 2 : 0
+        self.speakers = speakers
+        slices = []
+        current = (0, 0, false)
+    }
+
+    /// One block of the first words, in which the microphone heard `heard` while `playing` played. Only sound above
+    /// `room`, the level that would start a turn, is echo: the room's own noise teaches nothing.
+    public mutating func learn(heard: Float, playing: Float, room: Float) {
+        guard speakers else { return }
+        if playing > Self.audible, heard > room { current = (max(current.most, heard / playing), current.blocks, true) }
+        current.blocks += 1
+        guard current.blocks >= Self.slice else { return }
+        // A slice in which nothing could be heard, such as a pause, says nothing either way.
+        if current.learned { slices.append(current.most) }
+        current = (0, 0, false)
+    }
+
+    /// The reply played to the end without anyone talking over it, so what was learned from it can be built on.
+    public mutating func finished() { if speakers { trusted = gain } }
+
+    /// The first words are over: keeps the quietest slice's echo.
+    public mutating func settle() {
+        if current.learned { slices.append(current.most) }
+        if let quietest = slices.min() {
+            let bound = trusted > 0 ? trusted * Self.growth : Self.most
+            gain = min(Self.most, bound, max(gain, quietest))
+        }
+        slices = []
+        current = (0, 0, false)
+    }
+
+    /// The level that counts as you while `playing` plays.
+    public func level(_ playing: Float) -> Float { gain * playing * Self.margin }
+}
+
 /// One turn of yours, as audio.
 public struct TalkUtterance: Equatable, Sendable {
     public var samples: [Float]
@@ -183,6 +253,8 @@ public struct TalkEar: Sendable {
     private var preroll: [[Float]] = []
     private var loud = 0
     public private(set) var heard: [Float] = []
+    public private(set) var echo = TalkEcho()
+    private var echoSettled = true
 
     /// Blocks still to drop before the room is read: the talk's start sound, which the microphone hears from the speakers.
     private var cueBlocks: Int
@@ -207,8 +279,9 @@ public struct TalkEar: Sendable {
         return (block.reduce(0) { $0 + $1 * $1 } / Float(block.count)).squareRoot()
     }
 
-    /// One block of audio that ends at `time`.
-    public mutating func hear(_ block: [Float], at time: Instant) -> Event? {
+    /// One block of audio that ends at `time`. `playing` is the loudest the agent's voice played just before, as the
+    /// speakers were given it: the microphone hears that too.
+    public mutating func hear(_ block: [Float], at time: Instant, playing: Float = 0) -> Event? {
         let level = Self.rms(block)
         switch phase {
         case .calibrating:
@@ -224,7 +297,8 @@ public struct TalkEar: Sendable {
             return nil
         case .waiting(let quietSince, let warned):
             remember(block)
-            loud = level > thresholds.start ? loud + 1 : 0
+            // The end of the agent's last words can still be in the air.
+            loud = level > max(thresholds.start, echo.level(playing)) ? loud + 1 : 0
             if loud >= timing.startBlocks {
                 begin(at: time)
                 return .began
@@ -268,23 +342,37 @@ public struct TalkEar: Sendable {
             return .ended(utterance)
         case .agent(let graceUntil, let speaking):
             remember(block)
-            guard time >= graceUntil else { return nil }
-            loud = level > (speaking ? thresholds.cutIn : thresholds.start) ? loud + 1 : 0
+            guard time >= graceUntil else {
+                if speaking { echo.learn(heard: level, playing: playing, room: thresholds.start) }
+                return nil
+            }
+            settleEcho()
+            loud = level > max(speaking ? thresholds.cutIn : thresholds.start, echo.level(playing)) ? loud + 1 : 0
             guard loud >= timing.cutInBlocks else { return nil }
             begin(at: time, after: timing.cutInBlocks)
             return .cutIn
         }
     }
 
-    /// The agent's voice started playing. Until it finishes, only talk louder than its echo cuts in.
-    public mutating func agentSpeaking(at time: Instant) {
+    /// The agent's voice started playing. Until it finishes, only talk louder than its echo cuts in. `speakers` is false
+    /// when it plays in headphones, which the microphone can't hear.
+    public mutating func agentSpeaking(at time: Instant, speakers: Bool = true) {
         guard case .agent(_, false) = phase else { return }
         phase = .agent(graceUntil: time + timing.grace, speaking: true)
+        echo.begin(speakers: speakers)
+        echoSettled = false
         loud = 0
+    }
+
+    private mutating func settleEcho() {
+        guard !echoSettled else { return }
+        echo.settle()
+        echoSettled = true
     }
 
     /// The agent is working on a turn without speaking, such as after you answered its question.
     public mutating func agentWorking(at time: Instant) {
+        settleEcho()
         phase = .agent(graceUntil: time + 0.3, speaking: false)
         loud = 0
     }
@@ -310,6 +398,8 @@ public struct TalkEar: Sendable {
 
     /// The agent finished its turn and everything it said has played. What the microphone heard meanwhile was its echo.
     public mutating func agentDone(at time: Instant) {
+        settleEcho()
+        if case .agent(_, true) = phase { echo.finished() }
         guard case .agent = phase else { return }
         phase = .waiting(quietSince: time, warned: false)
         preroll = []

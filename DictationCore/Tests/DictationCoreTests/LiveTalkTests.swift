@@ -189,6 +189,134 @@ import Testing
         #expect(ear.isHearing)
     }
 
+    /// Feeds blocks as `run` does, with the agent's voice playing at `playing`.
+    private func run(_ ear: inout TalkEar, _ blocks: [[Float]], from start: Double, playing: Float) -> [(TalkEar.Event, Double)] {
+        var out: [(TalkEar.Event, Double)] = []
+        for (index, block) in blocks.enumerated() {
+            let time = start + Double(index + 1) * 0.03
+            if let event = ear.hear(block, at: Instant(seconds: time), playing: playing) { out.append((event, time)) }
+        }
+        return out
+    }
+
+    @Test func loudSpeakersDoNotCutTheAgentOff() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        ear.agentSpeaking(at: Instant(seconds: 2.4))
+        // A laptop's speakers: the agent's voice comes back louder than the plain cut-in level.
+        let loudEcho = [Float](repeating: 0.06, count: 480)
+        #expect(TalkEar.rms(loudEcho) > ear.thresholds.cutIn)
+        // Its first words teach the ear how much of it the microphone hears, and after that its echo never cuts in.
+        #expect(run(&ear, Array(repeating: loudEcho, count: 20), from: 2.4, playing: 0.1).isEmpty)
+        #expect(run(&ear, Array(repeating: loudEcho, count: 60), from: 3.0, playing: 0.1).isEmpty)
+        // Quieter words echo quieter, and a louder word louder; neither cuts in.
+        #expect(run(&ear, Array(repeating: [Float](repeating: 0.1, count: 480), count: 20), from: 4.8, playing: 0.18).isEmpty)
+        // You, clearly louder than the echo, still do.
+        #expect(run(&ear, Array(repeating: voice, count: 6), from: 5.4, playing: 0.1).map(\.0) == [.cutIn])
+    }
+
+    @Test func theAgentsLastWordsInTheAirDoNotStartATurn() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        ear.agentSpeaking(at: Instant(seconds: 2.4))
+        let loudEcho = [Float](repeating: 0.06, count: 480)
+        _ = run(&ear, Array(repeating: loudEcho, count: 20), from: 2.4, playing: 0.1)
+        ear.agentDone(at: Instant(seconds: 3))
+        #expect(run(&ear, Array(repeating: loudEcho, count: 5), from: 3, playing: 0.1).isEmpty)
+        // Once nothing plays, you start a turn as before.
+        #expect(run(&ear, Array(repeating: voice, count: 3), from: 3.2, playing: 0).map(\.0) == [.began])
+    }
+
+    /// Learns from one reply's first words, each block heard at `heard` while `playing` played.
+    private func firstWords(_ echo: inout TalkEcho, _ heard: [Float], playing: Float = 0.1, speakers: Bool = true) {
+        echo.begin(speakers: speakers)
+        for level in heard { echo.learn(heard: level, playing: playing, room: 0.008) }
+        echo.settle()
+    }
+
+    @Test func aNewReplyRelearnsTheEcho() {
+        var echo = TalkEcho()
+        firstWords(&echo, Array(repeating: 0.06, count: 20))
+        #expect(abs(echo.gain - 0.6) < 0.0001)
+        #expect(abs(echo.level(0.1) - 0.12) < 0.0001)
+        // Almost nothing playing teaches nothing.
+        firstWords(&echo, Array(repeating: 0.05, count: 20), playing: 0.01)
+        #expect(abs(echo.gain - 0.3) < 0.0001)
+        // The volume turned down: the next reply's quieter echo takes over from half of the old.
+        firstWords(&echo, Array(repeating: 0.01, count: 20))
+        #expect(abs(echo.gain - 0.15) < 0.0001)
+        // Headphones: nothing is heard back, and nothing is kept.
+        firstWords(&echo, Array(repeating: 0.06, count: 20), speakers: false)
+        #expect(echo.gain == 0)
+    }
+
+    @Test func talkInSomeOfTheFirstWordsIsNotTakenForEcho() {
+        var echo = TalkEcho()
+        // An echo at 0.03 all through, and you saying a word at 0.2 over part of it.
+        firstWords(&echo, Array(repeating: 0.03, count: 7) + Array(repeating: 0.2, count: 7) + Array(repeating: 0.03, count: 6))
+        #expect(abs(echo.gain - 0.3) < 0.0001)
+        // Talk all through them is the most the echo can be.
+        // Talk all through them raises the echo by at most half of what the last reply played to the end taught.
+        echo.finished()
+        firstWords(&echo, Array(repeating: 0.2, count: 20))
+        #expect(abs(echo.gain - 0.45) < 0.0001)
+        // That reply was cut in on, so the next is bound by the same.
+        firstWords(&echo, Array(repeating: 0.2, count: 20))
+        #expect(abs(echo.gain - 0.45) < 0.0001)
+        // On the first reply, with nothing learned before, the most the echo can be.
+        var fresh = TalkEcho()
+        firstWords(&fresh, Array(repeating: 0.2, count: 20))
+        #expect(fresh.gain == TalkEcho.most)
+    }
+
+    @Test func onSpeakersTalkingAllThroughTheFirstWordsStillLetsYouCutIn() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        // An earlier reply taught the laptop speakers' echo.
+        ear.agentSpeaking(at: Instant(seconds: 2.4))
+        let loudEcho = [Float](repeating: 0.06, count: 480)
+        _ = run(&ear, Array(repeating: loudEcho, count: 20), from: 2.4, playing: 0.3)
+        ear.agentDone(at: Instant(seconds: 4))
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 4)
+        // This reply, you talk all through its first words.
+        ear.agentSpeaking(at: Instant(seconds: 6))
+        _ = run(&ear, Array(repeating: voice, count: 20), from: 6, playing: 0.3)
+        #expect(ear.echo.gain <= 0.2 * TalkEcho.growth + 0.0001)
+        // Talking on at the same level cuts in, and keeps doing so reply after reply.
+        var from = 6.6
+        for _ in 0..<4 {
+            #expect(run(&ear, Array(repeating: voice, count: 6), from: from, playing: 0.3).map(\.0) == [.cutIn])
+            _ = run(&ear, Array(repeating: voice, count: 10) + Array(repeating: quiet, count: 30), from: from + 0.18)
+            from += 2
+            ear.agentSpeaking(at: Instant(seconds: from))
+            _ = run(&ear, Array(repeating: voice, count: 20), from: from, playing: 0.3)
+            #expect(ear.echo.gain <= 0.2 * TalkEcho.growth + 0.0001)
+            from += 0.6
+        }
+    }
+
+    @Test func withHeadphonesTalkingOverTheFirstWordsStillLetsYouCutIn() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        ear.agentSpeaking(at: Instant(seconds: 2.4), speakers: false)
+        _ = run(&ear, Array(repeating: voice, count: 20), from: 2.4, playing: 0.3)
+        #expect(ear.echo.gain == 0)
+        #expect(run(&ear, Array(repeating: voice, count: 6), from: 3.0, playing: 0.3).map(\.0) == [.cutIn])
+    }
+
+    @Test func theRoomTeachesNoEcho() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        ear.agentSpeaking(at: Instant(seconds: 2.4))
+        // The microphone hears only the room, a little noisy, while the first words play quietly.
+        let noise = [Float](repeating: 0.006, count: 480)
+        #expect(TalkEar.rms(noise) < ear.thresholds.start)
+        _ = run(&ear, Array(repeating: noise, count: 20), from: 2.4, playing: 0.03)
+        // So talking over the agent works as it always did, however loud it plays.
+        #expect(run(&ear, Array(repeating: voice, count: 6), from: 3.1, playing: 0.3).map(\.0) == [.cutIn])
+        #expect(ear.echo.gain == 0)
+    }
+
     @Test func aQuickNoOverTheAgentIsATurn() throws {
         var ear = calibrated()
         _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
