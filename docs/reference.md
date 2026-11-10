@@ -376,7 +376,7 @@ The license texts are Lip Service's own, FluidAudio's, and the three FluidAudio 
 
 To make a release zip, name it after the version in `Info.plist`. Sign a release with the certificate whose fingerprint the README lists, or the README's check fails for everyone who downloads it:
 
-	ditto -c -k --norsrc --noextattr --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.31.zip
+	ditto -c -k --norsrc --noextattr --keepParent "dist/Lip Service.app" dist/Lip-Service-1.0.32.zip
 
 ## Speech models
 
