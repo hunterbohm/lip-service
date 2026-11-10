@@ -538,7 +538,7 @@ enum TalkEnd: Equatable {
             // the line and the agent has the result, so that counts as said.
             if retried { openingTurn = current } else { openingDone(openingHeard) }
         }
-        (splitter, chunker, replyDone) = (ShowSplitter(), SpeechChunker(), false)
+        (splitter, chunker, announcer, replyDone) = (ShowSplitter(), SpeechChunker(), ToolAnnouncer(), false)
         self.clock = clock
         report = TalkTurnReport(words: words, reply: "", tools: [], cards: 0, clock: clock)
         bar = TalkBar(agent: bar.agent, phase: .thinking, line: words)
@@ -598,10 +598,8 @@ enum TalkEnd: Equatable {
                 // An update with no title only says the call moved on; its step is already up.
                 showStep(title: title, kind: kind, call: id, turn: current)
             }
+            // A tool's own words are only shown: what is said while the agent works is its own `<step>` lines.
             notePromise(title: title, status: status, kind: kind, id: id)
-            guard let phrase = announcer.announce(id: id, title: title, kind: kind, at: .now) else { return }
-            report?.tools.append(phrase)
-            queue(phrase + ".", turn: current)
         default:
             break
         }
@@ -610,7 +608,10 @@ enum TalkEnd: Equatable {
     /// Shows each step in turn, each up long enough to read.
     private func showStep(title: String, kind: String?, call: String?, turn current: Int) {
         let showing = bar.phase == .thinking && bar.activity != nil && bar.activity == steps.shown
-        steps.offer(ToolLine.phrase(title: title, kind: kind), app: ToolLine.app(title: title, kind: kind), call: call)
+        let app = ToolLine.app(title: title, kind: kind)
+        // A call after the agent's own line for what it is doing goes under that line.
+        if let call, steps.claim(call: call, app: app) { return refreshBar() }
+        steps.offer(ToolLine.phrase(title: title, kind: kind), app: app, call: call)
         // A call that said more about itself changed the step on show.
         var next = bar
         if showing { next.activity = steps.shown }
@@ -691,6 +692,7 @@ enum TalkEnd: Equatable {
         switch piece {
         case .speech(let text):
             report?.reply += text
+            if text.contains(where: { !$0.isWhitespace }) { steps.endAgentStep() }
             for chunk in chunker.feed(text) { queue(chunk, turn: current) }
             textCount += 1
             flush?.cancel()
@@ -701,6 +703,17 @@ enum TalkEnd: Equatable {
                 guard let self, !Task.isCancelled, seen == self.textCount, current == self.turn, self.chunker.sentenceEndWait != nil else { return }
                 for chunk in self.chunker.finish() { self.queue(chunk, turn: current) }
             }
+        case .step(let text):
+            guard let line = ToolLine.agentLine(text) else { break }
+            steps.offerAgent(line)
+            drainSteps(turn: current)
+            refreshBar()
+            guard let said = announcer.announce(line, at: .now) else { break }
+            // Words the agent said before the line go first.
+            flush?.cancel()
+            for chunk in chunker.finish() { queue(chunk, turn: current) }
+            report?.tools.append(said)
+            queue(said + ".", turn: current)
         case .show(let body) where TalkPrompt.isClear(body):
             onCard?(.clear)
         case .show(let body):

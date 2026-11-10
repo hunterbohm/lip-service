@@ -588,14 +588,59 @@ import Testing
         #expect(steps.next(at: Instant(seconds: 8)).line == "e")
     }
 
-    @Test func atMostOneToolLineEveryFewSeconds() {
+    @Test func onlyTheAgentsOwnLinesAreSaidAtMostOneEveryFewSeconds() {
         var announcer = ToolAnnouncer()
-        #expect(announcer.announce(id: "a", title: "web_search", kind: nil, at: Instant(seconds: 0)) == "Digging around")
-        #expect(announcer.announce(id: "a", title: "web_search", kind: nil, at: Instant(seconds: 5)) == nil)
-        #expect(announcer.announce(id: "b", title: "read_file", kind: nil, at: Instant(seconds: 2)) == nil)
-        #expect(announcer.announce(id: "c", title: "read_file", kind: nil, at: Instant(seconds: 6)) == "Doing some reading")
-        #expect(announcer.announce(id: "d", title: "read_file", kind: nil, at: Instant(seconds: 11)) == nil)
-        #expect(announcer.announce(id: "e", title: "read_file", kind: nil, at: Instant(seconds: 19)) == "Doing some reading")
+        let said = [
+            announcer.announce("Turning on your lights", at: Instant(seconds: 0)),
+            announcer.announce("Checking your calendar", at: Instant(seconds: 2)),
+            announcer.announce("Checking your calendar", at: Instant(seconds: 5)),
+            // A line said once this turn isn't said again.
+            announcer.announce("turning on your lights", at: Instant(seconds: 20)),
+        ]
+        #expect(said == ["Turning on your lights", nil, "Checking your calendar", nil])
+    }
+
+    @Test func stepLinesAreSplitOutLikeShowBlocks() {
+        var splitter = ShowSplitter()
+        var pieces: [ReplyPiece] = []
+        for chunk in ["On it. <st", "ep>Turning on your lights</st", "ep><show>done</show>", " All set."] { pieces += splitter.feed(chunk) }
+        pieces += splitter.finish()
+        #expect(pieces == [.speech("On it. "), .step("Turning on your lights"), .show("done"), .speech(" All set.")])
+    }
+
+    @Test func theAgentsLineIsCleanedForTheIsland() {
+        #expect(ToolLine.agentLine("checking what's using your CPU.") == "Checking what's using your CPU")
+        #expect(ToolLine.agentLine("**Looking for flights**") == "Looking for flights")
+        #expect(ToolLine.agentLine(" . ") == nil)
+        #expect(ToolLine.agentLine("Using key sk-abc123def456ghi789jkl") == nil)
+        #expect(ToolLine.agentLine(String(repeating: "word ", count: 20))!.count <= ToolLine.longest)
+    }
+
+    @Test func toolCallsGoUnderTheAgentsLineUntilItSaysSomethingElse() {
+        var steps = StepQueue()
+        steps.offerAgent("Turning on your lights")
+        let first = steps.claim(call: "a", app: nil), second = steps.claim(call: "b", app: nil)
+        #expect(first && second)
+        // A claimed call's later updates never put its own words up.
+        steps.offer("Running a few commands", call: "b")
+        #expect(steps.has(call: "b"))
+        let shown = steps.next(at: Instant(seconds: 0)).line, after = steps.next(at: Instant(seconds: 5)).line
+        #expect(shown == "Turning on your lights")
+        #expect(after == nil)
+        let failed = steps.fail(call: "a")
+        #expect(failed)
+        #expect(steps.step?.failed == true)
+        steps.endAgentStep()
+        let third = steps.claim(call: "c", app: nil)
+        #expect(!third)
+        steps.offer("Checking Gmail", call: "c")
+        let next = steps.next(at: Instant(seconds: 6)).line
+        #expect(next == "Checking Gmail")
+    }
+
+    @Test func everyTalkAsksForPlainStepLines() {
+        #expect(TalkPrompt.note.contains("<step>Turning on your lights</step>"))
+        #expect(TalkPrompt.note.contains("never a command"))
     }
 
     @Test func eachTurnCarriesTheNoteAndTheAgentsExtra() {
