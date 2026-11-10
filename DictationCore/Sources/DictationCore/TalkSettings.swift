@@ -132,18 +132,24 @@ public struct TalkBar: Equatable, Sendable {
     public var trail: [TalkStep]
     /// When the step on show began, or the agent's turn when it shows none: what the island's timer counts from.
     public var since: Instant?
+    /// Your microphone is muted: the talk hears nothing from you until you unmute.
+    public var muted: Bool
 
     public init(agent: BarAgent, phase: Phase, line: String = "", activity: String? = nil, endingSoon: Bool = false,
-                step: TalkStep? = nil, trail: [TalkStep] = [], since: Instant? = nil) {
+                step: TalkStep? = nil, trail: [TalkStep] = [], since: Instant? = nil, muted: Bool = false) {
         (self.agent, self.phase, self.line, self.activity, self.endingSoon) = (agent, phase, line, activity, endingSoon)
-        (self.step, self.trail, self.since) = (step, trail, since)
+        (self.step, self.trail, self.since, self.muted) = (step, trail, since, muted)
     }
+
+    /// Whether the island shows you muted: while the turn is yours. While the agent works or speaks it shows that.
+    public var showsMuted: Bool { muted && (phase == .listening || phase == .hearing) }
 
     /// What is happening, in a few words.
     public var status: String {
         if let activity, phase == .thinking || phase == .speaking && line.isEmpty { return activity }
         return switch phase {
         case .connecting: "Connecting to \(agent.name)…"
+        case .listening where muted, .hearing where muted: "Muted"
         case .listening: endingSoon ? "Still there? Ending soon" : "Listening"
         case .hearing: "Listening"
         case .thinking: "Thinking…"

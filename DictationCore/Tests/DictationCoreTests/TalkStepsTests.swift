@@ -247,6 +247,12 @@ import Testing
         #expect(TalkIsland.elapsed(-3) == "0:00")
     }
 
+    @Test func theAgentCanClearWhatItShowed() {
+        #expect(TalkPrompt.note.contains("<show>clear</show>"))
+        for body in ["clear", " Clear\n", "CLEAR.", "clear screen"] { #expect(TalkPrompt.isClear(body), "\(body)") }
+        for body in ["clear skies all week", "https://clear.example.com", "<p>clear</p>"] { #expect(!TalkPrompt.isClear(body), "\(body)") }
+    }
+
     @Test func theAgentIsToldHowToShowACard() throws {
         for word in [#""type":"flights""#, #""type":"task""#, #""type":"event""#, #""type":"email""#, #""actions""#] {
             #expect(TalkPrompt.note.contains(word), "\(word)")

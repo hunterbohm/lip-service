@@ -103,8 +103,11 @@ public enum TalkIsland {
     }
 
     /// What the globe's colours say: blues while you can talk, violet and pink while the agent thinks, amber while it
-    /// speaks, and greys while the talk connects.
-    public enum Mood: Equatable, Sendable { case connecting, you, thinking, speaking, ringing }
+    /// speaks, greys while the talk connects, and a dim red while you are muted.
+    public enum Mood: Equatable, Sendable { case connecting, you, thinking, speaking, ringing, muted }
+
+    /// The mood for a talk, with muting taken into account: muted shows only while the turn is yours.
+    public static func mood(_ bar: TalkBar) -> Mood { bar.showsMuted ? .muted : mood(bar.phase) }
 
     public static func mood(_ phase: TalkBar.Phase) -> Mood {
         switch phase {
@@ -126,6 +129,7 @@ public enum TalkIsland {
         case .thinking: [(0.62, 0.4, 1), (0.95, 0.4, 0.85), (0.35, 0.45, 1)]
         case .speaking: [(1, 0.72, 0.25), (1, 0.45, 0.35), (1, 0.88, 0.5)]
         case .ringing: [(0.25, 0.9, 0.45), (0.15, 0.7, 0.5), (0.6, 1, 0.55)]
+        case .muted: [(1, 0.4, 0.4), (0.6, 0.3, 0.32), (0.85, 0.5, 0.5)]
         }
     }
 
@@ -159,6 +163,8 @@ public enum TalkIsland {
 
     /// How to end the talk, beside the button that ends it.
     public static let endHint = "Double-tap Left Control or say goodbye to end"
+    /// The mute button's tooltip, which names its shortcut.
+    public static func muteHelp(muted: Bool) -> String { "\(muted ? "Unmute" : "Mute") your microphone (\(LiveTalkKey.muteName))" }
 
     /// How fast the globe's colours turn, in radians a second: quick while the agent works, slow while it waits on you.
     public static func orbSpeed(_ mood: Mood) -> Double {
@@ -166,6 +172,7 @@ public enum TalkIsland {
         case .thinking, .connecting, .ringing: 2.4
         case .speaking: 1.2
         case .you: 0.6
+        case .muted: 0.2
         }
     }
 
@@ -321,7 +328,12 @@ public enum TalkIsland {
         case voice(agent: Bool)
         /// Three dots that rise in turn.
         case working
+        /// A crossed-out microphone: you are muted.
+        case muted
     }
+
+    /// The right ear for a talk, with muting taken into account.
+    public static func ear(_ bar: TalkBar) -> Ear { bar.showsMuted ? .muted : ear(bar.phase) }
 
     public static func ear(_ phase: TalkBar.Phase) -> Ear {
         switch phase {
@@ -349,7 +361,7 @@ public enum TalkIsland {
     public static func headline(_ bar: TalkBar) -> String {
         switch bar.phase {
         case .connecting: "Connecting"
-        case .listening, .hearing: "Listening"
+        case .listening, .hearing: bar.muted ? "Muted" : "Listening"
         case .thinking, .speaking: bar.agent.name
         case .ringing: "\(bar.agent.name) is calling"
         }

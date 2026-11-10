@@ -587,8 +587,16 @@ public enum TalkPrompt {
         "actions":["Hold the 7:05"]}, or {"type":"task","id":"PP-3","title":"...","status":"Task added","due":"today"}, \
         {"type":"event","title":"...","date":"2026-11-12","time":"2:00 PM","where":"..."} or {"type":"email","from":"...",\
         "subject":"...","time":"..."}, alone or several in a JSON list. A "url" opens when I click the row. Each action is a \
-        button, and its label comes back as my next words. Show flights again as more come in: the new card replaces the last.
+        button, and its label comes back as my next words. Show flights again as more come in: the new card replaces the last. \
+        When we're done with what you put on my screen, or the talk moves on to something else, send <show>clear</show> and \
+        it all goes away.
         """
+
+    /// Whether a `<show>` block asks to take everything the agent showed off the screen: `clear`, alone.
+    public static func isClear(_ body: String) -> Bool {
+        let word = body.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return word == "clear" || word == "clear." || word == "clear screen"
+    }
 
     public static func message(_ words: String, extra: String) -> String {
         let extra = extra.trimmingCharacters(in: .whitespacesAndNewlines)

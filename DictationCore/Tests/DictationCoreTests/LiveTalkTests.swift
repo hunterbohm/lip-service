@@ -6,6 +6,16 @@ import Testing
     private let down: UInt64 = 0x4_0000 | 0x0001
     private let up: UInt64 = 0x100
 
+    @Test func controlOptionMMutes() {
+        let controlOption: UInt64 = 0x4_0000 | 0x8_0000
+        #expect(LiveTalkKey.isMute(keyCode: 46, flags: controlOption))
+        #expect(LiveTalkKey.isMute(keyCode: 46, flags: controlOption | 0x0001 | 0x100))
+        #expect(!LiveTalkKey.isMute(keyCode: 46, flags: 0x4_0000))
+        #expect(!LiveTalkKey.isMute(keyCode: 46, flags: controlOption | 0x10_0000))
+        #expect(!LiveTalkKey.isMute(keyCode: 45, flags: controlOption))
+        #expect(LiveTalkKey.muteName == "⌃⌥M")
+    }
+
     private func taps(_ events: [(DoubleTapDetector.Input, Double)]) -> [Bool] {
         var detector = DoubleTapDetector()
         return events.map { detector.feed($0.0, at: Instant(seconds: $0.1)) }
@@ -206,6 +216,33 @@ import Testing
         #expect(ear.hear(quiet, at: Instant(seconds: 100.5)) == .idleWarning)
         #expect(ear.hear(quiet, at: Instant(seconds: 101)) == nil)
         #expect(ear.hear(quiet, at: Instant(seconds: 120.5)) == .idleEnded)
+    }
+
+    @Test func mutingDropsYourTurnAndTheTimeMutedNeverEndsTheTalk() {
+        var ear = calibrated()
+        let events = run(&ear, Array(repeating: voice, count: 10), from: 0.6)
+        #expect(events.map(\.0) == [.began])
+        let dropped = ear.muted(at: Instant(seconds: 1))
+        #expect(dropped)
+        #expect(!ear.isHearing)
+        // Five minutes muted, then unmuted: the quiet counts from the unmute, so the talk goes on.
+        ear.unmuted(at: Instant(seconds: 300))
+        #expect(ear.hear(quiet, at: Instant(seconds: 301)) == nil)
+        #expect(ear.hear(quiet, at: Instant(seconds: 401)) == .idleWarning)
+        // Nothing from before the mute starts the next turn: it takes the usual run of loud blocks.
+        let next = run(&ear, Array(repeating: voice, count: 3), from: 402)
+        #expect(next.map(\.0) == [.began])
+    }
+
+    @Test func mutingWhileTheAgentHasTheTurnLeavesItAlone() {
+        var ear = calibrated()
+        _ = run(&ear, Array(repeating: voice, count: 30) + Array(repeating: quiet, count: 30), from: 0.6)
+        let dropped = ear.muted(at: Instant(seconds: 3))
+        #expect(!dropped)
+        ear.agentDone(at: Instant(seconds: 5))
+        ear.unmuted(at: Instant(seconds: 50))
+        #expect(ear.hear(quiet, at: Instant(seconds: 149)) == nil)
+        #expect(ear.hear(quiet, at: Instant(seconds: 151)) == .idleWarning)
     }
 }
 
@@ -495,6 +532,20 @@ import Testing
 @Suite("Live talk bar") struct TalkBarTests {
     private let hermes = BarAgent(initial: "H", name: "Hermes")
 
+    @Test func mutedShowsWhileTheTurnIsYours() {
+        let muted = TalkBar(agent: hermes, phase: .listening, muted: true)
+        #expect(muted.status == "Muted")
+        #expect(TalkIsland.headline(muted) == "Muted")
+        #expect(TalkIsland.ear(muted) == .muted)
+        #expect(TalkIsland.mood(muted) == .muted)
+        // The agent's turn shows as usual: its voice still plays while you are muted.
+        let speaking = TalkBar(agent: hermes, phase: .speaking, line: "Two meetings.", muted: true)
+        #expect(TalkIsland.ear(speaking) == .voice(agent: true))
+        #expect(TalkIsland.mood(speaking) == .speaking)
+        #expect(TalkIsland.ear(TalkBar(agent: hermes, phase: .thinking, muted: true)) == .working)
+        #expect(TalkIsland.ear(TalkBar(agent: hermes, phase: .listening)) == .voice(agent: false))
+    }
+
     @Test func aTalkOwnsTheBar() {
         let talk = TalkBar(agent: hermes, phase: .listening)
         let state = BarState.derive(hotkey: .idle, words: "", pending: 0, engine: .ready(boosting: .off), notice: nil,
@@ -503,10 +554,12 @@ import Testing
         // Starting a talk pops nothing up under the island: how to end it is inside, beside the button that ends it.
         #expect(state.toast == nil)
         #expect(TalkIsland.endHint == "Double-tap Left Control or say goodbye to end")
+        #expect(TalkIsland.muteHelp(muted: false) == "Mute your microphone (⌃⌥M)")
+        #expect(TalkIsland.muteHelp(muted: true) == "Unmute your microphone (⌃⌥M)")
     }
 
     @Test func theRimStandsOutOnABlackWindow() {
-        let moods: [TalkIsland.Mood] = [.connecting, .you, .thinking, .speaking, .ringing]
+        let moods: [TalkIsland.Mood] = [.connecting, .you, .thinking, .speaking, .ringing, .muted]
         for mood in moods {
             // Even where it is faintest, an edge needs a contrast of 3 against black to be seen.
             #expect(TalkIsland.edgeContrast(mood) >= 3)
