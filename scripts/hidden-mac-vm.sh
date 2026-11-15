@@ -82,21 +82,32 @@ mic smoke --rounds 5 --hold 0.6 --gap 0.4 --microphone default
 heard=$(grep -c '"audio":0\.[0-9]' "$out/smoke.log" || true)
 if [[ "$(rounds_in "$out/smoke.log")" == 5 && "$heard" == 5 ]]; then say "mic smoke: PASS (5 rounds, audio in $heard)"; else say "mic smoke: FAIL ($(rounds_in "$out/smoke.log") rounds, audio in $heard, see smoke.log)"; fi
 
-before=$(crash_count)
-mic soak --rounds "$soak_rounds" --hold 0.4 --gap 0.05 --microphone default
-kept_first=$(field_in "$out/soak.log" kept | head -1)
-kept_last=$(field_in "$out/soak.log" kept | tail -1)
-rss_warm=$(field_in "$out/soak.log" rss | sed -n 50p)
-rss_last=$(field_in "$out/soak.log" rss | tail -1)
-rss_growth=$(awk -v a="${rss_warm:-0}" -v b="${rss_last:-0}" 'BEGIN { printf "%.1f", b - a }')
-soak_detail="$soak_rounds rounds, engines kept $kept_first to $kept_last, memory $rss_warm to $rss_last MB, silent $(silent_in "$out/soak.log")"
-if [[ "$(rounds_in "$out/soak.log")" == "$soak_rounds" && -n "$kept_last" && "$kept_last" == "$kept_first" \
-    && "$(silent_in "$out/soak.log")" == 0 && "$(crash_count)" == "$before" ]] \
-    && awk -v growth="$rss_growth" 'BEGIN { exit !(growth < 5) }'; then
-    say "soak, no churn: PASS ($soak_detail)"
-else
-    say "soak, no churn: FAIL ($soak_detail, crash reports $(($(crash_count) - before)), see soak.log)"
-fi
+# Starts and stops the microphone `soak_rounds` times with no device change, and passes only when the number of engines
+# the app keeps does not grow, its memory grows less than 5 MB after round 50, and no round records nothing. Extra
+# arguments go to --mic-start.
+soak() {
+    local name="$1" label="$2"
+    shift 2
+    local before kept_first kept_last rss_warm rss_last rss_growth detail
+    before=$(crash_count)
+    mic "$name" --rounds "$soak_rounds" --hold 0.4 --gap 0.05 --microphone default "$@"
+    kept_first=$(field_in "$out/$name.log" kept | head -1)
+    kept_last=$(field_in "$out/$name.log" kept | tail -1)
+    rss_warm=$(field_in "$out/$name.log" rss | sed -n 50p)
+    rss_last=$(field_in "$out/$name.log" rss | tail -1)
+    rss_growth=$(awk -v a="${rss_warm:-0}" -v b="${rss_last:-0}" 'BEGIN { printf "%.1f", b - a }')
+    detail="$soak_rounds rounds, engines kept $kept_first to $kept_last, memory $rss_warm to $rss_last MB, silent $(silent_in "$out/$name.log")"
+    if [[ "$(rounds_in "$out/$name.log")" == "$soak_rounds" && -n "$kept_last" && "$kept_last" == "$kept_first" \
+        && "$(silent_in "$out/$name.log")" == 0 && "$(crash_count)" == "$before" ]] \
+        && awk -v growth="$rss_growth" 'BEGIN { exit !(growth < 5) }'; then
+        say "$label: PASS ($detail)"
+    else
+        say "$label: FAIL ($detail, crash reports $(($(crash_count) - before)), see $name.log)"
+    fi
+}
+
+soak soak "soak, no churn"
+soak soakbt "soak, Bluetooth path" --as-bluetooth
 
 before=$(crash_count)
 mic idle --rounds 1 --gap "$idle_seconds" --hold 1 --microphone default &
@@ -113,19 +124,29 @@ else
     say "idle churn: FAIL (rounds $(rounds_in "$out/idle.log") of 1, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, hung $hung, see idle.log and idle-churn.log)"
 fi
 
-before=$(crash_count)
-mic busy --rounds "$rounds" --hold 0.4 --gap 0.2 --microphone default &
-app_job=$!
-sleep 5
-"$churn" --cycles "$cycles" --pause 250 --rates > "$out/busy-churn.log" 2>&1
-churn_status=$?
-hung=0
-finish_run "$app_job" || hung=1
-changes=$(changes_in "$out/busy-churn.log")
-if [[ "$(rounds_in "$out/busy.log")" == "$rounds" && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 && "$hung" == 0 ]]; then
-    say "busy churn: PASS ($rounds rounds, silent $(silent_in "$out/busy.log"), $(tail -1 "$out/busy-churn.log"))"
-else
-    say "busy churn: FAIL (rounds $(rounds_in "$out/busy.log") of $rounds, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, hung $hung, see busy.log and busy-churn.log)"
-fi
+# Starts and stops the microphone `rounds` times while the churn tool changes the devices around it. Extra arguments go to
+# --mic-start.
+busy() {
+    local name="$1" label="$2"
+    shift 2
+    local before app_job churn_status hung changes
+    before=$(crash_count)
+    mic "$name" --rounds "$rounds" --hold 0.4 --gap 0.2 --microphone default "$@" &
+    app_job=$!
+    sleep 5
+    "$churn" --cycles "$cycles" --pause 250 --rates > "$out/$name-churn.log" 2>&1
+    churn_status=$?
+    hung=0
+    finish_run "$app_job" || hung=1
+    changes=$(changes_in "$out/$name-churn.log")
+    if [[ "$(rounds_in "$out/$name.log")" == "$rounds" && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 && "$hung" == 0 ]]; then
+        say "$label: PASS ($rounds rounds, silent $(silent_in "$out/$name.log"), engines kept $(field_in "$out/$name.log" kept | tail -1), $(tail -1 "$out/$name-churn.log"))"
+    else
+        say "$label: FAIL (rounds $(rounds_in "$out/$name.log") of $rounds, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, hung $hung, see $name.log and $name-churn.log)"
+    fi
+}
+
+busy busy "busy churn"
+busy busybt "busy churn, Bluetooth path" --as-bluetooth
 
 say "crash reports on this copy: $(crash_count)"

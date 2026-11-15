@@ -22,8 +22,10 @@ It builds the app (`--app PATH` uses one you built), starts a fresh copy of the 
 - `--self-test`: the speech model hears the bundled clip.
 - A microphone smoke test: 5 start and stop rounds, each must record audio.
 - A soak: 1500 start and stop rounds of 0.4 s, 0.05 s apart, with no device change. It fails if the number of engines the app keeps grows, if its memory grows 5 MB or more after round 50, or if a round records nothing.
+- The same soak with every input reported as Bluetooth (`--mic-start --as-bluetooth`), so the Bluetooth stop and start path runs. It passes under the same rules.
 - An idle churn: the app waits with its microphone ready while `scripts/audio-churn.swift` adds and removes audio devices, moves the default input, and changes sample rates.
 - A busy churn: the same, while the microphone starts and stops 100 times.
+- The busy churn again with every input reported as Bluetooth.
 
 Options: `--rounds N` and `--cycles N` make the busy churn longer, `--soak-rounds N` sets the soak, `--results DIR` moves the results, `--skip-models` skips the model download, `--job NAME` names the copy.
 
@@ -44,6 +46,6 @@ The script stops its copy on exit, also on failure. If it was killed, run `ssh m
 
 ## What it cannot show
 
-The hidden Mac has one virtual microphone. It has no Bluetooth and no second device at another sample rate, so AirPods and the wait in `settleAfterPicking` are not covered. A pass means no crash in that run, which is weak proof for a rare race. Say so in your report.
+The hidden Mac has one virtual microphone. It has no Bluetooth and no second device at another sample rate. `--as-bluetooth` makes the engine code take its Bluetooth path, but the device is not Bluetooth: it shows nothing of how real AirPods change profile and sample rate, or whether a stopped engine releases them. The wait in `settleAfterPicking` is not covered. A pass means no crash in that run, which is weak proof for a rare race. Say so in your report.
 
 For other checks, drive the copy yourself: `hidden-mac JOB exec CMD`, `hidden-mac JOB cp`, `hidden-mac JOB screenshot FILE`, and `hidden-mac JOB do` for clicks. Start the app through `open`, not from ssh, because the microphone grant belongs to the app.

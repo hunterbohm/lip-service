@@ -3,8 +3,9 @@
 # takes one with --app), starts a fresh copy of the hidden Mac, installs the app there, grants the microphone, caches
 # the speech models, then runs the self-test, a microphone smoke test, a soak of many microphone starts and stops with no
 # device change, and two runs that start and stop the microphone while scripts/audio-churn.swift adds, removes and
-# re-rates audio devices around it. It copies the results and any Dictation crash reports back, takes a screenshot, and
-# always stops the copy. It mutes the copy first, so the tests make no sound on the mini.
+# re-rates audio devices around it. The soak and the busy churn run twice, the second time with every input reported as
+# Bluetooth, which the copy has none of, to run the Bluetooth path. It copies the results and any Dictation crash reports
+# back, takes a screenshot, and always stops the copy. It mutes the copy first, so the tests make no sound on the mini.
 #
 # usage: scripts/hidden-mac-verify.sh [--job NAME] [--app PATH] [--rounds N] [--cycles N] [--soak-rounds N] [--results DIR]
 #                                     [--keep] [--skip-models]
@@ -123,6 +124,7 @@ hm "$job" screenshot "$stage/screen.png" > /dev/null 2>&1 && from_stage screen.p
 
 cat "$results/summary.txt"
 printf 'Results: %s\n' "$results"
-if grep -q 'FAIL' "$results/summary.txt" || [[ -n "$(ls -A "$results/crash-reports")" ]] || ! grep -q 'busy churn' "$results/summary.txt" || ! grep -q 'soak, no churn' "$results/summary.txt"; then
+if grep -q 'FAIL' "$results/summary.txt" || [[ -n "$(ls -A "$results/crash-reports")" ]] || ! grep -q '^busy churn:' "$results/summary.txt" || ! grep -q '^soak, no churn:' "$results/summary.txt" \
+    || ! grep -q '^busy churn, Bluetooth path:' "$results/summary.txt" || ! grep -q '^soak, Bluetooth path:' "$results/summary.txt"; then
     exit 1
 fi
