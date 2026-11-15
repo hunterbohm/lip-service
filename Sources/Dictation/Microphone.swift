@@ -172,7 +172,7 @@ private final class InputDevice: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.hunterbohm.dictation.microphone", qos: .userInteractive)
     private let sink: SampleSink
     private var engine = AVAudioEngine()
-    /// Engines replaced in the last few seconds; see `replaceEngine`.
+    /// Engines replaced, kept so none is freed; see `replaceEngine`.
     private var retired: [AVAudioEngine] = []
     private var phase = Phase.idle
     /// What the next start records from. Nil until the first prepare or start.
@@ -317,14 +317,16 @@ private final class InputDevice: @unchecked Sendable {
         }
     }
 
-    /// An engine stopped a moment ago still gets property callbacks from its I/O unit on AVFAudio's own queue, and
-    /// freeing it then crashes there. Readying the next engine right after a stop did that within 30 fast dictations,
-    /// so a replaced engine lives a few seconds more.
+    /// An engine, stopped or not, still gets property callbacks from its I/O unit on AVFAudio's own queue, and a callback
+    /// that reaches the engine after it is freed crashes the app. Waiting a few seconds before freeing did not stop it.
+    /// So a replaced engine is kept, at about 19 KB each. Past `retiredLimit` the oldest is freed.
     private func replaceEngine() {
         retired.append(engine)
         engine = AVAudioEngine()
-        queue.asyncAfter(deadline: .now() + 5) { [self] in retired.removeFirst() }
+        if retired.count > Self.retiredLimit { retired.removeFirst() }
     }
+
+    private static let retiredLimit = 1000
 
     /// The engine still points at the binding's device, in the format its tap takes.
     private func isCurrent(_ binding: Binding) -> Bool {
