@@ -147,8 +147,9 @@ import Synchronization
 /// read, and its next start fails once that device changes rate or is replaced. So the engine for the next capture is
 /// built while idle, pointed at the device it will record from, with its tap installed and prepared, and a key-down only
 /// starts it, which takes about 40 ms on the Mac's microphone and 60 ms on a USB one. Building it at key-down took 75 ms
-/// more. A Bluetooth microphone is built at key-down, because a prepared one holds the headset in call quality. A capture
-/// stays on the device it started on until that device is gone.
+/// more. A Bluetooth microphone is not prepared, because a prepared one holds the headset in call quality. Its engine
+/// waits stopped, with no tap, and a key-down arms and starts that same engine. A capture stays on the device it started
+/// on until that device is gone.
 private final class InputDevice: @unchecked Sendable {
     /// The device an engine points at and the format its tap takes. A device plugged back in has a new ID, so a ready
     /// engine is kept only for an equal input.
@@ -162,10 +163,14 @@ private final class InputDevice: @unchecked Sendable {
         /// Prepared with the tap installed, not started.
         case ready(Binding)
         case running(Binding)
+        /// Stopped after a Bluetooth capture, with no tap and not prepared, so it does not hold the headset. The next start
+        /// arms it again when the device and format are as they were.
+        case parked(Binding)
 
+        /// The binding of an engine that is prepared or running, which `end` has to stop.
         var binding: (binding: Binding, running: Bool)? {
             switch self {
-            case .idle: nil
+            case .idle, .parked: nil
             case .ready(let binding): (binding, false)
             case .running(let binding): (binding, true)
             }
@@ -232,8 +237,8 @@ private final class InputDevice: @unchecked Sendable {
         return abandoned
     }
 
-    /// Stops recording and readies the engine for the next start. The same engine when its device and format are as they
-    /// were, so a dictation costs no engine.
+    /// Stops recording and readies the engine for the next start, or parks it when that is Bluetooth. The same engine when
+    /// its device and format are as they were, so a dictation costs no engine.
     func stop() {
         queue.async { [self] in
             let stopped = phase.binding?.binding
@@ -265,6 +270,9 @@ private final class InputDevice: @unchecked Sendable {
             phase = .running(binding)
             return
         }
+        if case .parked(let binding) = phase, binding.input == target, isCurrent(binding), (try? arm(binding, start: true)) != nil {
+            return
+        }
         end()
         let (binding, bound) = try point(at: target, among: inputs)
         if !bound, case .device = source, let target { selected?(.fallback(missing: target.name)) }
@@ -273,7 +281,9 @@ private final class InputDevice: @unchecked Sendable {
 
     /// Readies an engine for the next start when nothing records, the app may record, and the choice resolves to a wired
     /// or built-in microphone. Every device change calls it again, and a ready engine that still fits is kept, and so is
-    /// the engine of the capture that just ended, `stopped`, when it still fits.
+    /// the engine of the capture that just ended, `stopped`, when it still fits. A Bluetooth microphone is not readied.
+    /// The engine of the capture that just ended is parked for it, and a parked engine stays while the input is the same.
+    /// The start checks that the engine still fits, so this reads nothing from a parked engine.
     private func prepareIfIdle(rearming stopped: Binding? = nil) {
         guard let choice, !abandoned, phase.binding?.running != true,
               AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
@@ -281,8 +291,13 @@ private final class InputDevice: @unchecked Sendable {
         let inputs = AudioDevices.inputs()
         let target = AudioDevices.input(for: AudioDevices.source(for: choice, among: inputs), among: inputs)
         if case .ready(let binding) = phase, binding.input == target, isCurrent(binding) { return }
+        if case .parked(let binding) = phase, binding.input == target { return }
         end()
-        guard let target, target.kind != .bluetooth else { return }
+        guard let target else { return }
+        if target.kind == .bluetooth {
+            if let stopped, stopped.input == target { phase = .parked(stopped) }
+            return
+        }
         if let stopped, stopped.input == target, isCurrent(stopped), (try? arm(stopped, start: false)) != nil { return }
         guard case let (binding, bound)? = try? point(at: target, among: inputs), bound else { return }
         try? arm(binding, start: false)
@@ -338,7 +353,7 @@ private final class InputDevice: @unchecked Sendable {
     /// An engine, stopped or not, still gets property callbacks from its I/O unit on AVFAudio's own queue, and a callback
     /// that reaches the engine after it is freed crashes the app. Waiting a few seconds before freeing did not stop it.
     /// So an engine is never freed: a replaced one is kept, at about 19 KB.
-    /// Only a device or format change, or a Bluetooth start, replaces one, never an ordinary stop.
+    /// Only the first start, or a device or format change, replaces one, never an ordinary stop or start.
     private func replaceEngine() {
         retired.append(engine)
         retiredCount.store(retired.count, ordering: .relaxed)
@@ -367,11 +382,12 @@ private final class InputDevice: @unchecked Sendable {
         NotificationCenter.default.removeObserver(observer)
     }
 
-    /// Stops the engine, ready or running, and removes its tap.
+    /// Stops the engine, ready or running, and removes its tap. A parked engine is already stopped, and this unparks it.
     private func end() {
-        guard phase.binding != nil else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        if phase.binding != nil {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
         phase = .idle
     }
 
