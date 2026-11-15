@@ -38,6 +38,26 @@ mic() {
     open -n -W --stdout "$out/$name.log" --stderr "$out/$name.log" "$app" --args --mic-start "$@"
 }
 
+# Waits for the app run started in the background as `pid`. A run that is still going 150 s after its churn ended has hung
+# in CoreAudio, which fails the check. Its stacks are saved to hung-sample.txt, and it is killed so the next one can start.
+finish_run() {
+    local pid="$1" waited=0
+    while kill -0 "$pid" 2> /dev/null; do
+        sleep 2
+        waited=$((waited + 2))
+        if ((waited > 150)); then
+            sample "$(pgrep -f 'Dictation --mic-start' | head -1)" 2 -file "$out/hung-sample.txt" > /dev/null 2>&1
+            pkill -f 'Dictation --mic-start'
+            sleep 1
+            kill "$pid" 2> /dev/null
+            wait "$pid" 2> /dev/null
+            return 1
+        fi
+    done
+    wait "$pid" 2> /dev/null
+    return 0
+}
+
 rounds_in() { grep -c '"round"' "$1" 2>/dev/null || true; }
 silent_in() { grep -c '"audio":0,' "$1" 2>/dev/null || true; }
 # The value of a number field in the round lines of a log, in round order.
@@ -84,12 +104,13 @@ app_job=$!
 sleep 5
 "$churn" --cycles $((idle_seconds * 7)) --pause 100 --rates > "$out/idle-churn.log" 2>&1
 churn_status=$?
-wait "$app_job"
+hung=0
+finish_run "$app_job" || hung=1
 changes=$(changes_in "$out/idle-churn.log")
-if [[ "$(rounds_in "$out/idle.log")" == 1 && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 ]]; then
+if [[ "$(rounds_in "$out/idle.log")" == 1 && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 && "$hung" == 0 ]]; then
     say "idle churn: PASS ($(tail -1 "$out/idle-churn.log"))"
 else
-    say "idle churn: FAIL (rounds $(rounds_in "$out/idle.log") of 1, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, see idle.log and idle-churn.log)"
+    say "idle churn: FAIL (rounds $(rounds_in "$out/idle.log") of 1, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, hung $hung, see idle.log and idle-churn.log)"
 fi
 
 before=$(crash_count)
@@ -98,12 +119,13 @@ app_job=$!
 sleep 5
 "$churn" --cycles "$cycles" --pause 250 --rates > "$out/busy-churn.log" 2>&1
 churn_status=$?
-wait "$app_job"
+hung=0
+finish_run "$app_job" || hung=1
 changes=$(changes_in "$out/busy-churn.log")
-if [[ "$(rounds_in "$out/busy.log")" == "$rounds" && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 ]]; then
+if [[ "$(rounds_in "$out/busy.log")" == "$rounds" && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 && "$hung" == 0 ]]; then
     say "busy churn: PASS ($rounds rounds, silent $(silent_in "$out/busy.log"), $(tail -1 "$out/busy-churn.log"))"
 else
-    say "busy churn: FAIL (rounds $(rounds_in "$out/busy.log") of $rounds, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, see busy.log and busy-churn.log)"
+    say "busy churn: FAIL (rounds $(rounds_in "$out/busy.log") of $rounds, crash reports $(($(crash_count) - before)), churn exit $churn_status, default input changes ${changes:-0}, hung $hung, see busy.log and busy-churn.log)"
 fi
 
 say "crash reports on this copy: $(crash_count)"

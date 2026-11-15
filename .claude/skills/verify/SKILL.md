@@ -29,7 +29,7 @@ Options: `--rounds N` and `--cycles N` make the busy churn longer, `--soak-round
 
 ## Read the result
 
-- The last lines are one `PASS` or `FAIL` per check. A churn check passes only when the churn tool exited 0 and changed the default input at least once. Exit 0 means all passed, 1 means a check failed or a Dictation crash report appeared, 2 means the setup failed.
+- The last lines are one `PASS` or `FAIL` per check. A churn check passes only when the churn tool exited 0, changed the default input at least once, and the app ended within 150 s of the churn (`hung 1` means it did not; its stacks are in `out/hung-sample.txt`, and it was killed). Exit 0 means all passed, 1 means a check failed or a Dictation crash report appeared, 2 means the setup failed.
 - The results folder (printed at the end, under `.tmp/hidden-mac-verify/`) holds `summary.txt`, `out/*.log` for each check, `crash-reports/*.ips`, and `screen.png`.
 - For a crash report, read `exception`, `asi`, and the thread with `"triggered": true`. Then the app's own threads: the microphone queue is `com.hunterbohm.dictation.microphone`.
 - `silent` in the busy churn counts rounds that recorded nothing. A few are normal, because the churn removes the device the app was using. A jump after your change is worth a look.

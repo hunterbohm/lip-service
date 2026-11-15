@@ -177,6 +177,7 @@ private final class InputDevice: @unchecked Sendable {
     private var engine = AVAudioEngine()
     /// Engines replaced, never freed; see `replaceEngine`.
     private var retired: [AVAudioEngine] = []
+    private let retiredCount = Atomic<Int>(0)
     /// The sink node the bar's waves are fed from. A re-arm of the same engine replaces it. After a new engine it still
     /// belongs to the retired one, and detaching a node from an engine that does not own it raises.
     private var voiceNode: AVAudioSinkNode?
@@ -241,8 +242,9 @@ private final class InputDevice: @unchecked Sendable {
         }
     }
 
-    /// The number of engines replaced, which are all still alive. A test reads it.
-    var enginesKept: Int { queue.sync { retired.count } }
+    /// The number of engines replaced, which are all still alive. A test reads it. It never waits on the queue, which can
+    /// be inside a CoreAudio call that does not return.
+    var enginesKept: Int { retiredCount.load(ordering: .relaxed) }
 
     private func observe(_ engine: AVAudioEngine) {
         if let observer { NotificationCenter.default.removeObserver(observer) }
@@ -339,6 +341,7 @@ private final class InputDevice: @unchecked Sendable {
     /// Only a device or format change, or a Bluetooth start, replaces one, never an ordinary stop.
     private func replaceEngine() {
         retired.append(engine)
+        retiredCount.store(retired.count, ordering: .relaxed)
         engine = AVAudioEngine()
     }
 
