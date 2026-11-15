@@ -33,6 +33,9 @@ import Synchronization
     /// When the first sample of the capture in progress was recorded.
     var firstAudio: Instant? { sink.firstAudio }
 
+    /// How many replaced engines the device keeps alive. `--mic-start` prints it.
+    var enginesKept: Int { device.enginesKept }
+
     init() { device = InputDevice(feeding: sink) }
 
     static var accessDenied: Bool {
@@ -140,12 +143,13 @@ import Synchronization
     }
 }
 
-/// AVAudioEngine, touched only on `queue`. An engine serves one device: a stopped engine keeps the input format it first
-/// read, and its next start fails once that device changes rate or is replaced. So the engine for the next capture is
+/// AVAudioEngine, touched only on `queue`. An engine serves one device: a tap in the input format it first read fails once
+/// that device changes rate, and an engine cannot follow a device that is replaced. So the engine for the next capture is
 /// built while idle, pointed at the device it will record from, with its tap installed and prepared, and a key-down only
 /// starts it, which takes about 40 ms on the Mac's microphone and 60 ms on a USB one. Building it at key-down took 75 ms
-/// more. A Bluetooth microphone is built at key-down, because a prepared one holds the headset in call quality. A capture
-/// stays on the device it started on until that device is gone.
+/// more. A Bluetooth microphone is not prepared, because a prepared one holds the headset in call quality. Its engine
+/// waits stopped, with no tap, and a key-down arms and starts that same engine. A capture stays on the device it started
+/// on until that device is gone.
 private final class InputDevice: @unchecked Sendable {
     /// The device an engine points at and the format its tap takes. A device plugged back in has a new ID, so a ready
     /// engine is kept only for an equal input.
@@ -159,10 +163,14 @@ private final class InputDevice: @unchecked Sendable {
         /// Prepared with the tap installed, not started.
         case ready(Binding)
         case running(Binding)
+        /// Stopped after a Bluetooth capture, with no tap and not prepared, because a prepared engine holds the headset in
+        /// call quality. The next start arms it again while it points at the same input.
+        case parked(AudioDevices.Input)
 
+        /// The binding of an engine that is prepared or running, which `end` has to stop.
         var binding: (binding: Binding, running: Bool)? {
             switch self {
-            case .idle: nil
+            case .idle, .parked: nil
             case .ready(let binding): (binding, false)
             case .running(let binding): (binding, true)
             }
@@ -172,8 +180,12 @@ private final class InputDevice: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.hunterbohm.dictation.microphone", qos: .userInteractive)
     private let sink: SampleSink
     private var engine = AVAudioEngine()
-    /// Engines replaced in the last few seconds; see `replaceEngine`.
+    /// Engines replaced, never freed; see `replaceEngine`.
     private var retired: [AVAudioEngine] = []
+    private let retiredCount = Atomic<Int>(0)
+    /// The sink node the bar's waves are fed from. A re-arm of the same engine replaces it. After a new engine it still
+    /// belongs to the retired one, and detaching a node from an engine that does not own it raises.
+    private var voiceNode: AVAudioSinkNode?
     private var phase = Phase.idle
     /// What the next start records from. Nil until the first prepare or start.
     private var choice: MicrophoneChoice?
@@ -225,13 +237,19 @@ private final class InputDevice: @unchecked Sendable {
         return abandoned
     }
 
-    /// Stops recording and readies the engine for the next start.
+    /// Stops recording and readies the engine for the next start, or parks it when that is Bluetooth. The same engine while
+    /// it points at the same device, so a dictation costs no engine.
     func stop() {
         queue.async { [self] in
+            let stopped = phase.binding?.binding
             end()
-            prepareIfIdle()
+            prepareIfIdle(rearming: stopped)
         }
     }
+
+    /// The number of engines replaced, which are all still alive. A test reads it. It never waits on the queue, which can
+    /// be inside a CoreAudio call that does not return.
+    var enginesKept: Int { retiredCount.load(ordering: .relaxed) }
 
     private func observe(_ engine: AVAudioEngine) {
         if let observer { NotificationCenter.default.removeObserver(observer) }
@@ -252,6 +270,9 @@ private final class InputDevice: @unchecked Sendable {
             phase = .running(binding)
             return
         }
+        if case .parked(let input) = phase, input == target, let binding = rebind(input), (try? arm(binding, start: true)) != nil {
+            return
+        }
         end()
         let (binding, bound) = try point(at: target, among: inputs)
         if !bound, case .device = source, let target { selected?(.fallback(missing: target.name)) }
@@ -259,17 +280,26 @@ private final class InputDevice: @unchecked Sendable {
     }
 
     /// Readies an engine for the next start when nothing records, the app may record, and the choice resolves to a wired
-    /// or built-in microphone. Every device change calls it again, and a ready engine that still fits is kept.
-    private func prepareIfIdle() {
+    /// or built-in microphone. Every device change calls it again, and a ready engine that still fits is kept, and so is
+    /// the engine of the capture that just ended, `stopped`, when it still fits. A Bluetooth microphone is not readied.
+    /// The engine of the capture that just ended is parked for it, and a parked engine stays while the input is the same.
+    /// The start checks that the engine still fits, so this reads nothing from a parked engine.
+    private func prepareIfIdle(rearming stopped: Binding? = nil) {
         guard let choice, !abandoned, phase.binding?.running != true,
               AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         else { return }
         let inputs = AudioDevices.inputs()
         let target = AudioDevices.input(for: AudioDevices.source(for: choice, among: inputs), among: inputs)
         if case .ready(let binding) = phase, binding.input == target, isCurrent(binding) { return }
+        if case .parked(let input) = phase, input == target { return }
         end()
-        guard let target, target.kind != .bluetooth, case let (binding, bound)? = try? point(at: target, among: inputs), bound
-        else { return }
+        guard let target else { return }
+        if target.kind == .bluetooth {
+            if let stopped, stopped.input == target { phase = .parked(target) }
+            return
+        }
+        if let stopped, stopped.input == target, let binding = rebind(target), (try? arm(binding, start: false)) != nil { return }
+        guard case let (binding, bound)? = try? point(at: target, among: inputs), bound else { return }
         try? arm(binding, start: false)
     }
 
@@ -307,28 +337,42 @@ private final class InputDevice: @unchecked Sendable {
     /// tap gets about 100 ms at a time. The bar's waves read the voice from it. When the engine refuses the connection,
     /// the tap feeds them instead, ten times a second.
     private func attachVoice(to engine: AVAudioEngine, format: AVAudioFormat) {
+        if let old = voiceNode, old.engine === engine { engine.detach(old) }
         let node = sink.voice.makeSinkNode()
         engine.attach(node)
         if LSCatchException({ engine.connect(engine.inputNode, to: node, format: format) }) == nil {
+            voiceNode = node
             sink.voice.useSink(at: format.sampleRate)
         } else {
             engine.detach(node)
+            voiceNode = nil
             sink.voice.useSink(at: nil)
         }
     }
 
-    /// An engine stopped a moment ago still gets property callbacks from its I/O unit on AVFAudio's own queue, and
-    /// freeing it then crashes there. Readying the next engine right after a stop did that within 30 fast dictations,
-    /// so a replaced engine lives a few seconds more.
+    /// An engine, stopped or not, still gets property callbacks from its I/O unit on AVFAudio's own queue, and a callback
+    /// that reaches the engine after it is freed crashes the app. Waiting a few seconds before freeing did not stop it.
+    /// So an engine is never freed: a replaced one is kept, at about 19 KB.
+    /// Only the first start or a change of device replaces one, never an ordinary stop or start or a rate change.
     private func replaceEngine() {
         retired.append(engine)
+        retiredCount.store(retired.count, ordering: .relaxed)
         engine = AVAudioEngine()
-        queue.asyncAfter(deadline: .now() + 5) { [self] in retired.removeFirst() }
     }
 
     /// The engine still points at the binding's device, in the format its tap takes.
     private func isCurrent(_ binding: Binding) -> Bool {
         AudioDevices.current(of: engine) == binding.input.deviceID && engine.inputNode.inputFormat(forBus: 0) == binding.format
+    }
+
+    /// `input` with the format the engine reads now, when the engine still points at it. A stopped engine can arm again in
+    /// the format its input reports after the device changed rate, which a Bluetooth headset does between a call and
+    /// playback quality, where a tap in the old format raises. So a rate change needs no new engine.
+    private func rebind(_ input: AudioDevices.Input) -> Binding? {
+        guard AudioDevices.current(of: engine) == input.deviceID else { return nil }
+        let format = engine.inputNode.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return nil }
+        return Binding(input: input, format: format)
     }
 
     /// The longest a start waits for the change that picking a device posts.
@@ -348,26 +392,27 @@ private final class InputDevice: @unchecked Sendable {
         NotificationCenter.default.removeObserver(observer)
     }
 
-    /// Stops the engine, ready or running, and removes its tap.
+    /// Stops the engine, ready or running, and removes its tap. A parked engine is already stopped, and this unparks it.
     private func end() {
-        guard phase.binding != nil else { return }
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        if phase.binding != nil {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
         phase = .idle
     }
 
     /// A configuration change stops the engine, and a headset connecting posts one even to an engine on another device.
     /// A capture restarts on the device it started on and keeps appending to the same samples. It moves only when that
     /// device is gone. If the restart fails while the device is still there, the capture ends there rather than moving,
-    /// and `stop` still returns what was captured. A change that leaves the device
-    /// and its format as they were, such as the one picking a device posts when it comes after `settleAfterPicking` gave
-    /// up, rearms the same engine. A fresh engine would select the device again, post another change, and never settle.
+    /// and `stop` still returns what was captured. A change that leaves the engine on its device, such as a rate change,
+    /// or the one picking a device posts when it comes after `settleAfterPicking` gave up, rearms the same engine in the
+    /// format it reads now. A fresh engine would select the device again, post another change, and never settle.
     private func configurationChanged() {
         guard case let (binding, running)? = phase.binding else { return }
         guard !abandoned else { return end() }
-        let unchanged = isCurrent(binding)
+        let current = rebind(binding.input)
         end()
-        if unchanged, (try? arm(binding, start: running)) != nil { return }
+        if let current, (try? arm(current, start: running)) != nil { return }
         guard running else { return prepareIfIdle() }
         let inputs = AudioDevices.inputs()
         if let same = inputs.first(where: { $0.uid == binding.input.uid }) {

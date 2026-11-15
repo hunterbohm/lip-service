@@ -49,9 +49,11 @@ enum Mode {
                    --pack loads a pack folder that is already on disk, unchecked. Otherwise the pinned pack in --directory,
                    or FluidAudio's text-to-speech models folder, is checked as the app checks it, and downloaded when it is
                    missing, which URLSession only does in a GUI session. Over SSH, fetch it with scripts/fetch-models.sh --voice.
-               Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone automatic|default|UID]
+               Dictation --mic-start [--rounds N] [--hold S] [--gap S] [--microphone automatic|default|UID] [--as-bluetooth]
                    Starts and stops the microphone as dictation does, and prints one JSON line per round with how long
-                   the first audio took and how much of the hold was recorded. Uses the saved microphone unless given.
+                   the first audio took, how much of the hold was recorded, how many replaced audio engines the app
+                   keeps ("kept"), and its resident memory in MB ("rss"). Uses the saved microphone unless given.
+                   --as-bluetooth makes every input report Bluetooth, to run the Bluetooth path on a Mac with none.
                Dictation --render-bar DIR
                    Writes a PNG of every bar state into DIR. Needs a logged-in GUI session.
                Dictation --render-window DIR
@@ -175,7 +177,7 @@ enum Mode {
                 var options = Headless.MicStartOptions()
                 while let flag = rest.popFirst() {
                     switch flag {
-                    case "--rounds": options.rounds = try Self.number(of: flag, from: &rest, Int.init, in: 1...1000)
+                    case "--rounds": options.rounds = try Self.number(of: flag, from: &rest, Int.init, in: 1...5000)
                     case "--hold": options.hold = try Self.number(of: flag, from: &rest, Double.init, in: 0.1...60)
                     case "--gap": options.gap = try Self.number(of: flag, from: &rest, Double.init, in: 0...600)
                     case "--microphone":
@@ -185,6 +187,7 @@ enum Mode {
                         case "default": .systemDefault
                         default: .device(uid: uid, name: AudioDevices.input(uid: uid)?.name ?? uid)
                         }
+                    case "--as-bluetooth": options.asBluetooth = true
                     default: throw DictationError("unknown option \(flag)")
                     }
                 }
@@ -359,6 +362,7 @@ enum Headless {
         /// Idle time before each start, as between dictations.
         var gap = 2.0
         var microphone: MicrophoneChoice?
+        var asBluetooth = false
     }
 
     struct BenchOptions {
@@ -519,6 +523,7 @@ enum Headless {
         let stored = SettingsStore.read(SettingsStore.defaults) ?? Settings()
         let choice = options.microphone ?? stored.microphone
         AudioDevices.automaticOrder = stored.automaticOrder
+        if options.asBluetooth { AudioDevices.forcedInputKind = .bluetooth }
         let microphone = Microphone()
         var failure: (any Error)?
         var source: MicrophoneSource?
@@ -543,12 +548,25 @@ enum Headless {
             sounds.play(.stop)
             let held = Instant.now - started
             var row: [String: Any] = ["round": round, "held": held, "audio": audio, "lost": held - audio,
-                                      "source": source.map { String(describing: $0) } ?? "none"]
+                                      "source": source.map { String(describing: $0) } ?? "none",
+                                      "kept": microphone.enginesKept, "rss": (residentMegabytes * 10).rounded() / 10]
             if let ready { row["ready"] = ready }
             if let failure { row["error"] = failure.localizedDescription }
             emit(row)
         }
         return 0
+    }
+
+    /// This process's resident memory, in megabytes.
+    private static var residentMegabytes: Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Double(info.resident_size) / 1_048_576 : 0
     }
 
     static func listInputs() -> Int32 {

@@ -19,6 +19,14 @@ enum AudioDevices {
     }
 
     private static let order = Mutex(AutomaticOrder())
+    private static let forced = Mutex<MicrophoneInput.Kind?>(nil)
+
+    /// Makes every input report this kind, so a Mac with no Bluetooth runs the Bluetooth path. `--mic-start
+    /// --as-bluetooth` sets it, for the hidden Mac checks.
+    static var forcedInputKind: MicrophoneInput.Kind? {
+        get { forced.withLock { $0 } }
+        set { forced.withLock { $0 = newValue } }
+    }
 
     /// The order the user set for Automatic, kept here so every capture and the menu pick by it without being handed
     /// it. Like the lid and the system default, it is read fresh each time Automatic picks. Preferences keeps it current.
@@ -54,7 +62,7 @@ enum AudioDevices {
             guard inputChannelCount(id) > 0, let uid = stringProperty(id, kAudioDevicePropertyDeviceUID),
                   let name = stringProperty(id, kAudioObjectPropertyName)
             else { return nil }
-            return Input(uid: uid, name: name, deviceID: id, kind: kind(of: id))
+            return Input(uid: uid, name: name, deviceID: id, kind: forcedInputKind ?? kind(of: id))
         }
     }
 
