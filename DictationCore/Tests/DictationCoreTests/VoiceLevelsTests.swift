@@ -56,13 +56,13 @@ import Testing
         #expect(reading.glow(delay: 0) < 0.02)
     }
 
-    @Test func theEndsReadOlderAudioThanTheMiddle() {
+    @Test func anOlderDelayReadsOlderAudio() {
         var levels = VoiceLevels()
         var time = Self.hear(&levels, Self.room, from: 0, seconds: 3)
         time = Self.hear(&levels, Self.talking, from: time, seconds: 0.2)
         let reading = levels.reading
-        #expect(reading.level(delay: 0) > reading.level(delay: LightWave.spread))
-        #expect(reading.level(delay: LightWave.spread) > 0)
+        #expect(reading.level(delay: 0) > reading.level(delay: 0.15))
+        #expect(reading.level(delay: 0.15) > 0)
     }
 
     @Test func resetKeepsTheSpeakersScale() {

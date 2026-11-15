@@ -177,7 +177,7 @@ struct ServerVoiceProvider: VoiceProvider {
     var onStarted: ((String) -> Void)? { get set }
     /// Everything queued has played.
     var onIdle: (() -> Void)? { get set }
-    /// What is playing, measured for the bar's waves. Nil when nothing is.
+    /// What is playing, measured for the bar's scope. Nil when nothing is.
     var voice: VoiceTap? { get }
     var isPlaying: Bool { get }
     func start() throws
