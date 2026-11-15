@@ -15,20 +15,21 @@ From the repo, on the MacBook or on the mini:
 scripts/hidden-mac-verify.sh
 ```
 
-Run it as a background command and wait for it. It takes about 5 minutes, or 15 on a copy with no speech models yet.
+Run it as a background command and wait for it. It takes about 20 minutes, or 30 on a copy with no speech models yet.
 
 It builds the app (`--app PATH` uses one you built), starts a fresh copy of the hidden Mac, mutes the copy, installs the app, grants the microphone, and runs:
 
 - `--self-test`: the speech model hears the bundled clip.
 - A microphone smoke test: 5 start and stop rounds, each must record audio.
+- A soak: 1500 start and stop rounds of 0.4 s, 0.05 s apart, with no device change. It fails if the number of engines the app keeps grows, if its memory grows 5 MB or more after round 50, or if a round records nothing.
 - An idle churn: the app waits with its microphone ready while `scripts/audio-churn.swift` adds and removes audio devices, moves the default input, and changes sample rates.
 - A busy churn: the same, while the microphone starts and stops 100 times.
 
-Options: `--rounds N` and `--cycles N` make the busy churn longer, `--results DIR` moves the results, `--skip-models` skips the model download, `--job NAME` names the copy.
+Options: `--rounds N` and `--cycles N` make the busy churn longer, `--soak-rounds N` sets the soak, `--results DIR` moves the results, `--skip-models` skips the model download, `--job NAME` names the copy.
 
 ## Read the result
 
-- The last lines are one `PASS` or `FAIL` per check. Exit 0 means all passed, 1 means a check failed or a Dictation crash report appeared, 2 means the setup failed.
+- The last lines are one `PASS` or `FAIL` per check. A churn check passes only when the churn tool exited 0 and changed the default input at least once. Exit 0 means all passed, 1 means a check failed or a Dictation crash report appeared, 2 means the setup failed.
 - The results folder (printed at the end, under `.tmp/hidden-mac-verify/`) holds `summary.txt`, `out/*.log` for each check, `crash-reports/*.ips`, and `screen.png`.
 - For a crash report, read `exception`, `asi`, and the thread with `"triggered": true`. Then the app's own threads: the microphone queue is `com.hunterbohm.dictation.microphone`.
 - `silent` in the busy churn counts rounds that recorded nothing. A few are normal, because the churn removes the device the app was using. A jump after your change is worth a look.

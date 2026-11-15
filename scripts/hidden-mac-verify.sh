@@ -1,13 +1,13 @@
 #!/bin/bash
 # Proves a Lip Service build works on a hidden Mac, a macOS VM on the mini that nobody watches. It builds the app (or
 # takes one with --app), starts a fresh copy of the hidden Mac, installs the app there, grants the microphone, caches
-# the speech models, then runs the self-test, a microphone smoke test, and two runs that start and stop the microphone
-# while scripts/audio-churn.swift adds, removes and re-rates audio devices around it. It copies the results and any
-# Dictation crash reports back, takes a screenshot, and always stops the copy. It mutes the copy first, so the tests
-# make no sound on the mini.
+# the speech models, then runs the self-test, a microphone smoke test, a soak of many microphone starts and stops with no
+# device change, and two runs that start and stop the microphone while scripts/audio-churn.swift adds, removes and
+# re-rates audio devices around it. It copies the results and any Dictation crash reports back, takes a screenshot, and
+# always stops the copy. It mutes the copy first, so the tests make no sound on the mini.
 #
-# usage: scripts/hidden-mac-verify.sh [--job NAME] [--app PATH] [--rounds N] [--cycles N] [--results DIR] [--keep]
-#                                     [--skip-models]
+# usage: scripts/hidden-mac-verify.sh [--job NAME] [--app PATH] [--rounds N] [--cycles N] [--soak-rounds N] [--results DIR]
+#                                     [--keep] [--skip-models]
 # Run it on the MacBook, or on the mini itself. HIDDEN_MAC_HOST names the mini's ssh host and hostname (default mini).
 # Exits 0 when every check passes, 1 when one fails, 2 when the setup fails.
 set -euo pipefail
@@ -16,6 +16,7 @@ job="ls-verify-$(printf '%04x' "$RANDOM")"
 app=""
 rounds=100
 cycles=200
+soak_rounds=1500
 results=""
 keep=0
 skip_models=0
@@ -25,10 +26,11 @@ while (($#)); do
         --app) app="$2"; shift 2 ;;
         --rounds) rounds="$2"; shift 2 ;;
         --cycles) cycles="$2"; shift 2 ;;
+        --soak-rounds) soak_rounds="$2"; shift 2 ;;
         --results) results="$2"; shift 2 ;;
         --keep) keep=1; shift ;;
         --skip-models) skip_models=1; shift ;;
-        *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+        *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
     esac
 done
 results="${results:-$root/.tmp/hidden-mac-verify/$(date +%Y%m%d-%H%M%S)}"
@@ -99,14 +101,14 @@ vm "cd ~/ls-verify && chmod +x audio-churn hidden-mac-vm.sh scripts/fetch-models
 
 skip=""
 ((skip_models)) && skip="SKIP_MODELS=1"
-vm "cd ~/ls-verify && ROUNDS=$rounds CYCLES=$cycles $skip nohup ./hidden-mac-vm.sh > out/run.log 2>&1 < /dev/null & echo started" > /dev/null
-printf 'Running on %s. This takes about 5 minutes, or 15 on a copy that has no speech models yet.\n' "$job"
+vm "cd ~/ls-verify && ROUNDS=$rounds CYCLES=$cycles SOAK_ROUNDS=$soak_rounds $skip nohup ./hidden-mac-vm.sh > out/run.log 2>&1 < /dev/null & echo started" > /dev/null
+printf 'Running on %s. This takes about 20 minutes, or 30 on a copy that has no speech models yet.\n' "$job"
 
 waited=0
 until vm "test -e ~/ls-verify/out/done" > /dev/null 2>&1; do
     sleep 10
     waited=$((waited + 10))
-    if ((waited > 2400)); then printf 'Timed out after 40 minutes.\n' >&2; break; fi
+    if ((waited > 3600)); then printf 'Timed out after 60 minutes.\n' >&2; break; fi
 done
 
 mkdir -p "$results/out" "$results/crash-reports"
@@ -121,6 +123,6 @@ hm "$job" screenshot "$stage/screen.png" > /dev/null 2>&1 && from_stage screen.p
 
 cat "$results/summary.txt"
 printf 'Results: %s\n' "$results"
-if grep -q 'FAIL' "$results/summary.txt" || [[ -n "$(ls -A "$results/crash-reports")" ]] || ! grep -q 'busy churn' "$results/summary.txt"; then
+if grep -q 'FAIL' "$results/summary.txt" || [[ -n "$(ls -A "$results/crash-reports")" ]] || ! grep -q 'busy churn' "$results/summary.txt" || ! grep -q 'soak, no churn' "$results/summary.txt"; then
     exit 1
 fi
