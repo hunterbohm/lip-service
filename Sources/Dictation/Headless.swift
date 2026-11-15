@@ -9,6 +9,7 @@ enum Mode {
     case selfTest(Headless.SelfTestOptions)
     case bench(Headless.BenchOptions)
     case listInputs
+    case loginStatus
     case ttsCheck(Headless.TtsCheckOptions)
     case micStart(Headless.MicStartOptions)
     case renderBar(URL)
@@ -39,6 +40,8 @@ enum Mode {
                    --format-app formats for one app group: messages, workChat, email, aiAndCode or everythingElse.
                Dictation --list-inputs
                    Prints the audio inputs and the system default.
+               Dictation --login-status
+                   Prints whether macOS holds the launch agent and the old login item, which start the app at login.
                Dictation --tts-check [--voice NAME] [--text TEXT] [--pack DIR | --directory DIR] [--out FILE.wav]
                    Says one sentence with FluidAudio's Phonon text-to-speech through the library the app is built with, and
                    prints one JSON line: the load time, the time to the first audio, the time to the last, and the length.
@@ -153,6 +156,8 @@ enum Mode {
                 self = .bench(options)
             case "--list-inputs":
                 self = .listInputs
+            case "--login-status":
+                self = .loginStatus
             case "--tts-check":
                 var options = Headless.TtsCheckOptions()
                 while let flag = rest.popFirst() {

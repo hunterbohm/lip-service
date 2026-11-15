@@ -96,13 +96,15 @@ enum PageSheet: Equatable { case agents, voice, apps }
         let iconHidden = !services.preferences.current.settings.showMenuBarIcon
         if services.preferences.needsOnboarding {
             showSetup(at: .welcome)
-        } else if iconHidden, !Self.launchedAsLoginItem {
+        } else if LaunchAgent.handedOver == .window || (iconHidden && !Self.startedQuietly) {
             openWindow(nil)
         }
     }
 
-    /// Valid only during applicationDidFinishLaunching, while the launch event is current.
-    private static var launchedAsLoginItem: Bool {
+    /// A login or a restart after a crash. Valid only during applicationDidFinishLaunching, while the launch event is
+    /// current.
+    private static var startedQuietly: Bool {
+        if LaunchAgent.startedByLaunchd { return LaunchAgent.handedOver == nil }
         let event = NSAppleEventManager.shared().currentAppleEvent
         return event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
@@ -235,27 +237,33 @@ struct SetupChecks: Equatable {
     }
 }
 
+/// Launch at login, for the Settings row. The launch agent starts the app at login and again after a crash.
 @MainActor @Observable final class LoginItem {
-    private(set) var status = SMAppService.mainApp.status
+    private(set) var agent = LaunchAgent.service.status
+    private(set) var legacy = SMAppService.mainApp.status
     private(set) var error: String?
 
-    var isOn: Bool { status == .enabled || status == .requiresApproval }
+    var isOn: Bool { LaunchAgent.isOn(agent) || LaunchAgent.isOn(legacy) }
 
     var note: String? {
-        error ?? (status == .requiresApproval ? "Turn on Lip Service in System Settings > General > Login Items." : nil)
+        error ?? (agent == .requiresApproval || legacy == .requiresApproval
+                  ? "Turn on Lip Service in System Settings > General > Login Items." : nil)
     }
 
     func set(_ on: Bool) {
         do {
-            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            try LaunchAgent.set(on)
             error = nil
         } catch {
             self.error = error.localizedDescription
         }
-        status = SMAppService.mainApp.status
+        refresh()
     }
 
-    func refresh() { status = SMAppService.mainApp.status }
+    func refresh() {
+        agent = LaunchAgent.service.status
+        legacy = SMAppService.mainApp.status
+    }
 }
 
 enum SystemSettingsPane: String {

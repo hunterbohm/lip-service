@@ -27,9 +27,23 @@ mkdir -p "$root/dist"
 staging="$(mktemp -d "$root/dist/.build-app.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 contents="$staging/$bundle/Contents"
-mkdir -p "$contents/MacOS" "$contents/Resources"
+mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Library/LaunchAgents"
 cp "$binary_dir/Dictation" "$contents/MacOS/Dictation"
 cp "$root/Info.plist" "$contents/Info.plist"
+# The launch agent that starts the app at login and again after a crash. The signature seals it with the bundle.
+agent="com.hunterbohm.dictation.agent"
+cp "$root/Resources/$agent.plist" "$contents/Library/LaunchAgents/"
+plutil -lint "$contents/Library/LaunchAgents/$agent.plist" >/dev/null
+for check in "Label=$agent" "BundleProgram=Contents/MacOS/Dictation" "KeepAlive.Crashed=true"; do
+    if [[ "$(plutil -extract "${check%%=*}" raw "$contents/Library/LaunchAgents/$agent.plist")" != "${check#*=}" ]]; then
+        printf '%s.plist must have %s.\n' "$agent" "${check/=/ = }" >&2
+        exit 1
+    fi
+done
+grep -qF "static let label = \"$agent\"" "$root/Sources/Dictation/LaunchAgent.swift" || {
+    printf 'LaunchAgent.label in the app must be %s, the label of the plist.\n' "$agent" >&2
+    exit 1
+}
 plutil -replace CFBundleVersion -string "$build_number" "$contents/Info.plist"
 for resource in selftest.wav start.wav stop.wav cancel.wav talk-start.wav talk-end.wav AppIcon.icns; do
     cp "$root/Resources/$resource" "$contents/Resources/$resource"

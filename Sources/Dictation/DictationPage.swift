@@ -50,7 +50,7 @@ struct DictationPage: View {
                 ])
                 .padding(.bottom, 30)
                 HStack(alignment: .top, spacing: 48) {
-                    CheckRow(title: "Launch at login", help: "Opens Lip Service when you log in to your Mac.", note: loginItem.note,
+                    CheckRow(title: "Launch at login", help: "Opens Lip Service when you log in to your Mac, and again if it crashes.", note: loginItem.note,
                              isOn: Binding(get: { loginItem.isOn }, set: { loginItem.set($0) }))
                     CheckRow(title: "Show menu bar icon",
                              help: "Without it, open this window from Spotlight or Raycast.",

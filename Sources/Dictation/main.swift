@@ -7,6 +7,7 @@ signal(SIGPIPE, SIG_IGN)
 switch Mode(arguments: Array(CommandLine.arguments.dropFirst())) {
 case .app:
     SupportFolder.makePrivate()
+    guard LaunchAgent.claim() else { exit(0) }
     MainActor.assumeIsolated {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -24,6 +25,8 @@ case .bench(let options):
     dispatchMain()
 case .listInputs:
     exit(Headless.listInputs())
+case .loginStatus:
+    exit(LaunchAgent.report())
 case .ttsCheck(let options):
     Task { exit(await Headless.ttsCheck(options)) }
     dispatchMain()
