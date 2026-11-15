@@ -2,8 +2,10 @@
 // sees the device list and the default input change many times. It makes aggregate input devices over the real input,
 // moves the default input between them and the real one, destroys them, and changes the real device's sample rate.
 // It leaves the Mac as it found it. Build and run through scripts/hidden-mac-verify.sh, never on a Mac someone uses.
+// With --flip it does nothing else than switch the real device between its first two sample rates, as a Bluetooth headset
+// does between call and playback quality.
 //
-// usage: audio-churn [--cycles N] [--pause MS] [--seed N] [--rates]
+// usage: audio-churn [--cycles N] [--pause MS] [--seed N] [--rates] [--flip]
 import CoreAudio
 import Foundation
 
@@ -14,6 +16,7 @@ struct Options {
     var pauseMs = 40
     var seed: UInt64 = 1
     var rates = false
+    var flip = false
 }
 
 var options = Options()
@@ -24,8 +27,9 @@ while let flag = arguments.popFirst() {
     case "--pause": options.pauseMs = Int(arguments.popFirst() ?? "") ?? options.pauseMs
     case "--seed": options.seed = UInt64(arguments.popFirst() ?? "") ?? options.seed
     case "--rates": options.rates = true
+    case "--flip": options.flip = true
     default:
-        FileHandle.standardError.write(Data("usage: audio-churn [--cycles N] [--pause MS] [--seed N] [--rates]\n".utf8))
+        FileHandle.standardError.write(Data("usage: audio-churn [--cycles N] [--pause MS] [--seed N] [--rates] [--flip]\n".utf8))
         exit(2)
     }
 }
@@ -179,6 +183,10 @@ var counts = (created: 0, destroyed: 0, defaultChanges: 0, rateChanges: 0, refus
 let started = Date()
 for cycle in 1...options.cycles {
     DispatchQueue.global().sync {
+        if options.flip {
+            if baseRates.count > 1, setNominalRate(baseRates[cycle % 2], of: original) { counts.rateChanges += 1 } else { counts.refused += 1 }
+            return
+        }
         switch Int.random(in: 0..<5, using: &generator) {
         case 0, 1:
             if let id = makeAggregate() {

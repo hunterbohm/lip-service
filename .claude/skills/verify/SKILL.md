@@ -15,7 +15,7 @@ From the repo, on the MacBook or on the mini:
 scripts/hidden-mac-verify.sh
 ```
 
-Run it as a background command and wait for it. It takes about 20 minutes, or 30 on a copy with no speech models yet.
+Run it as a background command and wait for it. It takes about 30 minutes, or 40 on a copy with no speech models yet.
 
 It builds the app (`--app PATH` uses one you built), starts a fresh copy of the hidden Mac, mutes the copy, installs the app, grants the microphone, and runs:
 
@@ -26,6 +26,7 @@ It builds the app (`--app PATH` uses one you built), starts a fresh copy of the 
 - An idle churn: the app waits with its microphone ready while `scripts/audio-churn.swift` adds and removes audio devices, moves the default input, and changes sample rates.
 - A busy churn: the same, while the microphone starts and stops 100 times.
 - The busy churn again with every input reported as Bluetooth.
+- 150 rounds as Bluetooth while `audio-churn --flip` switches the device between two sample rates about once per round, as a headset does between call and playback quality. It fails if the app keeps 15 or more new engines.
 
 Options: `--rounds N` and `--cycles N` make the busy churn longer, `--soak-rounds N` sets the soak, `--results DIR` moves the results, `--skip-models` skips the model download, `--job NAME` names the copy.
 
@@ -46,6 +47,6 @@ The script stops its copy on exit, also on failure. If it was killed, run `ssh m
 
 ## What it cannot show
 
-The hidden Mac has one virtual microphone. It has no Bluetooth and no second device at another sample rate. `--as-bluetooth` makes the engine code take its Bluetooth path, but the device is not Bluetooth: it shows nothing of how real AirPods change profile and sample rate, or whether a stopped engine releases them. The wait in `settleAfterPicking` is not covered. A pass means no crash in that run, which is weak proof for a rare race. Say so in your report.
+The hidden Mac has one virtual microphone. It has no Bluetooth and no second device at another sample rate. `--as-bluetooth` makes the engine code take its Bluetooth path, and `audio-churn --flip` changes the sample rate as a headset does, but the device is not Bluetooth: it shows nothing of how real AirPods change profile, what rates they report at each point, or whether a stopped engine releases them. The wait in `settleAfterPicking` is not covered. A pass means no crash in that run, which is weak proof for a rare race. Say so in your report.
 
 For other checks, drive the copy yourself: `hidden-mac JOB exec CMD`, `hidden-mac JOB cp`, `hidden-mac JOB screenshot FILE`, and `hidden-mac JOB do` for clicks. Start the app through `open`, not from ssh, because the microphone grant belongs to the app.

@@ -64,6 +64,7 @@ silent_in() { grep -c '"audio":0,' "$1" 2>/dev/null || true; }
 field_in() { sed -n "s/.*\"$2\":\([0-9.]*\).*/\1/p" "$1" 2>/dev/null; }
 # The default input changes the churn tool reports. A churn that failed or changed nothing proves nothing.
 changes_in() { sed -n 's/.*default input changes \([0-9]*\).*/\1/p' "$1" 2>/dev/null | tail -1; }
+rate_changes_in() { sed -n 's/.*rate changes \([0-9]*\).*/\1/p' "$1" 2>/dev/null | tail -1; }
 
 rm -f "$reports"/Dictation-* "$reports"/Retired/Dictation-*
 grant_microphone
@@ -148,5 +149,32 @@ busy() {
 
 busy busy "busy churn"
 busy busybt "busy churn, Bluetooth path" --as-bluetooth
+
+# A Bluetooth headset changes the sample rate of its microphone each time it moves between playback and call quality. This
+# starts and stops the microphone 150 times, as Bluetooth, while the churn tool switches the device between its first two
+# rates about once per round, and passes only when the app keeps fewer than one new engine per 10 rounds, with no crash or
+# hang. Rounds that record nothing are not counted, because a rate switch in the middle of a capture can cost it.
+flips() {
+    local name="flipbt" label="Bluetooth path, rate flips" flip_rounds=150
+    local before app_job churn_status hung changes kept
+    before=$(crash_count)
+    mic "$name" --rounds "$flip_rounds" --hold 0.4 --gap 0.2 --microphone default --as-bluetooth &
+    app_job=$!
+    sleep 5
+    "$churn" --flip --cycles 120 --pause 620 > "$out/$name-churn.log" 2>&1
+    churn_status=$?
+    hung=0
+    finish_run "$app_job" || hung=1
+    changes=$(rate_changes_in "$out/$name-churn.log")
+    kept=$(field_in "$out/$name.log" kept | tail -1)
+    if [[ "$(rounds_in "$out/$name.log")" == "$flip_rounds" && "$(crash_count)" == "$before" && "$churn_status" == 0 && "${changes:-0}" -gt 0 \
+        && "$hung" == 0 && -n "$kept" && "$kept" -lt $((flip_rounds / 10)) ]]; then
+        say "$label: PASS ($flip_rounds rounds, silent $(silent_in "$out/$name.log"), engines kept $kept, $(tail -1 "$out/$name-churn.log"))"
+    else
+        say "$label: FAIL (rounds $(rounds_in "$out/$name.log") of $flip_rounds, engines kept ${kept:-none}, crash reports $(($(crash_count) - before)), churn exit $churn_status, rate changes ${changes:-0}, hung $hung, see $name.log and $name-churn.log)"
+    fi
+}
+
+flips
 
 say "crash reports on this copy: $(crash_count)"

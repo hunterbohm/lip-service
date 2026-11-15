@@ -4,8 +4,9 @@
 # the speech models, then runs the self-test, a microphone smoke test, a soak of many microphone starts and stops with no
 # device change, and two runs that start and stop the microphone while scripts/audio-churn.swift adds, removes and
 # re-rates audio devices around it. The soak and the busy churn run twice, the second time with every input reported as
-# Bluetooth, which the copy has none of, to run the Bluetooth path. It copies the results and any Dictation crash reports
-# back, takes a screenshot, and always stops the copy. It mutes the copy first, so the tests make no sound on the mini.
+# Bluetooth, which the copy has none of, to run the Bluetooth path. A last run does that while the churn tool switches the
+# device's sample rate back and forth, as a headset does. It copies the results and any Dictation crash reports back, takes
+# a screenshot, and always stops the copy. It mutes the copy first, so the tests make no sound on the mini.
 #
 # usage: scripts/hidden-mac-verify.sh [--job NAME] [--app PATH] [--rounds N] [--cycles N] [--soak-rounds N] [--results DIR]
 #                                     [--keep] [--skip-models]
@@ -31,7 +32,7 @@ while (($#)); do
         --results) results="$2"; shift 2 ;;
         --keep) keep=1; shift ;;
         --skip-models) skip_models=1; shift ;;
-        *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+        *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
     esac
 done
 results="${results:-$root/.tmp/hidden-mac-verify/$(date +%Y%m%d-%H%M%S)}"
@@ -103,7 +104,7 @@ vm "cd ~/ls-verify && chmod +x audio-churn hidden-mac-vm.sh scripts/fetch-models
 skip=""
 ((skip_models)) && skip="SKIP_MODELS=1"
 vm "cd ~/ls-verify && ROUNDS=$rounds CYCLES=$cycles SOAK_ROUNDS=$soak_rounds $skip nohup ./hidden-mac-vm.sh > out/run.log 2>&1 < /dev/null & echo started" > /dev/null
-printf 'Running on %s. This takes about 20 minutes, or 30 on a copy that has no speech models yet.\n' "$job"
+printf 'Running on %s. This takes about 30 minutes, or 40 on a copy that has no speech models yet.\n' "$job"
 
 waited=0
 until vm "test -e ~/ls-verify/out/done" > /dev/null 2>&1; do
@@ -125,6 +126,7 @@ hm "$job" screenshot "$stage/screen.png" > /dev/null 2>&1 && from_stage screen.p
 cat "$results/summary.txt"
 printf 'Results: %s\n' "$results"
 if grep -q 'FAIL' "$results/summary.txt" || [[ -n "$(ls -A "$results/crash-reports")" ]] || ! grep -q '^busy churn:' "$results/summary.txt" || ! grep -q '^soak, no churn:' "$results/summary.txt" \
-    || ! grep -q '^busy churn, Bluetooth path:' "$results/summary.txt" || ! grep -q '^soak, Bluetooth path:' "$results/summary.txt"; then
+    || ! grep -q '^busy churn, Bluetooth path:' "$results/summary.txt" || ! grep -q '^soak, Bluetooth path:' "$results/summary.txt" \
+    || ! grep -q '^Bluetooth path, rate flips:' "$results/summary.txt"; then
     exit 1
 fi
