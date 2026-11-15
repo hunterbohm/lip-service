@@ -41,6 +41,8 @@ public struct LevelEnvelope: Sendable {
     public private(set) var target: Float = 0
     /// The time of the newest sample, nil until the first `advance`.
     public private(set) var clock: Double?
+    /// How many samples the clock has stepped through, which fixes where the windows `peaks` reads end.
+    private var total = 0
 
     public init(stages: [Stage] = LevelEnvelope.voice) {
         precondition(!stages.isEmpty, "an envelope needs at least one stage")
@@ -55,6 +57,7 @@ public struct LevelEnvelope: Sendable {
         target = samples[head]
         values = [Float](repeating: target, count: stages.count)
         clock = 0
+        total = Self.count
     }
 
     public mutating func reset() { self = LevelEnvelope(stages: stages) }
@@ -75,6 +78,7 @@ public struct LevelEnvelope: Sendable {
             }
             head = (head + 1) % Self.count
             samples[head] = input
+            total += 1
         }
         clock = now
     }
@@ -89,5 +93,19 @@ public struct LevelEnvelope: Sendable {
         let newer = samples[(head - index + Self.count) % Self.count]
         let older = samples[(head - index - 1 + Self.count) % Self.count]
         return newer + (older - newer) * fraction
+    }
+
+    /// The loudest sample in each of the last `columns` windows of `hop` samples, the newest last. A window ends on a
+    /// multiple of `hop` in the count of samples stepped, so it holds the same samples as it scrolls left. The newest
+    /// holds those since its start, so it can only rise until the next one begins.
+    public func peaks(columns: Int, hop: Int) -> [Float] {
+        precondition(columns > 0 && hop > 0 && columns * hop <= Self.count, "the windows must fit in the span kept")
+        let filled = (total - 1) % hop + 1
+        var result = [Float](repeating: 0, count: columns)
+        for age in 0..<(filled + (columns - 1) * hop) {
+            let column = columns - 1 - (age < filled ? 0 : 1 + (age - filled) / hop)
+            result[column] = max(result[column], samples[(head - age + Self.count) % Self.count])
+        }
+        return result
     }
 }

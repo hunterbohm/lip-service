@@ -13,7 +13,7 @@ enum BarEvent: Equatable {
 /// BarState. It owns only what it shows: the screen it sits on, the voice meter, and a drag in progress.
 @MainActor final class Bar {
     var onEvent: ((BarEvent) -> Void)?
-    /// The voice the waves, the halo and the print draw from, taken from the audio thread while listening.
+    /// The voice the scope and the print draw from, taken from the audio thread while listening.
     let meter: VoiceMeter
     /// The talk island's place on screen while a talk runs, which messages hang under.
     var talkAnchor: NSRect? {
@@ -35,9 +35,9 @@ enum BarEvent: Equatable {
     private var cleared = NSRect.zero
     private weak var clearedScreen: NSScreen?
     private var drag: Drag?
-    /// The body's capsule on screen, which is smaller than its panel while the words bar shows.
+    /// The body's capsule on screen, which is smaller than its panel while the scope bar shows.
     private var capsuleFrame = NSRect.zero
-    /// Checks the pointer while the words bar takes the mouse, so its panel takes clicks only over the capsule.
+    /// Checks the pointer while the scope bar takes the mouse, so its panel takes clicks only over the capsule.
     private var pointer: Timer?
 
     private struct Drag {
@@ -99,15 +99,15 @@ enum BarEvent: Equatable {
                                              onDrag: { [weak self] ended in self?.dragged(ended: ended) }))
         let inset = BarStyle.inset(of: state.body, edge: edge)
         let frame = NSRect(edge.place(width: size.width, height: size.height, in: BarRect(area), inset: inset))
-        // While the words bar shows, its panel covers the widest the capsule can be on this edge, and the halo past
+        // While the scope bar shows, its panel covers the widest the capsule can be on this edge, and its shadow past
         // it, and never resizes. A change of width animates inside it, so macOS never shows a panel mid-resize with its
         // old content stretched across the new frame.
         let panelFrame = state.body.wordsBar == nil ? frame
             : NSRect(edge.place(width: max(BarStyle.maxWidth, size.width), height: size.height, in: BarRect(area), inset: inset))
-                .insetBy(dx: -BarStyle.haloMargin, dy: -BarStyle.haloMargin)
+                .insetBy(dx: -BarStyle.shadowMargin, dy: -BarStyle.shadowMargin)
         capsuleFrame = frame
         followPointer()
-        // The words bar draws its own shadow; the system's would follow the halo.
+        // The scope bar draws its own shadow, inside its larger panel.
         bodyPanel.hasShadow = state.body.wordsBar == nil
         if animated, bodyPanel.isVisible, bodyPanel.frame.height == panelFrame.height, bodyPanel.frame != panelFrame, state.body.wordsBar == nil {
             NSAnimationContext.runAnimationGroup { context in
@@ -122,7 +122,7 @@ enum BarEvent: Equatable {
         return frame
     }
 
-    /// The words bar's panel is larger than its capsule, and an empty part of a panel still takes clicks. So while it
+    /// The scope bar's panel is larger than its capsule, and an empty part of a panel still takes clicks. So while it
     /// shows, the panel takes the mouse only while the pointer is over the capsule or a drag is on, checked 30 times a
     /// second, and a click beside the bar reaches the app under it.
     private func followPointer() {
@@ -293,18 +293,24 @@ private final class BarHostingView: NSHostingView<AnyView> {
 /// Sizes shared by the views and the layout.
 @MainActor enum BarStyle {
     static let height: CGFloat = 40
-    /// The widest the words bar's panel is, so a capsule that widens, when a dictation becomes a Ghostwrite and its
+    /// The widest the scope bar's panel is, so a capsule that widens, when a dictation becomes a Ghostwrite and its
     /// agent shows, or narrows, when hands-free ends, animates inside it instead of resizing the panel.
     static let maxWidth: CGFloat = 440
     static let padding: CGFloat = 18
     static let glyphGap: CGFloat = 13
     static let glyphWidth = CGFloat(HalftonePrint.width)
+    /// The scope's cells are monospaced 19 pt, which macOS draws in Apple Braille, pulled 1.5 pt closer.
+    static let scopeSize: CGFloat = 19
+    static let scopeTracking: CGFloat = -1.5
+    static let scopeWidth = (CGFloat(AsciiScope.columns)
+        * (NSAttributedString(string: "⣿", attributes: [.font: NSFont.monospacedSystemFont(ofSize: scopeSize, weight: .regular)]).size().width
+            + scopeTracking)).rounded(.up)
     static let buttonSize: CGFloat = 24
     static let buttonsWidth = 2 * buttonSize + 6
     static let idle = CGSize(width: 28, height: 14)
     static let toastGap: CGFloat = 8
-    /// How far the words bar's panel reaches past the capsule on every side, for the halo: its reach, and two to spare.
-    static let haloMargin = CGFloat(HaloGlow.reach) + 2
+    /// How far the scope bar's panel reaches past the capsule on every side, for its shadow.
+    static let shadowMargin: CGFloat = 8
     static let toastMaxWidth: CGFloat = 520
     static let toastTitleFont = NSFont.systemFont(ofSize: 13.5, weight: .semibold)
     static let toastDetailFont = NSFont.systemFont(ofSize: 12.5)
@@ -339,9 +345,9 @@ private final class BarHostingView: NSHostingView<AnyView> {
     static let avatarSize: CGFloat = 22
     static let agentFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
-    /// The words bar's width, the same whatever is said: the agent's mark, the waves, and the hands-free buttons.
+    /// The scope bar's width, the same whatever is said: the agent's mark, the scope, and the hands-free buttons.
     static func wordsBarWidth(handsFree: Bool, agent: BarAgent?) -> CGFloat {
-        padding + agentWidth(agent) + CGFloat(LightWave.width) + (handsFree ? glyphGap + buttonsWidth : 0) + padding
+        padding + agentWidth(agent) + scopeWidth + (handsFree ? glyphGap + buttonsWidth : 0) + padding
     }
 
     /// The text column's width in a toast: each line on one line when it fits, else the widest the toast allows,
@@ -369,8 +375,7 @@ private final class BarHostingView: NSHostingView<AnyView> {
 private extension BarState.Body {
     var isListening: Bool { if case .listening = self { true } else { false } }
     var isTalk: Bool { if case .talk = self { true } else { false } }
-    /// The capsule with the waves, while listening and while the last words are finished. It is one
-    /// view in both, so the waves settle without starting over.
+    /// The capsule with the scope, while listening and while the last words are finished. It is one view in both.
     var wordsBar: (words: String, handsFree: Bool, finishing: Bool)? {
         switch self {
         case .listening(let words, let handsFree): (words, handsFree, false)
@@ -397,7 +402,7 @@ private struct BodyView: View {
     let agent: BarAgent?
     let edge: BarEdge
     let meter: VoiceMeter
-    /// The words bar's capsule width. Its panel is wider, and a new width animates inside it.
+    /// The scope bar's capsule width. Its panel is wider, and a new width animates inside it.
     let capsuleWidth: CGFloat
     let onEvent: (BarEvent) -> Void
     let onDrag: (_ ended: Bool) -> Void
@@ -405,11 +410,11 @@ private struct BodyView: View {
 
     var body: some View {
         if let bar = shown.wordsBar {
-            GrowingBar(width: capsuleWidth, meter: meter, listening: !bar.finishing, capsule: wordsBar(bar))
+            GrowingBar(width: capsuleWidth, capsule: wordsBar(bar))
                 .animation(reduceMotion ? nil : .timingCurve(0.2, 0.9, 0.3, 1, duration: 0.25), value: capsuleWidth)
                 .gesture(dragging)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: edge == .left ? .leading : edge == .right ? .trailing : .center)
-                .padding(BarStyle.haloMargin)
+                .padding(BarStyle.shadowMargin)
         } else {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -426,8 +431,8 @@ private struct BodyView: View {
     private func wordsBar(_ bar: (words: String, handsFree: Bool, finishing: Bool)) -> some View {
         capsule(behind: EmptyView()) {
             if let agent { AgentChip(agent: agent) }
-            WaveView(meter: meter, finishing: bar.finishing)
-                .frame(width: CGFloat(LightWave.width), height: BarStyle.height)
+            ScopeView(meter: meter, finishing: bar.finishing)
+                .frame(width: BarStyle.scopeWidth, height: BarStyle.height)
             Spacer(minLength: 0)
             if bar.handsFree { HandsFreeButtons(onEvent: onEvent) }
         }
@@ -481,13 +486,11 @@ private struct BodyView: View {
     }
 }
 
-/// The words bar's capsule at `width`, with its shadow and its halo. Animatable, so while a new width animates SwiftUI
-/// draws it at every width in between, and the capsule and the halo grow together frame by frame.
+/// The scope bar's capsule at `width`, with its shadow. Animatable, so while a new width animates SwiftUI draws it at
+/// every width in between, and the capsule and its shadow grow together frame by frame.
 private struct GrowingBar<Capsule: View>: View, Animatable {
     // SwiftUI reads and writes the animated width off the main actor; a CGFloat is safe to share.
     nonisolated(unsafe) var width: CGFloat
-    let meter: VoiceMeter
-    let listening: Bool
     let capsule: Capsule
 
     nonisolated var animatableData: CGFloat {
@@ -499,7 +502,6 @@ private struct GrowingBar<Capsule: View>: View, Animatable {
         capsule
             .frame(width: width, height: BarStyle.height)
             .shadow(color: .black.opacity(0.28), radius: 5, y: 1)
-            .background { HaloView(meter: meter, listening: listening).padding(-BarStyle.haloMargin) }
     }
 }
 
@@ -518,18 +520,6 @@ private struct GrowingBar<Capsule: View>: View, Animatable {
     func settle(at target: Double) -> Double {
         value = target
         return target
-    }
-}
-
-/// A distance that grows with time at a pace that can change, so speeding up never jumps the waves.
-@MainActor private final class Travel {
-    private var distance = 0.0
-    private var last: Double?
-
-    func step(at time: Double, pace: Double) -> Double {
-        defer { last = time }
-        if let last { distance += min(0.05, max(0, time - last)) * pace }
-        return distance
     }
 }
 
@@ -593,134 +583,42 @@ private struct Print: View {
     }
 }
 
-/// The glow around the capsule, drawn behind it and reaching `BarStyle.haloMargin` past it on every side, so it grows
-/// with the capsule frame by frame: a blurred halo and a soft rim in shades of blue that turn slowly around the capsule, and a bright beam that
-/// runs around the rim. All three brighten with the voice. It fades in while listening and out while the words are
-/// finished. With Reduce Motion the rim and halo stay still, with no beam. Each frame blurs three layers, the halo, the
-/// rim's feather and the beam's bloom; the rim and beam themselves are drawn sharp, since a blur under a point wide
-/// did not show and cost a layer each.
-private struct HaloView: View {
-    let meter: VoiceMeter
-    let listening: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var aura = Eased()
-
-    private static let blues = Gradient(colors: (HaloGlow.rimColors + [HaloGlow.rimColors[0]]).map { Color(red: $0.red, green: $0.green, blue: $0.blue) })
-
-    var body: some View {
-        Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
-            Canvas { context, size in draw(into: &context, size: size, time: time) }
-        }
-    }
-
-    private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
-        let target = listening ? 1.0 : 0.0
-        let fade = meter.frozenAt != nil || reduceMotion ? aura.settle(at: target) : aura.step(toward: target, tau: listening ? 0.35 : 0.5, at: time)
-        guard fade > 0.004 else { return }
-        let margin = BarStyle.haloMargin, rim = CGFloat(HaloGlow.rimWidth)
-        let capsule = CGRect(x: margin, y: margin, width: size.width - 2 * margin, height: size.height - 2 * margin)
-        let ring = capsule.insetBy(dx: -rim / 2, dy: -rim / 2)
-        let rimPath = Path(roundedRect: ring, cornerRadius: ring.height / 2)
-        let haloRing = capsule.insetBy(dx: -3, dy: -3)
-        let light = reduceMotion ? HaloGlow.restingLight : HaloGlow.light(glow: meter.reading(at: time).glow(delay: 0))
-        let blues = GraphicsContext.Shading.conicGradient(Self.blues, center: CGPoint(x: capsule.midX, y: capsule.midY),
-                                                          angle: .radians(reduceMotion ? 0 : HaloGlow.turn(at: time)))
-
-        var halo = context
-        halo.opacity = HaloGlow.haloOpacity(light: light) * fade
-        halo.addFilter(.blur(radius: HaloGlow.haloRadius(light: light)))
-        halo.stroke(Path(roundedRect: haloRing, cornerRadius: haloRing.height / 2), with: blues, lineWidth: 10)
-
-        let rimOpacity = HaloGlow.rimOpacity(light: light) * fade
-        var feather = context
-        feather.opacity = rimOpacity * 0.7
-        feather.addFilter(.blur(radius: 2.5))
-        feather.stroke(rimPath, with: blues, lineWidth: rim * 2.2)
-        var core = context
-        core.opacity = rimOpacity
-        core.stroke(rimPath, with: blues, lineWidth: rim)
-        guard !reduceMotion else { return }
-
-        let perimeter = HaloGlow.perimeter(capsuleWidth: capsule.width, capsuleHeight: capsule.height)
-        let beamOpacity = HaloGlow.beamOpacity(light: light) * fade
-        var bloom = context
-        bloom.opacity = 0.9
-        bloom.addFilter(.blur(radius: 5))
-        for slice in HaloGlow.beam(at: time, perimeter: perimeter) {
-            let piece = rimPath.trimmedPath(from: slice.from, to: slice.to)
-            let rgb = HaloGlow.beamColor(along: slice.along)
-            let color = Color(red: rgb.red, green: rgb.green, blue: rgb.blue).opacity(slice.light * beamOpacity)
-            bloom.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim * 3, lineCap: .round))
-            context.stroke(piece, with: .color(color), style: StrokeStyle(lineWidth: rim, lineCap: .butt))
-        }
-    }
-}
-
-/// The words bar's inside: three soft blue waves that follow the voice. Each sound starts in the middle and ripples out
-/// to both ends, and the waves run faster and glow brighter as the voice rises. While the words are finished they
-/// settle to a dim, almost flat line that breathes. Each frame blurs one layer, the glow under the waves. With Reduce
-/// Motion the waves are drawn once, still.
-private struct WaveView: View {
+/// The scope bar's inside: one line of braille cells. While you talk, a scrolling history of your voice in blue, newest
+/// at the right; while the words are finished, a dim line with one blue cell sweeping along it. With Reduce Motion the
+/// line is still.
+private struct ScopeView: View {
     let meter: VoiceMeter
     let finishing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// 1 while you talk, easing to 0 once the words are finished.
-    @State private var live = Eased()
-    /// How far the waves have travelled, at their resting speed; it runs faster while you talk.
-    @State private var travel = Travel()
 
     var body: some View {
         Ticker(frozenAt: meter.frozenAt, still: reduceMotion) { time in
-            Canvas { context, size in draw(into: &context, size: size, time: time) }
+            text(for: frame(at: time))
+                .font(.system(size: BarStyle.scopeSize, design: .monospaced))
+                .tracking(BarStyle.scopeTracking)
+                .lineLimit(1)
+                .fixedSize()
+                // A braille cell's dots sit 2 pt low in its line; this centres a full cell in the bar.
+                .offset(y: -2)
         }
+        .frame(width: BarStyle.scopeWidth, height: BarStyle.height)
     }
 
-    private func draw(into context: inout GraphicsContext, size: CGSize, time: Double) {
-        let settled = meter.frozenAt != nil || reduceMotion
-        let reading = meter.reading(at: time)
-        let now = reduceMotion ? 0 : reading.level(delay: 0)
-        let liveness = settled ? live.settle(at: finishing ? 0 : 1) : live.step(toward: finishing ? 0 : 1, tau: 0.15, at: time)
-        let travelled = reduceMotion ? 0 : meter.frozenAt != nil ? time : travel.step(at: time, pace: LightWave.pace(level: now * liveness))
-        let width = size.width, mid = size.height / 2
-
-        // One point every two points across, built straight into each wave's path: no arrays per frame. Each wave
-        // swells with its own band of the voice, a little ahead of the ends, which hear it later.
-        let columns = Self.columns
-        let paths = LightWave.strands.map { strand in
-            var path = Path()
-            for (index, column) in columns.enumerated() {
-                let voice = reduceMotion ? LightWave.restingAmplitude : LightWave.amplitude(level: LightWave.level(
-                    overall: reading.level(delay: column.delay), band: reading.band(strand.band, delay: column.delay)))
-                let swell = LightWave.finishingAmplitude + (voice - LightWave.finishingAmplitude) * liveness
-                let point = CGPoint(x: column.along * width, y: mid - LightWave.offset(strand, column: column, travel: travelled, amplitude: swell))
-                if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
-            }
-            return path
-        }
-
-        let speaking = LightWave.brightness(level: now)
-        let resting = reduceMotion ? 0.45 : LightWave.finishingBrightness(at: time)
-        context.opacity = resting + (speaking - resting) * liveness
-        var glow = context
-        glow.addFilter(.blur(radius: 4))
-        for (path, strand) in zip(paths, LightWave.strands) {
-            glow.stroke(path, with: shading(strand, 0.8, width: width), lineWidth: 3 + 2 * now * liveness)
-        }
-        for (path, strand) in zip(paths, LightWave.strands) {
-            context.stroke(path, with: shading(strand, 0.9, width: width), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-        }
+    private func frame(at time: Double) -> AsciiScope.Frame {
+        if finishing { return AsciiScope.transcribing(at: reduceMotion ? nil : time) }
+        if reduceMotion { return AsciiScope.resting }
+        return AsciiScope.listening(peaks: meter.reading(at: time).peaks(columns: AsciiScope.columns, hop: AsciiScope.hop))
     }
 
-    /// The points the waves are drawn at, which never change.
-    private static let columns = LightWave.columns(steps: Int(LightWave.width / 2))
-
-    /// A wave's colour, faded in from each end.
-    private func shading(_ strand: LightWave.Strand, _ opacity: Double, width: CGFloat) -> GraphicsContext.Shading {
-        let color = Color(red: strand.red, green: strand.green, blue: strand.blue).opacity(opacity)
-        let fade = LightWave.fade
-        return .linearGradient(Gradient(stops: [.init(color: color.opacity(0), location: 0), .init(color: color, location: fade),
-                                                .init(color: color, location: 1 - fade), .init(color: color.opacity(0), location: 1)]),
-                               startPoint: .zero, endPoint: CGPoint(x: width, y: 0))
+    /// One line of text, each cell in the colour of its state.
+    private func text(for frame: AsciiScope.Frame) -> Text {
+        var line = AttributedString()
+        for (index, cell) in frame.cells.enumerated() {
+            var piece = AttributedString(String(cell))
+            piece.foregroundColor = frame.lit.contains(index) ? Theme.scopeLit : Theme.scopeDim
+            line += piece
+        }
+        return Text(line)
     }
 }
 
