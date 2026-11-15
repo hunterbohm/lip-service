@@ -15,6 +15,9 @@ enum Theme {
     static let tertiary = Color(hex: 0x6F7277)
     static let blue = Color(hex: 0x3E6AE1)
     static let chosen = Color(hex: 0x5C5E62)
+    /// The recording bar's scope: the lit cells, a sky blue that reads on the bar's dark fill, and the dim ones.
+    static let scopeLit = Color(hex: 0x7CC4FF)
+    static let scopeDim = Color(hex: 0x55555C)
     static let green = Color(hex: 0x30C46C)
     static let amber = Color(hex: 0xE9A23B)
     static let red = Color(hex: 0xE5484D)

@@ -106,4 +106,50 @@ private func run(_ envelope: inout LevelEnvelope, from start: Double, seconds: D
         #expect(abs(glow.level(delay: 0.1, at: 0) - 0.8) < 0.001)
         #expect(abs(glow.level(delay: 1, at: 0) - 0.2) < 0.001)
     }
+
+    /// Steps `envelope` to `samples` samples after its start, toward `target`.
+    private func step(_ envelope: inout LevelEnvelope, samples: Int, target: Float, from start: Int = 0) {
+        envelope.follow(target)
+        for index in start..<(start + samples) { envelope.advance(to: (Double(index) + 1.5) / 120) }
+    }
+
+    @Test func peaksHoldTheLoudestSampleOfEachWindowNewestLast() {
+        var envelope = LevelEnvelope()
+        envelope.advance(to: 0)
+        // Two windows of 7 samples at full, one at silence, then 3 at full: the newest window holds 3 samples.
+        step(&envelope, samples: 14, target: 1)
+        step(&envelope, samples: 7, target: 0, from: 14)
+        step(&envelope, samples: 3, target: 1, from: 21)
+        let peaks = envelope.peaks(columns: 4, hop: 7)
+        #expect(peaks.count == 4)
+        #expect(peaks[3] > 0.03 && peaks[3] < peaks[2], "the newest window has only begun to rise")
+        #expect(peaks[2] > 0.5, "the window before it still holds the fall from full")
+        #expect(peaks[1] > peaks[2] && peaks[1] > 0.9)
+        #expect(peaks[0] > 0.5, "the first window is still rising from silence")
+    }
+
+    @Test func aWindowHoldsTheSameSamplesAsItScrolls() {
+        var envelope = LevelEnvelope()
+        envelope.advance(to: 0)
+        step(&envelope, samples: 70, target: 0.6)
+        step(&envelope, samples: 7, target: 0.2, from: 70)
+        let full = envelope.peaks(columns: 6, hop: 7)
+        // One more sample starts a new window, and the full one is a column to the left with the same peak.
+        step(&envelope, samples: 1, target: 0.2, from: 77)
+        let next = envelope.peaks(columns: 6, hop: 7)
+        #expect(next[4] == full[5] && next[3] == full[4])
+        #expect(next[5] < full[5], "a window that has just begun holds only its first sample")
+    }
+
+    @Test func peaksAreSilentBeforeAnySample() {
+        let envelope = LevelEnvelope()
+        #expect(envelope.peaks(columns: 24, hop: 7) == [Float](repeating: 0, count: 24))
+    }
+
+    @Test func aFilledEnvelopeReadsItsProfileInPeaks() {
+        let envelope = LevelEnvelope { age in age < 0.25 ? 0.9 : 0.1 }
+        let peaks = envelope.peaks(columns: 24, hop: 7)
+        #expect(abs(peaks[23] - 0.9) < 1e-6 && abs(peaks[0] - 0.1) < 1e-6)
+    }
 }
+

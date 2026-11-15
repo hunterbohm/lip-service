@@ -9,7 +9,7 @@ public struct VoiceLevels: Sendable {
     private var loudness: AutoLevel
     private var bandLoudness: [AutoLevel]
     private var voice = LevelEnvelope()
-    /// The same voice smoothed once more, which lights the halo.
+    /// The same voice smoothed once more.
     private var glow = LevelEnvelope(stages: LevelEnvelope.glow)
     private var bands = [LevelEnvelope](repeating: LevelEnvelope(), count: bandCount)
 
@@ -75,8 +75,11 @@ public struct VoiceReading: Sendable {
 
     /// The overall level, 0 to 1, `delay` seconds ago.
     public func level(delay: Double) -> Double { Double(voice.level(delay: delay, at: time)) }
-    /// The level the halo glows with, `delay` seconds ago.
+    /// The voice smoothed once more, `delay` seconds ago.
     public func glow(delay: Double) -> Double { Double(glow.level(delay: delay, at: time)) }
+    /// The loudest overall level in each of the last `columns` windows of `hop` samples, the newest last. See
+    /// `LevelEnvelope.peaks`.
+    public func peaks(columns: Int, hop: Int) -> [Float] { voice.peaks(columns: columns, hop: hop) }
     /// One band's level, 0 to 1, `delay` seconds ago.
     public func band(_ index: Int, delay: Double) -> Double { Double(bands[index].level(delay: delay, at: time)) }
 }

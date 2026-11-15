@@ -2,7 +2,9 @@
 # Usage: sign.sh PATH IDENTIFIER [ENTITLEMENTS]
 # Signs an app bundle or a bare binary with the local signing certificate and the hardened runtime. The
 # hardened runtime blocks microphone capture unless the app holds the audio-input entitlement, so the app
-# bundle passes its entitlements file. A bare binary passes none.
+# bundle passes its entitlements file. A bare binary passes none. The signature of a bundle seals every file in it,
+# the launch agent plist in Contents/Library/LaunchAgents included. The script stops if that plist is not sealed, so it
+# cannot be changed after signing without breaking the signature.
 set -euo pipefail
 umask 077
 target="$1"
@@ -67,3 +69,11 @@ identity="$(security find-identity -p codesigning "$keychain" | awk -v name="\"$
 codesign_args=(--force --keychain "$keychain" --sign "$identity" --identifier "$identifier" --options runtime)
 [[ -n "${3:-}" ]] && codesign_args+=(--entitlements "$3")
 codesign "${codesign_args[@]}" "$target"
+for agent in "$target"/Contents/Library/LaunchAgents/*.plist; do
+    [[ -e "$agent" ]] || continue
+    plutil -lint "$agent" >/dev/null
+    if ! grep -qF "Library/LaunchAgents/${agent##*/}" "$target/Contents/_CodeSignature/CodeResources"; then
+        printf '%s is not sealed by the signature of %s.\n' "${agent##*/}" "$target" >&2
+        exit 1
+    fi
+done

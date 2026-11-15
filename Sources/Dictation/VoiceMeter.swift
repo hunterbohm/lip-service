@@ -19,7 +19,7 @@ import Foundation
     /// `feed` names the tap to read while listening: the microphone, or the agent's voice while it talks.
     init(feed: @escaping @MainActor () -> VoiceTap? = { nil }) { self.feed = feed }
 
-    /// Starts or stops taking hops. Stopping sends every level toward silence, which the waves settle into.
+    /// Starts or stops taking hops. Stopping sends every level toward silence.
     func listen(_ on: Bool) {
         guard frozenAt == nil, on != listening else { return }
         listening = on

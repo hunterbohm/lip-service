@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+	launchd runs the app at login and starts it again only after a crash (a signal such as SIGSEGV, SIGTRAP or SIGABRT).
+	KeepAlive Crashed does not restart after a Quit, which exits 0, nor after SIGTERM or SIGKILL (killall, logout, Force
+	Quit). KeepAlive SuccessfulExit false would, so it is not used. ThrottleInterval keeps a crash at launch from
+	spinning.
+-->
+<dict>
+	<key>Label</key>
+	<string>com.hunterbohm.dictation.agent</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/Dictation</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.hunterbohm.dictation</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>Crashed</key>
+		<true/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+</dict>
+</plist>
