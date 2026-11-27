@@ -106,6 +106,8 @@ private var info: [String: Any] { ["CFBundleIdentifier": "com.example.app", "CFB
         #expect(!FileManager.default.fileExists(atPath: new.deletingLastPathComponent().path))
 
         let kept = try make("Kept/Lip Service.app", "old")
+        // The stage folder exists, so the old app is moved aside; the candidate is missing, so the second move fails and the old app must come back.
+        try FileManager.default.createDirectory(at: directory.appending(path: "Kept/.stage"), withIntermediateDirectories: true)
         let missing = directory.appending(path: "Kept/.stage/Lip Service.app")
         let failing = Process()
         failing.executableURL = URL(fileURLWithPath: "/bin/bash")
