@@ -35,6 +35,55 @@ private func json(tag: String = "v1.0.9", page: String = "https://github.com/hun
     }
 }
 
+private func releaseJSON(tag: String = "v1.0.9", assets: String) -> Data {
+    Data(#"{"tag_name":"\#(tag)","html_url":"https://github.com/hunterbohm/lip-service/releases/tag/\#(tag)","assets":[\#(assets)]}"#.utf8)
+}
+
+private func asset(_ name: String, _ link: String) -> String { #"{"name":"\#(name)","browser_download_url":"\#(link)"}"# }
+
+@Suite("Release zip") @MainActor struct ReleaseArchiveTests {
+    private let good = "https://github.com/hunterbohm/lip-service/releases/download/v1.0.9/Lip-Service-1.0.9.zip"
+
+    @Test func readsTheZipOfTheRelease() throws {
+        let release = try #require(Release(json: releaseJSON(assets: asset("Lip-Service-1.0.9.zip", good))))
+        #expect(release.archive?.absoluteString == good)
+    }
+
+    @Test func aReleaseWithoutAZipStillOffersItsPage() throws {
+        #expect(try #require(Release(json: releaseJSON(assets: ""))).archive == nil)
+        #expect(try #require(Release(json: json())).archive == nil)
+    }
+
+    @Test(arguments: [
+        "https://evil.example/hunterbohm/lip-service/releases/download/v1.0.9/Lip-Service-1.0.9.zip",
+        "http://github.com/hunterbohm/lip-service/releases/download/v1.0.9/Lip-Service-1.0.9.zip",
+        "https://github.com/someone/else/releases/download/v1.0.9/Lip-Service-1.0.9.zip",
+        "https://github.com/hunterbohm/lip-service/releases/download/v1.0.8/Lip-Service-1.0.9.zip",
+        "https://github.com/hunterbohm/lip-service/releases/download/v1.0.9/Lip-Service-1.0.9.zip?x=1",
+        "https://github.com:444/hunterbohm/lip-service/releases/download/v1.0.9/Lip-Service-1.0.9.zip",
+        "https://user@github.com/hunterbohm/lip-service/releases/download/v1.0.9/Lip-Service-1.0.9.zip",
+        "https://github.com/hunterbohm/lip-service/releases/download/v1.0.9/../v1.0.9/Lip-Service-1.0.9.zip",
+    ])
+    func onlyThisRepositorysOwnZipOfTheTagCounts(_ link: String) throws {
+        let release = try #require(Release(json: releaseJSON(assets: asset("Lip-Service-1.0.9.zip", link))))
+        #expect(release.archive == nil)
+    }
+
+    @Test func aZipWithAnotherNameDoesNotCount() throws {
+        #expect(try #require(Release(json: releaseJSON(assets: asset("Other.zip", good)))).archive == nil)
+        #expect(try #require(Release(json: releaseJSON(assets: asset("Lip-Service-1.0.8.zip", good)))).archive == nil)
+    }
+
+    @Test func theZipSurvivesARelaunch() async throws {
+        let store = MemoryStore()
+        let body = releaseJSON(assets: asset("Lip-Service-1.0.9.zip", good))
+        let checker = UpdateChecker(store: store, isEnabled: { true }, now: { noon }, running: version("1.0.7"), fetch: { body })
+        await checker.checkIfDue()
+        let relaunched = UpdateChecker(store: store, isEnabled: { true }, now: { noon }, running: version("1.0.7"), fetch: { nil })
+        #expect(relaunched.available?.archive?.absoluteString == good)
+    }
+}
+
 @Suite("Release") struct ReleaseTests {
     @Test func readsTheTagAndThePageFromGitHubsJSON() throws {
         let release = try #require(Release(json: json()))

@@ -121,8 +121,25 @@ private struct UpdateAvailable: View {
     let release: Release
 
     var body: some View {
-        Notice(tone: .info, title: "Lip Service \(release.version) is available") {
-            Button("Download") { updates.download(release) }.buttonStyle(DarkButtonStyle(kind: .prominent))
+        switch updates.phase {
+        case .installing:
+            Notice(tone: .info, title: "Updating to Lip Service \(release.version)", detail: "Lip Service will quit and open again.") {
+                ProgressView().controlSize(.small)
+            }
+        case .failed(let message):
+            Notice(tone: .warning, title: "Lip Service couldn't update to \(release.version)", detail: message) {
+                Button("Release Page") { updates.download(release) }.buttonStyle(DarkButtonStyle())
+                if updates.canInstall(release) { Button("Try Again") { updates.install(release) }.buttonStyle(DarkButtonStyle(kind: .prominent)) }
+            }
+        case .idle:
+            Notice(tone: .info, title: "Lip Service \(release.version) is available") {
+                if updates.canInstall(release) {
+                    Button("Release Page") { updates.download(release) }.buttonStyle(DarkButtonStyle())
+                    Button("Update") { updates.install(release) }.buttonStyle(DarkButtonStyle(kind: .prominent))
+                } else {
+                    Button("Download") { updates.download(release) }.buttonStyle(DarkButtonStyle(kind: .prominent))
+                }
+            }
         }
     }
 }

@@ -2,12 +2,14 @@
 # Builds "dist/Lip Service.app" from a release build and signs it with the local certificate, so macOS keeps the
 # Microphone and Accessibility grants across rebuilds. The new bundle is assembled beside the old one and
 # renamed into place, because copying over the binary of a running app makes the kernel kill it for an
-# invalid signature.
+# invalid signature. scripts/release.sh sets LS_SIGN_IDENTITY, to sign with the Developer ID certificate, and
+# LS_DIST_DIR, to build somewhere other than dist.
 set -euo pipefail
 umask 077
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bundle="Lip Service.app"
-app="$root/dist/$bundle"
+dist="${LS_DIST_DIR:-$root/dist}"
+app="$dist/$bundle"
 commit="$(git -C "$root" describe --always --dirty)"
 build_number="$(git -C "$root" rev-list --count HEAD)"
 
@@ -23,8 +25,8 @@ fi
 swift build --package-path "$root" --scratch-path "$scratch" -c release
 binary_dir="$(swift build --package-path "$root" --scratch-path "$scratch" -c release --show-bin-path)"
 
-mkdir -p "$root/dist"
-staging="$(mktemp -d "$root/dist/.build-app.XXXXXX")"
+mkdir -p "$dist"
+staging="$(mktemp -d "$dist/.build-app.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 contents="$staging/$bundle/Contents"
 mkdir -p "$contents/MacOS" "$contents/Resources" "$contents/Library/LaunchAgents"

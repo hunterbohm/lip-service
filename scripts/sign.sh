@@ -1,6 +1,8 @@
 #!/bin/bash
 # Usage: sign.sh PATH IDENTIFIER [ENTITLEMENTS]
-# Signs an app bundle or a bare binary with the local signing certificate and the hardened runtime. The
+# Signs an app bundle or a bare binary with the local signing certificate and the hardened runtime. With
+# LS_SIGN_IDENTITY set to a "Developer ID Application: ..." certificate in the keychain, which scripts/release.sh does,
+# it signs with that certificate instead, with a secure timestamp, as notarization needs, and makes no local certificate. The
 # hardened runtime blocks microphone capture unless the app holds the audio-input entitlement, so the app
 # bundle passes its entitlements file. A bare binary passes none. The signature of a bundle seals every file in it,
 # the launch agent plist in Contents/Library/LaunchAgents included. The script stops if that plist is not sealed, so it
@@ -11,6 +13,25 @@ target="$1"
 identifier="$2"
 signing_dir="${DICTATION_SIGNING_DIR:-$HOME/.config/dictation/signing}"
 identity_name="Dictation Local Signing"
+
+check_agents() {
+    for agent in "$target"/Contents/Library/LaunchAgents/*.plist; do
+        [[ -e "$agent" ]] || continue
+        plutil -lint "$agent" >/dev/null
+        if ! grep -qF "Library/LaunchAgents/${agent##*/}" "$target/Contents/_CodeSignature/CodeResources"; then
+            printf '%s is not sealed by the signature of %s.\n' "${agent##*/}" "$target" >&2
+            exit 1
+        fi
+    done
+}
+
+if [[ -n "${LS_SIGN_IDENTITY:-}" ]]; then
+    developer_id_args=(--force --timestamp --options runtime --sign "$LS_SIGN_IDENTITY" --identifier "$identifier")
+    [[ -n "${3:-}" ]] && developer_id_args+=(--entitlements "$3")
+    codesign "${developer_id_args[@]}" "$target"
+    check_agents
+    exit 0
+fi
 # The system LibreSSL writes a PKCS#12 file that `security import` reads. A Homebrew OpenSSL earlier in PATH
 # defaults to an encryption the keychain may reject.
 openssl=/usr/bin/openssl
@@ -69,11 +90,4 @@ identity="$(security find-identity -p codesigning "$keychain" | awk -v name="\"$
 codesign_args=(--force --keychain "$keychain" --sign "$identity" --identifier "$identifier" --options runtime)
 [[ -n "${3:-}" ]] && codesign_args+=(--entitlements "$3")
 codesign "${codesign_args[@]}" "$target"
-for agent in "$target"/Contents/Library/LaunchAgents/*.plist; do
-    [[ -e "$agent" ]] || continue
-    plutil -lint "$agent" >/dev/null
-    if ! grep -qF "Library/LaunchAgents/${agent##*/}" "$target/Contents/_CodeSignature/CodeResources"; then
-        printf '%s is not sealed by the signature of %s.\n' "${agent##*/}" "$target" >&2
-        exit 1
-    fi
-done
+check_agents

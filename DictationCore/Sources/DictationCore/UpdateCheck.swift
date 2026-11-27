@@ -27,24 +27,39 @@ public struct Version: Comparable, Sendable, CustomStringConvertible {
     }
 }
 
-/// The newest release on GitHub: its version and the page that downloads it.
+/// The newest release on GitHub: its version, the page that shows it, and the zip an in-app update installs, when the
+/// release has one.
 public struct Release: Equatable, Sendable {
     public let version: Version
     public let page: URL
+    public let archive: URL?
 
-    public init(version: Version, page: URL) { (self.version, self.page) = (version, page) }
+    public init(version: Version, page: URL, archive: URL? = nil) { (self.version, self.page, self.archive) = (version, page, archive) }
 
-    /// Reads `tag_name` and `html_url` from the body of GitHub's "latest release" response. Nil when either is missing,
-    /// the tag is not a version, or the page is not an https page on github.com, since the page is what the app opens.
+    /// Reads `tag_name`, `html_url` and the release's zip from the body of GitHub's "latest release" response. Nil when
+    /// the tag or the page is missing, the tag is not a version, or the page is not an https page on github.com, since
+    /// the page is what the app opens. A release with no usable zip is still a release: the page offers the download.
     public init?(json: Data) {
-        struct Body: Decodable { var tag_name: String; var html_url: String }
+        struct Asset: Decodable { var name: String; var browser_download_url: String }
+        struct Body: Decodable { var tag_name: String; var html_url: String; var assets: [Asset]? }
         guard let body = try? JSONDecoder().decode(Body.self, from: json) else { return nil }
-        self.init(tag: body.tag_name, page: body.html_url)
+        let archive = body.assets?.first { Self.isArchive($0.browser_download_url, name: $0.name, tag: body.tag_name) }?.browser_download_url
+        self.init(tag: body.tag_name, page: body.html_url, archive: archive)
     }
 
-    init?(tag: String, page: String) {
+    init?(tag: String, page: String, archive: String? = nil) {
         guard let version = Version(tag), let url = URL(string: page), url.scheme == "https", url.host() == "github.com" else { return nil }
-        self.init(version: version, page: url)
+        self.init(version: version, page: url, archive: archive.flatMap { Self.isArchive($0, name: Self.archiveName(version), tag: tag) ? URL(string: $0) : nil })
+    }
+
+    /// The zip `scripts/release.sh` attaches to a release.
+    public static func archiveName(_ version: Version) -> String { "Lip-Service-\(version).zip" }
+
+    /// Only this repository's own release download of the tag counts, so a release body cannot send the app elsewhere.
+    private static func isArchive(_ link: String, name: String, tag: String) -> Bool {
+        guard let version = Version(tag), name == archiveName(version), let url = URL(string: link), url.scheme == "https", url.host() == "github.com",
+              url.query == nil, url.fragment == nil, url.user == nil, url.port == nil else { return false }
+        return url.path == "/hunterbohm/lip-service/releases/download/\(tag)/\(name)"
     }
 }
 
@@ -61,6 +76,7 @@ public protocol UpdateCheckStore: AnyObject {
     public nonisolated static let dayKey = "updateCheckLastDay"
     public nonisolated static let versionKey = "updateCheckVersion"
     public nonisolated static let pageKey = "updateCheckPage"
+    public nonisolated static let archiveKey = "updateCheckArchive"
 
     private let store: any UpdateCheckStore
     private let isEnabled: () -> Bool
@@ -87,10 +103,11 @@ public protocol UpdateCheckStore: AnyObject {
         guard let body = await fetch(), let release = Release(json: body) else { return }
         store.set(release.version.description, forKey: Self.versionKey)
         store.set(release.page.absoluteString, forKey: Self.pageKey)
+        store.set(release.archive?.absoluteString ?? "", forKey: Self.archiveKey)
     }
 
     private var saved: Release? {
         guard let version = store.string(forKey: Self.versionKey), let page = store.string(forKey: Self.pageKey) else { return nil }
-        return Release(tag: version, page: page)
+        return Release(tag: "v" + version, page: page, archive: store.string(forKey: Self.archiveKey).flatMap { $0.isEmpty ? nil : $0 })
     }
 }

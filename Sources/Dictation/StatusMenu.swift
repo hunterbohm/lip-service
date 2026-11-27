@@ -61,7 +61,12 @@ import DictationCore
             menu.addItem(ActionItem("Vocabulary line \(issue.line): \(issue.message)\(more)") { [weak self] in self?.openVocabularyFile() })
         }
         if let release = updates.available {
-            menu.addItem(ActionItem("Lip Service \(release.version) is available") { [updates] in updates.download(release) })
+            if updates.canInstall(release) {
+                let title = updates.phase == .installing ? "Updating to Lip Service \(release.version)…" : "Update to Lip Service \(release.version)"
+                menu.addItem(ActionItem(title) { [updates] in updates.install(release) })
+            } else {
+                menu.addItem(ActionItem("Lip Service \(release.version) is available") { [updates] in updates.download(release) })
+            }
         }
         menu.addItem(.separator())
 

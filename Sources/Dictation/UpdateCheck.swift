@@ -58,5 +58,30 @@ enum UpdateCheck {
         checks += 1
     }
 
+    /// What the update is doing. A failure keeps its message on screen until the next try.
+    enum Phase: Equatable { case idle, installing, failed(String) }
+
+    private(set) var phase = Phase.idle
+
+    /// Whether this copy can install an update itself: it is signed by a Developer ID team and sits where it can be
+    /// replaced, and the release has a zip. Otherwise the person downloads it from the release page.
+    func canInstall(_ release: Release) -> Bool { release.archive != nil && UpdateInstall.isAvailable() }
+
     func download(_ release: Release) { NSWorkspace.shared.open(release.page) }
+
+    /// Downloads the release, checks that it is signed by this app's own team and notarized, replaces this app, and
+    /// opens the new one. The app quits when the install starts.
+    func install(_ release: Release) {
+        guard phase != .installing, let running = Self.running else { return }
+        phase = .installing
+        Task {
+            do {
+                try await UpdateInstall.install(release, running: running)
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private static var running: Version? { (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).flatMap(Version.init) }
 }
