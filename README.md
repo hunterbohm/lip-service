@@ -20,7 +20,7 @@ Download it at [uselipservice.com](https://uselipservice.com), or [install it wi
 
 ## Install with an AI agent
 
-Paste this into Claude Code, Codex, or another coding agent that can run commands on your Mac. It installs the latest release, but only after it checks that the app is signed with the author's certificate. Read each command before you approve it.
+Paste this into Claude Code, Codex, or another coding agent that can run commands on your Mac. It installs the latest release, but only after it checks that the app is signed by the author's Apple team and notarized by Apple. Read each command before you approve it.
 
 	Install Lip Service on this Mac. It's a free, open source dictation app:
 	https://github.com/hunterbohm/lip-service
@@ -34,17 +34,18 @@ Paste this into Claude Code, Codex, or another coding agent that can run command
 	   `curl -s https://api.github.com/repos/hunterbohm/lip-service/releases/latest`,
 	   download it with `curl -L`, and unzip it with `ditto -x -k`.
 	3. Check that the app is the real one.
-	   `codesign --verify --deep --strict "Lip Service.app"` must pass. Then run
-	   `codesign -d --extract-certificates=cert "Lip Service.app"` and
-	   `shasum -a 256 cert0`. The hash must be
-	   760d91571175800b1e66274c20aad991ce484d1fac366eab7c14d58a8e9feb0b.
+	   `codesign --verify --deep --strict "Lip Service.app"` must pass.
+	   `spctl --assess --type execute -vv "Lip Service.app"` must say
+	   "accepted" and "source=Notarized Developer ID". And
+	   `codesign -dv "Lip Service.app" 2>&1 | grep -E "^(Identifier|TeamIdentifier)="`
+	   must print Identifier=com.hunterbohm.dictation and
+	   TeamIdentifier=PWPAYDPDFX.
 	4. If Lip Service is running, quit it. Move the app into /Applications,
 	   replacing any older copy. If there is also a copy in ~/Applications,
 	   move that one to the Trash, so only one copy is left.
-	5. The app is signed by its author but not notarized by Apple, so macOS
-	   would block it. Clear the download flag with
-	   `xattr -dr com.apple.quarantine "/Applications/Lip Service.app"`, open the
-	   app, and delete the temporary folder.
+	5. Open the app and delete the temporary folder. Do not clear the download
+	   flag: a notarized app needs no workaround, so if macOS blocks it, stop
+	   and tell me.
 	6. Tell me to finish the setup on the Home page of the Lip Service window:
 	   allow the microphone, turn on Lip Service under Accessibility, and set
 	   Keyboard > "Press fn key to" (or "Press 🌐 key to") to Do Nothing. Then
@@ -60,27 +61,22 @@ Download `Lip-Service-1.0.33.zip` from the [latest release](https://github.com/h
 ## Install
 
 1. Open the zip. Drag **Lip Service** into your **Applications** folder.
+2. Open Lip Service. The app is signed with the author's Apple Developer ID and notarized by Apple, so macOS opens it after its one "downloaded from the Internet" question. Click **Open**.
 
-	To check that this copy is the author's before you allow it, run these two commands in Terminal. The first must pass, and the second must print 760d91571175800b1e66274c20aad991ce484d1fac366eab7c14d58a8e9feb0b.
+	To check that this copy is the author's, run these commands in Terminal. The first must pass, the second must say `accepted` and `source=Notarized Developer ID`, and the third must print `TeamIdentifier=PWPAYDPDFX` (Bohm & Company LLC):
 
 		codesign --verify --deep --strict "/Applications/Lip Service.app"
-		codesign -d --extract-certificates=/tmp/lip-service-cert "/Applications/Lip Service.app" && shasum -a 256 /tmp/lip-service-cert0
+		spctl --assess --type execute -vv "/Applications/Lip Service.app"
+		codesign -dv "/Applications/Lip Service.app" 2>&1 | grep TeamIdentifier
 
-2. Open Lip Service. macOS blocks it, because the app is signed with its author's own certificate and is not notarized by Apple. Close the message, and don't move the app to the Trash.
-3. Open System Settings > **Privacy & Security**. Scroll down to **Security**, click **Open Anyway** next to the message about Lip Service, and confirm when macOS asks.
+3. When Lip Service asks for the microphone, click **Allow**.
+4. When it asks for Accessibility, open System Settings > **Privacy & Security** > **Accessibility** and turn on Lip Service. The app needs Accessibility to see the dictation key and to paste. It notices the change within 2 s, so you don't need to reopen it.
+5. Open System Settings > **Keyboard** and set **Press fn key to** to **Do Nothing**. On a keyboard with a globe key, the setting is called **Press 🌐 key to**. If you skip this, macOS also acts on fn.
+6. Wait while the bar at the bottom of the screen downloads the speech model, about 460 MB, and prepares it for your Mac. Preparing takes about a minute. Later launches load the model in about a second.
 
-	To do steps 2 and 3 in Terminal instead, run this command, then open the app:
+On the first launch, a setup window walks you through steps 3 to 5, a first dictation, your styles, and, if you want, your agent. Afterwards the Home page shows any of steps 3 to 5 that still needs doing, with a button that opens the right System Settings pane.
 
-		xattr -dr com.apple.quarantine "/Applications/Lip Service.app"
-
-4. When Lip Service asks for the microphone, click **Allow**.
-5. When it asks for Accessibility, open System Settings > **Privacy & Security** > **Accessibility** and turn on Lip Service. The app needs Accessibility to see the dictation key and to paste. It notices the change within 2 s, so you don't need to reopen it.
-6. Open System Settings > **Keyboard** and set **Press fn key to** to **Do Nothing**. On a keyboard with a globe key, the setting is called **Press 🌐 key to**. If you skip this, macOS also acts on fn.
-7. Wait while the bar at the bottom of the screen downloads the speech model, about 460 MB, and prepares it for your Mac. Preparing takes about a minute. Later launches load the model in about a second.
-
-On the first launch, a setup window walks you through steps 4 to 6, a first dictation, your styles, and, if you want, your agent. Afterwards the Home page shows any of steps 4 to 6 that still needs doing, with a button that opens the right System Settings pane.
-
-From 1.0.8, Lip Service says in its menu bar menu and on the Home page when a newer release is out. To update, quit Lip Service and replace the app in **Applications** with the new one. macOS blocks the new copy once, so allow it again as in step 3. The Microphone permission stays, because every release is signed with the same certificate. If fn does nothing after an update, turn Lip Service off and back on in System Settings > **Privacy & Security** > **Accessibility**.
+Lip Service says in its menu bar menu and on the Home page when a newer release is out. From the first notarized release, click **Update** there: Lip Service downloads the release, installs it only if it is Lip Service, newer than the running copy, signed by the same Apple team as the running copy, and accepted by macOS as notarized, then quits and opens the new copy. A download that fails any of those checks is not installed, and the Home page says why. A copy that was not signed by an Apple team, such as one you built yourself, or one that sits where it can't replace itself, such as the Downloads folder, shows **Download** instead, which opens the release page. Releases up to 1.0.33 were signed with the author's own certificate and have no Update button: replace the app in **Applications** with the new download by hand, once. Because the signer changes with that first notarized release, macOS asks again for the Microphone and Accessibility, and for your Mac password the first time Lip Service reads a saved agent token. Every later update keeps them. If fn does nothing after an update, turn Lip Service off and back on in System Settings > **Privacy & Security** > **Accessibility**.
 
 ## Use it
 
@@ -123,7 +119,7 @@ The [reference](docs/reference.md) describes every feature and setting.
 - **Speech models.** On first launch it downloads its speech models from huggingface.co, at fixed versions and with no account token. It fetches only the files the app expects, refuses to write anywhere outside its model folder, and checks every file against a SHA-256 hash built into the app before it uses it.
 - **Formatting model.** With **Smart formatting** on, Lip Service downloads its formatting model once, about 110 MB, from this repository's GitHub releases, at a fixed version, with no cookies and no account. It checks the archive against a SHA-256 hash built into the app, and every file in it, before it uses it. The model runs on your Mac. It was trained only on made-up dictations, none of them real.
 - **Usage count.** Once a day, the first time you finish a dictation, a Ghostwrite or a Hand off, Lip Service sends one small report to a Cloudflare Worker that its author runs, so the author can see how many people use it. The report holds exactly five things: a SHA-256 hash of a random ID made on your Mac (the ID itself never leaves it), the Lip Service version, the macOS version, the UTC date, and which of dictation, Ghostwrite and Hand off you used first that day. It never holds your voice, your words, the names of your apps or windows, what is on your screen, or which agent you use. The server stores those five things and nothing else, with no IP address. It ignores a report it can't read and a second one for the same day. To turn it off, clear **Send an anonymous daily usage count** on the **Dictation** page, and nothing is sent. The code for the report is in `DictationCore/Sources/DictationCore/UsageCount.swift` and the server is in `usage-worker/`.
-- **Update check.** Once a day, Lip Service asks GitHub which release is newest and tells you in the menu bar menu and on the Home page when yours is older. The request carries no ID and no cookies, and the app installs nothing by itself. To turn it off, clear **Check for updates** on the **Dictation** page, and nothing is sent.
+- **Update check.** Once a day, Lip Service asks GitHub which release is newest and tells you in the menu bar menu and on the Home page when yours is older. The request carries no ID and no cookies, and the app installs nothing unless you click **Update**. Then it downloads that release's zip from github.com the same way, with no ID and no cookies. To turn it off, clear **Check for updates** on the **Dictation** page, and nothing is sent.
 - Your dictations are saved on your Mac in `~/Library/Application Support/Dictation/history.jsonl`, so the Home page can list them. Each one also notes the app you dictated into. To stop saving them, turn off **Keep history** on the History page. **Delete All History** removes the file. The Stats page is counted from this file on your Mac, and its share image holds totals and a calendar, never your words or the apps.
 - Ghostwrite, Hand off and Live talk send what you said, as text, to the agent you set up. Your audio is never sent.
 - **Live talk voice.** The first talk downloads the Phonon voice pack, 134 MB, from huggingface.co, with no account token. Like the speech models, it is pinned to a commit and every file is checked against hashes built into the app before it is used. If you pick a Kokoro voice instead, Kokoro's files, about 90 MB, are downloaded the same way but are not pinned or checked. The voice is made on your Mac. If you pick a voice server instead, the agent's replies go to that server as text to be spoken. During a talk the agent may read, search and think without asking. Anything else it asks for, Lip Service asks you: a spoken "no" refuses, but running a command, editing, deleting or moving needs **Allow** clicked on the card, so a misheard word can't approve it. The one other thing a spoken "yes" allows is starting a T3 Code thread, when you talk with Claude Code and T3 Code is connected: Lip Service asks "Start a T3 Code thread in the project, called such and such", and that, built from what Claude Code passes to T3 Code, is all a yes covers. A Ghostwrite request also carries what Lip Service can read of the window you're in: its title, the field around the cursor, and nearby text. With **Learn my voice from my dictations** on, it also carries up to 8 of your recent dictations from the same kind of app, as examples of how you write. Password apps and password fields are never read.
